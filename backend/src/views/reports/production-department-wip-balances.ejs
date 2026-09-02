@@ -41,8 +41,10 @@
     const v = t("department_count");
     return v && v !== "department_count" ? v : "Department Count";
   })();
-  const detailTotalsLabelSpan = 6;
-  const detailColumnCount = detailTotalsLabelSpan + 2 + (includeBranchColumn ? 1 : 0);
+  const detailTotalsLabelSpan = 5;
+  // Aging sits just before Branch (last when there is no Branch column), so the
+  // two measure columns are followed by a blank Aging cell on every totals row.
+  const detailColumnCount = detailTotalsLabelSpan + 3 + (includeBranchColumn ? 1 : 0);
   const formatNumber = (value, decimals = 3) => formatNumberDisplay(value, { decimals, fallback: "0" });
   const summarizeNameSet = (valueSet = new Set()) => {
     const values = Array.from(valueSet.values())
@@ -262,9 +264,9 @@
                 <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="sku_code"><%= t("sku") %></th>
                 <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="product_group_name"><%= t("product_group") %></th>
                 <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="production_type"><%= t("production_type") %></th>
-                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="aging_days"><%= agingDaysLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="closing_pairs"><%= closingPairsLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="closing_dozen"><%= closingDozenLabel %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="aging_days"><%= agingDaysLabel %></th>
                 <% if (includeBranchColumn) { %>
                   <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_name"><%= t("branch") %></th>
                 <% } %>
@@ -294,9 +296,9 @@
                     </td>
                     <td class="px-3 py-2"><%= row.product_group_name || "-" %></td>
                     <td class="px-3 py-2"><%= row.production_type || "-" %></td>
-                    <td class="px-3 py-2 text-right"><%= Number(row.aging_days || 0) %></td>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(row.closing_pairs || 0, 3) %></td>
                     <td class="px-3 py-2 text-right"><%= formatNumber(row.closing_dozen || 0, 3) %></td>
+                    <td class="px-3 py-2 text-right"><%= Number(row.aging_days || 0) %></td>
                     <% if (includeBranchColumn) { %>
                       <td class="px-3 py-2"><%= row.branch_name || "-" %></td>
                     <% } %>
@@ -310,15 +312,17 @@
                   </td>
                   <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatNumber(group.closing_pairs || 0, 3) %></td>
                   <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatNumber(group.closing_dozen || 0, 3) %></td>
+                  <td class="px-3 py-2"></td>
                   <% if (includeBranchColumn) { %>
                     <td class="px-3 py-2"></td>
                   <% } %>
                 </tr>
               <% }) %>
               <tr class="bg-slate-800 text-white" data-row data-active="true" data-report-grand-total>
-                <td colspan="6" class="px-3 py-3 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
+                <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-3 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
                 <td class="px-3 py-3 text-right font-black tabular-nums text-emerald-100"><%= formatNumber(reportData?.totals?.closingPairs || 0, 3) %></td>
                 <td class="px-3 py-3 text-right font-extrabold tabular-nums"><%= formatNumber(reportData?.totals?.closingDozen || 0, 3) %></td>
+                <td class="px-3 py-3"></td>
                 <% if (includeBranchColumn) { %>
                   <td class="px-3 py-3"></td>
                 <% } %>
@@ -333,10 +337,10 @@
               <tr>
                 <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="department_name"><%= selectedOrderBy === "sku" ? t("sku") : t("department") %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="sku_count"><%= selectedOrderBy === "sku" ? departmentCountLabel : skuCountLabel %></th>
-                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="avg_aging_days"><%= avgAgingDaysLabel %></th>
-                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="max_aging_days"><%= maxAgingDaysLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="closing_pairs"><%= closingPairsLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="closing_dozen"><%= closingDozenLabel %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="avg_aging_days"><%= avgAgingDaysLabel %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="max_aging_days"><%= maxAgingDaysLabel %></th>
                 <% if (includeBranchColumn) { %>
                   <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_label"><%= t("branches") %></th>
                 <% } %>
@@ -347,19 +351,21 @@
                 <tr class="bg-slate-200/50 text-slate-700" data-row data-active="true">
                   <td class="px-3 py-2"><%= selectedOrderBy === "sku" ? (row.sku_code || "-") : (row.department_name || "-") %></td>
                   <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= selectedOrderBy === "sku" ? Number(row.department_count || 0) : Number(row.sku_count || 0) %></td>
-                  <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= formatNumber(row.avg_aging_days || 0, 2) %></td>
-                  <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= Number(row.max_aging_days || 0) %></td>
                   <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= formatNumber(row.closing_pairs || 0, 3) %></td>
                   <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= formatNumber(row.closing_dozen || 0, 3) %></td>
+                  <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= formatNumber(row.avg_aging_days || 0, 2) %></td>
+                  <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= Number(row.max_aging_days || 0) %></td>
                   <% if (includeBranchColumn) { %>
                     <td class="px-3 py-2"><%= row.branch_label || "-" %></td>
                   <% } %>
                 </tr>
               <% }) %>
               <tr class="bg-rose-700 text-white" data-row data-active="true" data-report-grand-total>
-                <td colspan="4" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
+                <td colspan="2" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
                 <td class="px-3 py-2 text-right font-black tabular-nums text-emerald-100"><%= formatNumber(reportData?.totals?.closingPairs || 0, 3) %></td>
                 <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatNumber(reportData?.totals?.closingDozen || 0, 3) %></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
                 <% if (includeBranchColumn) { %>
                   <td class="px-3 py-2 text-start"><%= selectedOrderBy === "sku" ? Number(reportData?.totals?.skuCount || 0) : Number(reportData?.totals?.departmentCount || 0) %> <%= selectedOrderBy === "sku" ? t("sku") : t("departments") %></td>
                 <% } %>

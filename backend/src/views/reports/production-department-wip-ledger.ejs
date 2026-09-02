@@ -295,12 +295,12 @@
               <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("sku") %></th>
               <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("product_group") %></th>
               <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("production_type") %></th>
-              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= agingDaysLabel %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= openingPairsLabel %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= inPairsLabel %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= outPairsLabel %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= closingPairsLabel %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= closingDozenLabel %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= agingDaysLabel %></th>
               <% if (includeBranchColumn) { %><th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("branch") %></th><% } %>
             </tr>
           </thead>
@@ -312,22 +312,23 @@
                 <td class="px-3 py-2"><%= row.sku_code || "-" %></td>
                 <td class="px-3 py-2"><%= row.product_group_name || "-" %></td>
                 <td class="px-3 py-2"><%= row.production_type || "-" %></td>
-                <td class="px-3 py-2 text-right"><%= Number(row.aging_days || 0) %></td>
                 <td class="px-3 py-2 text-right"><%= formatNumber(row.opening_pairs || 0, 3) %></td>
                 <td class="px-3 py-2 text-right"><%= formatNumber(row.in_pairs || 0, 3) %></td>
                 <td class="px-3 py-2 text-right"><%= formatNumber(row.out_pairs || 0, 3) %></td>
                 <td class="px-3 py-2 text-right"><%= formatNumber(row.closing_pairs || 0, 3) %></td>
                 <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(row.closing_dozen || 0, 3) %></td>
+                <td class="px-3 py-2 text-right"><%= Number(row.aging_days || 0) %></td>
                 <% if (includeBranchColumn) { %><td class="px-3 py-2"><%= row.branch_name || "-" %></td><% } %>
               </tr>
             <% }) %>
             <tr class="bg-rose-700 text-white" data-row data-active="true" data-report-grand-total>
-              <td colspan="6" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
+              <td colspan="5" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
               <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(reportData?.totals?.openingPairs || 0, 3) %></td>
               <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(reportData?.totals?.inPairs || 0, 3) %></td>
               <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(reportData?.totals?.outPairs || 0, 3) %></td>
               <td class="px-3 py-2 text-right font-black text-emerald-100"><%= formatNumber(reportData?.totals?.closingPairs || 0, 3) %></td>
               <td class="px-3 py-2 text-right font-black text-emerald-100"><%= formatNumber(reportData?.totals?.closingDozen || 0, 3) %></td>
+              <td class="px-3 py-2"></td>
               <% if (includeBranchColumn) { %><td class="px-3 py-2"><%= Number(reportData?.totals?.skuCount || 0) %> <%= t("sku") %></td><% } %>
             </tr>
           </tbody>

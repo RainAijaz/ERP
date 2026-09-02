@@ -45,8 +45,10 @@
   const agingDaysLabel = (() => { const v = t("aging_days"); return v && v !== "aging_days" ? v : "Aging (Days)"; })();
   const agingBucketLabel = (() => { const v = t("aging_bucket"); return v && v !== "aging_bucket" ? v : "Aging Bucket"; })();
   const formatNumber = (value, decimals = 3) => formatNumberDisplay(value, { decimals, fallback: "0" });
-  const detailTotalsLabelSpan = 6;
-  const detailColumnCount = detailTotalsLabelSpan + 2 + (includeBranchColumn ? 1 : 0);
+  const detailTotalsLabelSpan = 5;
+  // Aging sits just before Branch (last when there is no Branch column), so the
+  // two measure columns are followed by a blank Aging cell on every totals row.
+  const detailColumnCount = detailTotalsLabelSpan + 3 + (includeBranchColumn ? 1 : 0);
   const summarizeNameSet = (valueSet = new Set()) => {
     const values = Array.from(valueSet.values())
       .map((value) => String(value || "").trim())
@@ -281,9 +283,9 @@
                 <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="sku_code"><%= t("sku") %></th>
                 <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="product_group_name"><%= t("product_group") %></th>
                 <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="production_type"><%= t("production_type") %></th>
-                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="aging_days"><%= agingDaysLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="pending_pairs"><%= pendingPairsLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="pending_dozen"><%= pendingDozenLabel %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="aging_days"><%= agingDaysLabel %></th>
                 <% if (includeBranchColumn) { %>
                   <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_name"><%= t("branch") %></th>
                 <% } %>
@@ -311,9 +313,9 @@
                     <td class="px-3 py-2"><%= row.sku_code || "-" %></td>
                     <td class="px-3 py-2"><%= row.product_group_name || "-" %></td>
                     <td class="px-3 py-2"><%= row.production_type || "-" %></td>
-                    <td class="px-3 py-2 text-right"><%= Number(row.aging_days || 0) %></td>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(row.pending_pairs || 0, 3) %></td>
                     <td class="px-3 py-2 text-right"><%= formatNumber(row.pending_dozen || 0, 3) %></td>
+                    <td class="px-3 py-2 text-right"><%= Number(row.aging_days || 0) %></td>
                     <% if (includeBranchColumn) { %>
                       <td class="px-3 py-2"><%= row.branch_name || "-" %></td>
                     <% } %>
@@ -327,6 +329,7 @@
                   </td>
                   <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatNumber(group.pending_pairs || 0, 3) %></td>
                   <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatNumber(group.pending_dozen || 0, 3) %></td>
+                  <td class="px-3 py-2"></td>
                   <% if (includeBranchColumn) { %>
                     <td class="px-3 py-2"></td>
                   <% } %>
@@ -336,6 +339,7 @@
                 <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-3 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
                 <td class="px-3 py-3 text-right font-black tabular-nums text-emerald-100"><%= formatNumber(reportData?.totals?.pendingPairs || 0, 3) %></td>
                 <td class="px-3 py-3 text-right font-extrabold tabular-nums"><%= formatNumber(reportData?.totals?.pendingDozen || 0, 3) %></td>
+                <td class="px-3 py-3"></td>
                 <% if (includeBranchColumn) { %>
                   <td class="px-3 py-3"></td>
                 <% } %>
@@ -350,10 +354,10 @@
               <tr>
                 <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="department_name"><%= selectedOrderBy === "sku" ? t("sku") : t("department") %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="pending_articles"><%= selectedOrderBy === "sku" ? pendingDepartmentsLabel : pendingArticlesLabel %></th>
-                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="avg_aging_days"><%= avgAgingDaysLabel %></th>
-                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="max_aging_days"><%= maxAgingDaysLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="pending_pairs"><%= pendingPairsLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="pending_dozen"><%= pendingDozenLabel %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="avg_aging_days"><%= avgAgingDaysLabel %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="max_aging_days"><%= maxAgingDaysLabel %></th>
                 <% if (includeBranchColumn) { %>
                   <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_label"><%= t("branches") %></th>
                 <% } %>
@@ -364,19 +368,21 @@
                 <tr class="bg-slate-200/50 text-slate-700" data-row data-active="true">
                   <td class="px-3 py-2"><%= selectedOrderBy === "sku" ? (row.sku_code || "-") : (row.department_name || "-") %></td>
                   <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= selectedOrderBy === "sku" ? Number(row.pending_departments || 0) : Number(row.pending_articles || 0) %></td>
-                  <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= formatNumber(row.avg_aging_days || 0, 2) %></td>
-                  <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= Number(row.max_aging_days || 0) %></td>
                   <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= formatNumber(row.pending_pairs || 0, 3) %></td>
                   <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= formatNumber(row.pending_dozen || 0, 3) %></td>
+                  <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= formatNumber(row.avg_aging_days || 0, 2) %></td>
+                  <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= Number(row.max_aging_days || 0) %></td>
                   <% if (includeBranchColumn) { %>
                     <td class="px-3 py-2"><%= row.branch_label || "-" %></td>
                   <% } %>
                 </tr>
               <% }) %>
               <tr class="bg-rose-700 text-white" data-row data-active="true" data-report-grand-total>
-                <td colspan="4" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
+                <td colspan="2" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
                 <td class="px-3 py-2 text-right font-black tabular-nums text-emerald-100"><%= formatNumber(reportData?.totals?.pendingPairs || 0, 3) %></td>
                 <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatNumber(reportData?.totals?.pendingDozen || 0, 3) %></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
                 <% if (includeBranchColumn) { %>
                   <td class="px-3 py-2 text-start"><%= selectedOrderBy === "sku" ? Number(reportData?.totals?.skuCount || 0) : Number(reportData?.totals?.departmentCount || 0) %> <%= selectedOrderBy === "sku" ? t("sku") : t("departments") %></td>
                 <% } %>
