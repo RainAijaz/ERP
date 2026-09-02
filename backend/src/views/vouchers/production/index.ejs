@@ -251,13 +251,6 @@
             <label class="pt-2 text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("dcv_departments_completed") %></label>
             <div class="lg:col-span-10">
               <div data-dcv-stage-list class="space-y-2"></div>
-              <% if (canSave) { %>
-                <button
-                  type="button"
-                  data-dcv-stage-add
-                  class="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                >+ <%= t("dcv_add_department") %></button>
-              <% } %>
               <p data-dcv-stage-hint class="mt-2 hidden text-xs font-medium text-amber-700"></p>
             </div>
           </div>
@@ -416,7 +409,6 @@
     const dcvLabourSelect = form.querySelector("[data-dcv-labour]");
     const dcvDepartmentSelect = form.querySelector("[data-dcv-department]");
     const dcvStageList = form.querySelector("[data-dcv-stage-list]");
-    const dcvStageAddButton = form.querySelector("[data-dcv-stage-add]");
     const dcvStageHint = form.querySelector("[data-dcv-stage-hint]");
     const dcvStagesJsonInput = form.querySelector("[data-dcv-stages-json]");
     const lossTypeHeaderSelect = form.querySelector("[data-loss-type-header]");
@@ -644,6 +636,9 @@
       const takenDeptIds = new Set(
         dcvStagePairs.map((pair) => toPositiveInt(pair?.dept_id)).filter(Boolean),
       );
+      // The row actions are icon-only, so their names have to come from title/aria-label.
+      const removeStageLabel = escapeHtml(<%- JSON.stringify(t("remove")) %>);
+      const addStageLabel = escapeHtml(<%- JSON.stringify(t("dcv_add_department")) %>);
 
       dcvStageList.innerHTML = dcvStagePairs
         .map((pair, index) => {
@@ -672,10 +667,21 @@
               ),
             )
             .join("");
-          const removeButton =
-            canSave && dcvStagePairs.length > 1
-              ? `<button type="button" data-dcv-stage-remove data-stage-index="${index}" class="shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50" aria-label="${<%- JSON.stringify(t("remove")) %>}">&times;</button>`
-              : "";
+          // Row actions sit in a fixed two-slot strip at the end of the row so the
+          // selects keep the same width whatever the row count: remove on every row
+          // (disabled while a single pair is left) and add on the last row only, with
+          // a spacer holding that slot open on the rows above it.
+          const isLastStage = index === dcvStagePairs.length - 1;
+          const actionSlot = canSave
+            ? `<div class="flex shrink-0 items-center gap-2 self-start">
+                <button type="button" data-dcv-stage-remove data-stage-index="${index}" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-base font-semibold leading-none text-slate-500 hover:bg-slate-50 disabled:opacity-40" ${dcvStagePairs.length > 1 ? "" : "disabled"} title="${removeStageLabel}" aria-label="${removeStageLabel}">&times;</button>
+                ${
+                  isLastStage
+                    ? `<button type="button" data-dcv-stage-add class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50" title="${addStageLabel}" aria-label="${addStageLabel}"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button>`
+                    : `<span class="hidden h-10 w-10 shrink-0 sm:block" aria-hidden="true"></span>`
+                }
+              </div>`
+            : "";
           return `
             <div class="flex flex-col gap-2 sm:flex-row sm:items-center" data-dcv-stage-row data-stage-index="${index}">
               <select data-stage-field="dept_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm sm:flex-1" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
@@ -685,7 +691,7 @@
               <select data-stage-field="labour_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm sm:flex-1" data-searchable-select="true" data-searchable-variant="unified" ${canSave && deptId ? "" : "disabled"}>
                 ${labourOptions}
               </select>
-              ${removeButton}
+              ${actionSlot}
             </div>
           `;
         })
@@ -2027,7 +2033,13 @@
         await refreshDcvLineDependencies({ clearUnrated: true });
       });
 
+      // Both row actions are rebuilt on every render, so they are delegated.
       dcvStageList.addEventListener("click", async (event) => {
+        if (event.target?.closest?.("[data-dcv-stage-add]")) {
+          dcvStagePairs.push({ dept_id: null, labour_id: null });
+          renderDcvStagePairs();
+          return;
+        }
         const removeButton = event.target?.closest?.("[data-dcv-stage-remove]");
         if (!removeButton) return;
         const index = Number(removeButton.getAttribute("data-stage-index") || -1);
@@ -2035,12 +2047,6 @@
         dcvStagePairs.splice(index, 1);
         renderDcvStagePairs();
         await refreshDcvLineDependencies({ clearUnrated: true });
-      });
-    }
-    if (isDcv && dcvStageAddButton) {
-      dcvStageAddButton.addEventListener("click", () => {
-        dcvStagePairs.push({ dept_id: null, labour_id: null });
-        renderDcvStagePairs();
       });
     }
     if (isDcv && voucherDateInput instanceof HTMLInputElement) {
