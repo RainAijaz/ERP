@@ -1,20 +1,32 @@
 <div class="mx-auto w-full max-w-7xl space-y-6">
   <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
-    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-      <div class="space-y-1">
+    <div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+      <div class="max-w-xl space-y-1">
         <h1 class="text-2xl font-display text-ink"><%= t(page.titleKey) %></h1>
         <p class="text-sm text-muted"><%= t(page.descriptionKey) || t("hr_screen_description") %></p>
       </div>
-      <div class="flex flex-wrap gap-2">
+      <%
+        // Shared pill styling so every header action reads as one control family.
+        const hrPill = "inline-flex items-center gap-2 cursor-pointer rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/15";
+        const hrSegment = "inline-flex items-center gap-2 cursor-pointer px-3.5 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-900/15";
+        const hrIcon = "h-3.5 w-3.5 shrink-0";
+      %>
+      <div class="flex flex-wrap items-center gap-2 lg:justify-end">
         <% const canCreate = can("SCREEN", page.scopeKey, "create"); %>
         <% const canDownload = can("SCREEN", page.scopeKey, "print"); %>
         <% if (canDownload) { %>
-          <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-download-button>
-            <%= t("download") %>
-          </button>
-          <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
-            <%= t("print") %>
-          </button>
+          <%/* Download + Print are one export cluster, so they read as a single control. */%>
+          <div class="inline-flex items-center overflow-hidden rounded-full border border-slate-200 bg-white shadow-sm">
+            <button class="<%= hrSegment %>" type="button" data-download-button title="<%= t("download") %>">
+              <svg class="<%= hrIcon %>" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11" /><path d="m8 11 4 4 4-4" /><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" /></svg>
+              <%= t("download") %>
+            </button>
+            <span class="h-5 w-px bg-slate-200" aria-hidden="true"></span>
+            <button class="<%= hrSegment %>" type="button" data-print-button title="<%= t("print") %>">
+              <svg class="<%= hrIcon %>" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 9V4h10v5" /><path d="M7 18H6a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-1" /><path d="M7 14h10v6H7z" /></svg>
+              <%= t("print") %>
+            </button>
+          </div>
         <% } %>
         <% if (page.scopeKey === "hr_payroll.commissions") { %>
           <%
@@ -29,22 +41,33 @@
             if (!showingPastRates) pastRatesParams.set("show_past_rates", "1");
             const pastRatesHref = pastRatesParams.toString() ? ("?" + pastRatesParams.toString()) : "?";
           %>
-          <a href="<%= pastRatesHref %>" class="cursor-pointer rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition <%= showingPastRates ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-800' %>">
+          <a
+            href="<%= pastRatesHref %>"
+            aria-pressed="<%= showingPastRates ? "true" : "false" %>"
+            class="inline-flex items-center gap-2 cursor-pointer rounded-full border px-3.5 py-2 text-xs font-semibold uppercase tracking-[0.14em] shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/15 <%= showingPastRates ? 'border-slate-900 bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900' %>"
+          >
+            <svg class="<%= hrIcon %>" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
             <%= t("show_past_rates") %>
+            <% if (showingPastRates) { %>
+              <span class="h-1.5 w-1.5 rounded-full bg-white/80" aria-hidden="true"></span>
+            <% } %>
           </a>
         <% } %>
         <% if (can("SCREEN", page.scopeKey, "edit") && page.scopeKey === "hr_payroll.commissions") { %>
-          <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-recalc-open>
+          <button class="<%= hrPill %>" type="button" data-recalc-open>
+            <svg class="<%= hrIcon %>" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /></svg>
             <%= t("recalculate_commission") %>
           </button>
         <% } %>
         <% if (canCreate && page.scopeKey === "hr_payroll.labour_rates") { %>
-          <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-lrc-open>
+          <button class="<%= hrPill %>" type="button" data-lrc-open>
+            <svg class="<%= hrIcon %>" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" /></svg>
             <%= (typeof t === "function" && t("labour_rate_copy_button") && t("labour_rate_copy_button") !== "labour_rate_copy_button") ? t("labour_rate_copy_button") : "Copy rates from another labour" %>
           </button>
         <% } %>
         <% if (canCreate) { %>
-          <button class="cursor-pointer rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open style="color: #fff;">
+          <button class="inline-flex items-center gap-2 cursor-pointer rounded-full bg-slate-900 px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/30 focus-visible:ring-offset-2" type="button" data-modal-open style="color: #fff;">
+            <svg class="<%= hrIcon %>" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
             <%= t("add") %> <%= t(page.titleKey) %>
           </button>
         <% } %>
