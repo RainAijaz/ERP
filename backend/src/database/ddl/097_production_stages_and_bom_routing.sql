@@ -81,3 +81,28 @@ CREATE INDEX IF NOT EXISTS idx_dcv_header_stage_id
 
 CREATE INDEX IF NOT EXISTS idx_abnormal_loss_line_stage_id
   ON erp.abnormal_loss_line(stage_id);
+
+-- ---------------------------------------------------------------------
+-- DCV line extension (per-line department + labour)
+-- ---------------------------------------------------------------------
+-- A single DCV may complete several consecutive departments on one day, each
+-- worked by a different labour. The department/labour therefore belongs on the
+-- line, not only on dcv_header.
+--
+-- Why a side table instead of voucher_line.labour_id:
+--   voucher_line enforces CHECK (num_nonnulls(item_id, sku_id, account_id,
+--   party_id, labour_id, employee_id) = 1). A DCV line already fills sku_id,
+--   so it may not also fill labour_id. dept_id has no home on voucher_line at
+--   all -- the same reason labour_voucher_line and abnormal_loss_line exist.
+--
+-- dcv_header still carries the FIRST department/labour in BOM stage order, so
+-- every existing single-department query keeps working untouched.
+CREATE TABLE IF NOT EXISTS erp.dcv_line (
+  voucher_line_id bigint PRIMARY KEY REFERENCES erp.voucher_line(id) ON DELETE CASCADE,
+  dept_id         bigint NOT NULL REFERENCES erp.departments(id) ON DELETE RESTRICT,
+  labour_id       bigint NOT NULL REFERENCES erp.labours(id) ON DELETE RESTRICT,
+  stage_id        bigint REFERENCES erp.production_stages(id) ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_dcv_line_labour ON erp.dcv_line(labour_id);
+CREATE INDEX IF NOT EXISTS idx_dcv_line_dept   ON erp.dcv_line(dept_id);

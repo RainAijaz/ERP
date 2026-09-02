@@ -98,20 +98,35 @@ const findLabourDeptUsageMap = async ({ db, labourId, deptIds = [] }) => {
 
   const [
     hasDcvHeader,
+    hasDcvLine,
     hasLabourVoucherLine,
     hasLabourRateRules,
     hasBomLabourLine,
   ] = await Promise.all([
     hasErpTable(db, "dcv_header"),
+    hasErpTable(db, "dcv_line"),
     hasErpTable(db, "labour_voucher_line"),
     hasErpTable(db, "labour_rate_rules"),
     hasErpTable(db, "bom_labour_line"),
   ]);
 
-  const [dcvRows, labourVoucherRows, labourRateRows, bomLabourRows] =
-    await Promise.all([
+  const [
+    dcvRows,
+    dcvLineRows,
+    labourVoucherRows,
+    labourRateRows,
+    bomLabourRows,
+  ] = await Promise.all([
       hasDcvHeader
         ? db("erp.dcv_header")
+            .distinct("dept_id")
+            .where({ labour_id: normalizedLabourId })
+            .whereIn("dept_id", normalizedDeptIds)
+        : Promise.resolve([]),
+      // A DCV completing several departments records each labour on the line, so a
+      // labour's work shows up here and not on dcv_header.
+      hasDcvLine
+        ? db("erp.dcv_line")
             .distinct("dept_id")
             .where({ labour_id: normalizedLabourId })
             .whereIn("dept_id", normalizedDeptIds)
@@ -147,6 +162,7 @@ const findLabourDeptUsageMap = async ({ db, labourId, deptIds = [] }) => {
     });
   };
   addUsage(dcvRows, "DCV");
+  addUsage(dcvLineRows, "DCV");
   addUsage(labourVoucherRows, "LABOUR_VOUCHER");
   addUsage(labourRateRows, "LABOUR_RATE_RULE");
   addUsage(bomLabourRows, "BOM_LABOUR_LINE");

@@ -103,6 +103,12 @@ CREATE TABLE IF NOT EXISTS erp.dcv_header (
   labour_id  bigint REFERENCES erp.labours(id) ON DELETE RESTRICT
 );
 
+-- NOTE: a DCV may complete several departments in one voucher, each worked by a
+-- different labour. That per-line department/labour lives in erp.dcv_line,
+-- defined in 097_production_stages_and_bom_routing.sql (it needs
+-- erp.production_stages, which is created there). dcv_header keeps the FIRST
+-- department/labour in BOM stage order.
+
 -- ---------------------------------------------------------------------
 -- Production Completion line extension (FG/SFG completion vouchers)
 -- ---------------------------------------------------------------------

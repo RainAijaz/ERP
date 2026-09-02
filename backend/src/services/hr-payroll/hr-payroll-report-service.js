@@ -44,8 +44,30 @@ const LEDGER_NET_SQL = `(${LEDGER_CREDIT_SQL}) - (${LEDGER_DEBIT_SQL})`;
 // of the generic ledger bucket and show it as its own commission-type row.
 const IS_SALES_COMMISSION_LINE_SQL =
   "COALESCE((vl.meta->>'auto_sales_commission')::boolean, false)";
+// Which labour a ledger row belongs to. Every voucher type carries it on the line, but a
+// DCV cannot: voucher_line allows exactly one entity reference and a DCV line already
+// fills sku_id, so the labour lives beside it in erp.dcv_line (per line, since one DCV
+// may complete several departments worked by different labours), with dcv_header as the
+// fallback for single-department vouchers and anything saved before dcv_line existed.
 const LABOUR_ENTITY_SQL =
   "CASE WHEN vh.voucher_type_code = 'DCV' THEN dcv.labour_id ELSE vl.labour_id END";
+const LABOUR_ENTITY_WITH_DCV_LINE_SQL =
+  "CASE WHEN vh.voucher_type_code = 'DCV' THEN COALESCE(dcvl.labour_id, dcv.labour_id) ELSE vl.labour_id END";
+
+// Guarded because the code may reach a database that has not run the dcv_line migration
+// yet; joining a missing table would break the whole labour ledger, not just this column.
+let dcvLineTableSupport;
+const hasDcvLineTable = async () => {
+  if (typeof dcvLineTableSupport === "boolean") return dcvLineTableSupport;
+  dcvLineTableSupport = await knex.schema
+    .withSchema("erp")
+    .hasTable("dcv_line");
+  return dcvLineTableSupport;
+};
+const resolveLabourEntitySql = async () =>
+  (await hasDcvLineTable())
+    ? LABOUR_ENTITY_WITH_DCV_LINE_SQL
+    : LABOUR_ENTITY_SQL;
 const AUTO_PAYROLL_VOUCHER_TYPE = "PAYROLL_ACCRUAL";
 const AUTO_PAYROLL_DESCRIPTION = "Monthly salary accrual";
 const AUTO_PAYROLL_DAILY_DESCRIPTION =
@@ -620,7 +642,7 @@ const getEntityConfig = (kind) => {
   return cfg;
 };
 
-const applyEntityVoucherScope = ({
+const applyEntityVoucherScope = async ({
   query,
   cfg,
   entityId,
@@ -638,11 +660,18 @@ const applyEntityVoucherScope = ({
       });
   }
 
+  const supportsDcvLine = await hasDcvLineTable();
+  const labourEntitySql = await resolveLabourEntitySql();
+
   return query
     .leftJoin("erp.dcv_header as dcv", "dcv.voucher_id", "vh.id")
     .modify((qb) => {
+      if (supportsDcvLine)
+        qb.leftJoin("erp.dcv_line as dcvl", "dcvl.voucher_line_id", "vl.id");
+    })
+    .modify((qb) => {
       if (includeEntitySelect)
-        qb.select(knex.raw(`${LABOUR_ENTITY_SQL} as entity_id`));
+        qb.select(knex.raw(`${labourEntitySql} as entity_id`));
     })
     .where(function whereLabourRows() {
       this.where(function whereDirectLabourLine() {
@@ -650,12 +679,24 @@ const applyEntityVoucherScope = ({
       }).orWhere(function whereDcvSkuLine() {
         this.where("vh.voucher_type_code", "DCV")
           .andWhere("vl.line_kind", "SKU")
-          .whereNotNull("dcv.labour_id");
+          .modify((inner) => {
+            // A multi-department DCV credits each line's own labour; only fall back to
+            // the header labour for lines that have no dcv_line row of their own.
+            if (supportsDcvLine) {
+              inner.where(function whereAnyLabour() {
+                this.whereNotNull("dcvl.labour_id").orWhereNotNull(
+                  "dcv.labour_id",
+                );
+              });
+              return;
+            }
+            inner.whereNotNull("dcv.labour_id");
+          });
       });
     })
     .modify((qb) => {
       if (entityId != null)
-        qb.andWhereRaw(`${LABOUR_ENTITY_SQL} = ?`, [entityId]);
+        qb.andWhereRaw(`${labourEntitySql} = ?`, [entityId]);
     });
 };
 
@@ -787,7 +828,7 @@ const getLedgerRows = async ({
       if (filters.from) qb.where("vh.voucher_date", "<", filters.from);
     });
 
-  openingQuery = applyEntityVoucherScope({
+  openingQuery = await applyEntityVoucherScope({
     query: openingQuery,
     cfg,
     entityId: filters.entityId,
@@ -874,7 +915,7 @@ const getLedgerRows = async ({
   if (scopedBranchIds.length) {
     detailsQuery = detailsQuery.whereIn("vh.branch_id", scopedBranchIds);
   }
-  detailsQuery = applyEntityVoucherScope({
+  detailsQuery = await applyEntityVoucherScope({
     query: detailsQuery,
     cfg,
     entityId: filters.entityId,
@@ -1354,14 +1395,14 @@ const getBalanceRows = async ({ req, filters, kind }) => {
       if (scopedBranchIds.length) qb.whereIn("vh.branch_id", scopedBranchIds);
     });
 
-  balanceSubquery = applyEntityVoucherScope({
+  balanceSubquery = await applyEntityVoucherScope({
     query: balanceSubquery,
     cfg,
     entityId: null,
     includeEntitySelect: true,
   });
   if (cfg.lineKind === "LABOUR") {
-    balanceSubquery = balanceSubquery.groupByRaw(LABOUR_ENTITY_SQL);
+    balanceSubquery = balanceSubquery.groupByRaw(await resolveLabourEntitySql());
   } else {
     balanceSubquery = balanceSubquery.groupBy(`vl.${cfg.vlEntityCol}`);
   }

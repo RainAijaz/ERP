@@ -36,6 +36,24 @@ const toLines = (body) => {
   return [];
 };
 
+// A DCV can complete several departments at once, each with its own labour.
+// Same shape as toLines: the form posts JSON, an API caller may post an array.
+const toDcvStages = (body) => {
+  if (Array.isArray(body?.dcv_stages)) return body.dcv_stages;
+  if (
+    typeof body?.dcv_stages_json === "string" &&
+    body.dcv_stages_json.trim()
+  ) {
+    try {
+      const parsed = JSON.parse(body.dcv_stages_json);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+      return [];
+    }
+  }
+  return [];
+};
+
 const setNotice = (res, message, sticky = false) => {
   if (!message) return;
   setCookie(
@@ -344,6 +362,10 @@ const createProductionVoucherRouter = ({
         dept_id: req.body?.dept_id,
         labour_id: req.body?.labour_id,
         stage_id: req.body?.stage_id,
+        // A DCV can complete several departments at once, each with its own labour.
+        // dept_id/labour_id above stay as the first pair so single-department posts
+        // (and older API callers) are unchanged.
+        dcv_stages: toDcvStages(req.body),
         plan_kind: req.body?.plan_kind,
         reason_code_id: req.body?.reason_code_id,
         lines: toLines(req.body),

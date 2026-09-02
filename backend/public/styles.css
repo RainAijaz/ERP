@@ -4121,6 +4121,11 @@
       max-width: 32rem;
     }
   }
+  .sm\:flex-1 {
+    @media (width >= 40rem) {
+      flex: 1;
+    }
+  }
   .sm\:flex-none {
     @media (width >= 40rem) {
       flex: none;

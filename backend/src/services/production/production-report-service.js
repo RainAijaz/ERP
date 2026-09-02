@@ -440,6 +440,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     lossLineHasDeptId,
     lossLineHasStageId,
     labourVoucherLineHasDeptId,
+    dcvLineHasDeptId,
   ] = await Promise.all([
     hasTableColumn("voucher_line", "dept_id"),
     hasTableColumn("voucher_line", "stage_id"),
@@ -452,10 +453,16 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     hasTableColumn("abnormal_loss_line", "dept_id"),
     hasTableColumn("abnormal_loss_line", "stage_id"),
     hasTableColumn("labour_voucher_line", "dept_id"),
+    hasTableColumn("dcv_line", "dept_id"),
   ]);
 
+  // A DCV may complete several departments in one voucher, each worked by a different
+  // labour, so its per-line values must outrank the header's single pair in every
+  // coalesce below. Older single-department vouchers have no dcv_line row and keep
+  // resolving through dh.*.
   const deptExprParts = [];
   if (lossLineHasDeptId) deptExprParts.push("alln.dept_id");
+  if (dcvLineHasDeptId) deptExprParts.push("dcvl.dept_id");
   if (dcvHasDeptId) deptExprParts.push("dh.dept_id");
   if (labourVoucherLineHasDeptId) deptExprParts.push("lvl.dept_id");
   if (voucherLineHasDeptId) deptExprParts.push("vl.dept_id");
@@ -465,6 +472,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
 
   const stageExprParts = [];
   if (lossLineHasStageId) stageExprParts.push("alln.stage_id");
+  if (dcvLineHasDeptId) stageExprParts.push("dcvl.stage_id");
   if (dcvHasStageId) stageExprParts.push("dh.stage_id");
   if (productionLineHasStageId) stageExprParts.push("pl.stage_id");
   if (voucherLineHasStageId) stageExprParts.push("vl.stage_id");
@@ -474,6 +482,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
 
   const labourExprParts = [];
   if (voucherLineHasLabourId) labourExprParts.push("vl.labour_id");
+  if (dcvLineHasDeptId) labourExprParts.push("dcvl.labour_id");
   if (dcvHasLabourId) labourExprParts.push("dh.labour_id");
   const labourExpr = labourExprParts.length
     ? `coalesce(${labourExprParts.join(", ")})`
@@ -487,6 +496,13 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
 
   if (dcvHasDeptId || dcvHasStageId || dcvHasLabourId) {
     query = query.leftJoin("erp.dcv_header as dh", "dh.voucher_id", "vh.id");
+  }
+  if (dcvLineHasDeptId) {
+    query = query.leftJoin(
+      "erp.dcv_line as dcvl",
+      "dcvl.voucher_line_id",
+      "vl.id",
+    );
   }
   if (lossLineHasDeptId || lossLineHasStageId) {
     query = query.leftJoin(

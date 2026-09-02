@@ -66,6 +66,13 @@
   const canSave = !isDeletedVoucher && ((selectedVoucher ? canEditNow : canCreateNow));
   const canDeleteVoucher = !isDeletedVoucher && !!selectedVoucher && canDeleteNow;
   const initialRows = selectedVoucher?.lines || [];
+  // Prefer the per-line pairs; fall back to the header pair for a voucher saved before
+  // erp.dcv_line existed, so reopening an old DCV still shows its department and labour.
+  const initialDcvStages = Array.isArray(selectedVoucher?.dcv_stages) && selectedVoucher.dcv_stages.length
+    ? selectedVoucher.dcv_stages
+    : (selectedVoucher?.dept_id
+      ? [{ dept_id: selectedVoucher.dept_id, labour_id: selectedVoucher.labour_id }]
+      : []);
   const consumptionDepartmentDisplay = (() => {
     if (!isConsumption || !selectedVoucher) return "";
     const lines = Array.isArray(selectedVoucher?.lines) ? selectedVoucher.lines : [];
@@ -237,42 +244,28 @@
         <% } %>
 
         <% if (isDcv) { %>
-          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center" data-voucher-grid>
-            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("labour") %></label>
-            <div class="lg:col-span-4">
-              <select
-                name="labour_id"
-                class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"
-                data-dcv-labour
-                data-searchable-select="true"
-                data-searchable-variant="unified"
-                <%= canSave ? '' : 'disabled' %>
-                required
-              >
-                <option value=""><%= t("select_labour") %></option>
-                <% (options.labours || []).forEach((labour) => { %>
-                  <option value="<%= labour.id %>" <%= Number(selectedVoucher?.labour_id || 0) === Number(labour.id) ? "selected" : "" %>><%= labour.name %></option>
-                <% }) %>
-              </select>
-            </div>
-            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("department") %></label>
-            <div class="lg:col-span-4">
-              <select
-                name="dept_id"
-                class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"
-                data-dcv-department
-                data-searchable-select="true"
-                data-searchable-variant="unified"
-                <%= canSave ? '' : 'disabled' %>
-                required
-              >
-                <option value=""><%= t("select_department") %></option>
-                <% (options.departments || []).forEach((department) => { %>
-                  <option value="<%= department.id %>" data-is-production="<%= department?.is_production === true ? '1' : '0' %>" <%= Number(selectedVoucher?.dept_id || 0) === Number(department.id) ? "selected" : "" %>><%= department.name %></option>
-                <% }) %>
-              </select>
+          <%# One voucher can complete several consecutive departments on the same day,
+              each worked by a different labour. Articles are entered once below and the
+              server expands them to one line per (article x department). %>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12" data-voucher-grid>
+            <label class="pt-2 text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("dcv_departments_completed") %></label>
+            <div class="lg:col-span-10">
+              <div data-dcv-stage-list class="space-y-2"></div>
+              <% if (canSave) { %>
+                <button
+                  type="button"
+                  data-dcv-stage-add
+                  class="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >+ <%= t("dcv_add_department") %></button>
+              <% } %>
+              <p data-dcv-stage-hint class="mt-2 hidden text-xs font-medium text-amber-700"></p>
             </div>
           </div>
+          <%# The server reads dcv_stages_json; dept_id/labour_id stay as the first pair
+              so single-department posts and older API callers behave exactly as before. %>
+          <input type="hidden" name="dcv_stages_json" data-dcv-stages-json value="">
+          <input type="hidden" name="dept_id" data-dcv-department value="<%= selectedVoucher?.dept_id || '' %>">
+          <input type="hidden" name="labour_id" data-dcv-labour value="<%= selectedVoucher?.labour_id || '' %>">
         <% } %>
 
         <% if (isLoss) { %>
@@ -410,6 +403,9 @@
     const canSave = <%- JSON.stringify(Boolean(canSave)) %>;
     const options = <%- JSON.stringify(options || {}) %>;
     const initialRows = <%- JSON.stringify(initialRows || []) %>;
+    // Department/labour pairs a saved DCV was posted with. Empty for a new voucher, and
+    // a single pair for anything saved before multi-department DCVs existed.
+    const initialDcvStages = <%- JSON.stringify(initialDcvStages || []) %>;
     const linesJsonInput = form.querySelector("[data-lines-json]");
     const linesBody = form.querySelector("[data-lines-body]");
     const linesHeadRow = form.querySelector("[data-lines-head-row]");
@@ -419,6 +415,10 @@
     const totalDozensInput = form.querySelector("[data-total-dozens]");
     const dcvLabourSelect = form.querySelector("[data-dcv-labour]");
     const dcvDepartmentSelect = form.querySelector("[data-dcv-department]");
+    const dcvStageList = form.querySelector("[data-dcv-stage-list]");
+    const dcvStageAddButton = form.querySelector("[data-dcv-stage-add]");
+    const dcvStageHint = form.querySelector("[data-dcv-stage-hint]");
+    const dcvStagesJsonInput = form.querySelector("[data-dcv-stages-json]");
     const lossTypeHeaderSelect = form.querySelector("[data-loss-type-header]");
     const lossDepartmentHeaderSelect = form.querySelector("[data-loss-department-header]");
     const dcvRatePath = `${<%- JSON.stringify(basePath || "") %>}/dcv-rate`;
@@ -556,6 +556,9 @@
         }))
         .filter((department) => department.id)
       : [];
+    const departmentNameById = new Map(
+      allDepartments.map((department) => [Number(department.id), department.name]),
+    );
     const buildLossDepartmentOptions = (selectedDeptId, { productionOnly = false } = {}) => {
       const normalizedSelected = toPositiveInt(selectedDeptId);
       const base = [`<option value="">${<%- JSON.stringify(t("select_department")) %>}</option>`];
@@ -602,55 +605,145 @@
       input.classList.remove("cursor-not-allowed");
     };
 
-    const getAllowedDepartmentsForLabour = (labourId) => {
-      const normalizedLabourId = toPositiveInt(labourId);
-      if (!normalizedLabourId) return [];
-      const allowedDeptIds = labourDeptMap.get(normalizedLabourId);
-      if (!(allowedDeptIds instanceof Set) || !allowedDeptIds.size) return [];
-      return allDepartments.filter((department) => allowedDeptIds.has(Number(department.id)));
+    // Department and labour names are rendered into option markup below; the EJS side
+    // escapes them, so do the same here.
+    const escapeHtml = (value) =>
+      String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+    // Department is picked first and the labour list narrows to whoever works there --
+    // the order the shop floor actually thinks in ("PACKING finished; Nadeem did it").
+    const getAllowedLaboursForDepartment = (deptId) => {
+      const normalizedDeptId = toPositiveInt(deptId);
+      if (!normalizedDeptId) return [];
+      return (Array.isArray(options.labours) ? options.labours : []).filter((labour) => {
+        const allowedDeptIds = labourDeptMap.get(toPositiveInt(labour?.id));
+        return allowedDeptIds instanceof Set && allowedDeptIds.has(normalizedDeptId);
+      });
     };
 
-    const refreshDcvDepartmentOptions = ({ preserveSelection = true } = {}) => {
-      if (!isDcv) return;
-      if (!(dcvLabourSelect instanceof HTMLSelectElement) || !(dcvDepartmentSelect instanceof HTMLSelectElement)) {
-        return;
-      }
-      const selectedLabourId = toPositiveInt(dcvLabourSelect.value);
-      const previousDepartmentId = toPositiveInt(dcvDepartmentSelect.value);
-      const allowedDepartments = getAllowedDepartmentsForLabour(selectedLabourId);
+    // Source of truth for the department/labour pairs on this voucher. One pair behaves
+    // exactly like the old single-department DCV.
+    const dcvStagePairs = [];
+    // Row indexes whose per-department rate split is expanded.
+    const dcvOpenRateBreakdowns = new Set();
 
-      const optionsHtml = [`<option value="">${<%- JSON.stringify(t("select_department")) %>}</option>`]
-        .concat(
-          allowedDepartments.map(
+    const getCompleteDcvPairs = () =>
+      dcvStagePairs.filter(
+        (pair) => toPositiveInt(pair?.dept_id) && toPositiveInt(pair?.labour_id),
+      );
+
+    const renderDcvStagePairs = () => {
+      if (!isDcv || !dcvStageList) return;
+      if (!dcvStagePairs.length) dcvStagePairs.push({ dept_id: null, labour_id: null });
+
+      const takenDeptIds = new Set(
+        dcvStagePairs.map((pair) => toPositiveInt(pair?.dept_id)).filter(Boolean),
+      );
+
+      dcvStageList.innerHTML = dcvStagePairs
+        .map((pair, index) => {
+          const deptId = toPositiveInt(pair?.dept_id);
+          const labourId = toPositiveInt(pair?.labour_id);
+          // A department already used on another row cannot be picked twice.
+          const departmentChoices = allDepartments.filter(
             (department) =>
-              `<option value="${department.id}">${department.name}</option>`,
-          ),
+              department.isProduction &&
+              (Number(department.id) === Number(deptId) || !takenDeptIds.has(Number(department.id))),
+          );
+          const labourChoices = getAllowedLaboursForDepartment(deptId);
+          const departmentOptions = [`<option value="">${<%- JSON.stringify(t("select_department")) %>}</option>`]
+            .concat(
+              departmentChoices.map(
+                (department) =>
+                  `<option value="${department.id}" ${Number(department.id) === Number(deptId) ? "selected" : ""}>${escapeHtml(department.name)}</option>`,
+              ),
+            )
+            .join("");
+          const labourOptions = [`<option value="">${<%- JSON.stringify(t("select_labour")) %>}</option>`]
+            .concat(
+              labourChoices.map(
+                (labour) =>
+                  `<option value="${labour.id}" ${Number(labour.id) === Number(labourId) ? "selected" : ""}>${escapeHtml(String(labour.name || ""))}</option>`,
+              ),
+            )
+            .join("");
+          const removeButton =
+            canSave && dcvStagePairs.length > 1
+              ? `<button type="button" data-dcv-stage-remove data-stage-index="${index}" class="shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50" aria-label="${<%- JSON.stringify(t("remove")) %>}">&times;</button>`
+              : "";
+          return `
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center" data-dcv-stage-row data-stage-index="${index}">
+              <select data-stage-field="dept_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm sm:flex-1" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
+                ${departmentOptions}
+              </select>
+              <span class="hidden shrink-0 text-slate-400 sm:inline">&rarr;</span>
+              <select data-stage-field="labour_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm sm:flex-1" data-searchable-select="true" data-searchable-variant="unified" ${canSave && deptId ? "" : "disabled"}>
+                ${labourOptions}
+              </select>
+              ${removeButton}
+            </div>
+          `;
+        })
+        .join("");
+
+      if (typeof window.initSearchableSelects === "function") {
+        Array.from(dcvStageList.querySelectorAll("[data-dcv-stage-row]")).forEach((rowEl) => {
+          window.initSearchableSelects(rowEl);
+        });
+      }
+      syncDcvStageHiddenInputs();
+    };
+
+    // dept_id/labour_id carry the first pair so the existing required-field handling and
+    // any older consumer of the payload keep working.
+    const syncDcvStageHiddenInputs = () => {
+      if (!isDcv) return;
+      const completePairs = getCompleteDcvPairs();
+      const [firstPair] = completePairs;
+      if (dcvDepartmentSelect) dcvDepartmentSelect.value = firstPair ? String(firstPair.dept_id) : "";
+      if (dcvLabourSelect) dcvLabourSelect.value = firstPair ? String(firstPair.labour_id) : "";
+      if (dcvStagesJsonInput) {
+        dcvStagesJsonInput.value = completePairs.length
+          ? JSON.stringify(
+              completePairs.map((pair) => ({
+                dept_id: Number(pair.dept_id),
+                labour_id: Number(pair.labour_id),
+              })),
+            )
+          : "";
+      }
+    };
+
+    // With several departments on one voucher the Rate column shows their sum, which on
+    // its own is an unexplained number. This makes the split visible without widening
+    // the grid by a column per department.
+    const buildDcvRateBreakdownHtml = (row = {}, rowIndex = 0) => {
+      if (!isDcv) return "";
+      const breakdown = Array.isArray(row?.rate_breakdown) ? row.rate_breakdown : [];
+      if (breakdown.length < 2) return "";
+      const isOpen = dcvOpenRateBreakdowns.has(Number(rowIndex));
+      const rowsHtml = breakdown
+        .map(
+          (entry) =>
+            `<div class="flex justify-between gap-2"><span class="truncate">${escapeHtml(entry.dept_name || "")}</span><span class="tabular-nums">${toNum(entry.rate, 4)}</span></div>`,
         )
         .join("");
-      dcvDepartmentSelect.innerHTML = optionsHtml;
+      return `
+        <button type="button" data-dcv-rate-toggle data-row-index="${rowIndex}" class="mt-1 w-full text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400 hover:text-slate-600">${breakdown.length} ${escapeHtml(<%- JSON.stringify(t("departments")) %>)} ${isOpen ? "&#9652;" : "&#9662;"}</button>
+        <div class="mt-1 space-y-0.5 rounded-md bg-slate-50 px-2 py-1 text-[10px] text-slate-600 ${isOpen ? "" : "hidden"}" data-dcv-rate-breakdown data-row-index="${rowIndex}">${rowsHtml}</div>
+      `;
+    };
 
-      if (preserveSelection && previousDepartmentId) {
-        const stillAllowed = allowedDepartments.some(
-          (department) => Number(department.id) === Number(previousDepartmentId),
-        );
-        if (stillAllowed) {
-          dcvDepartmentSelect.value = String(previousDepartmentId);
-        }
-      }
-
-      if (!dcvDepartmentSelect.value && canSave && allowedDepartments.length === 1) {
-        dcvDepartmentSelect.value = String(allowedDepartments[0].id);
-      }
-
-      const shouldDisable = !canSave || !selectedLabourId || allowedDepartments.length === 0;
-      if (shouldDisable) {
-        dcvDepartmentSelect.setAttribute("disabled", "disabled");
-      } else {
-        dcvDepartmentSelect.removeAttribute("disabled");
-      }
-      dcvDepartmentSelect.dispatchEvent(new Event("change", { bubbles: true }));
-      syncSearchableReadonlyState(dcvDepartmentSelect);
-      syncSearchableReadonlyState(dcvLabourSelect);
+    const setDcvStageHint = (message) => {
+      if (!dcvStageHint) return;
+      const text = String(message || "").trim();
+      dcvStageHint.textContent = text;
+      dcvStageHint.classList.toggle("hidden", !text);
     };
 
     const makeDcvRateCacheKey = ({ labourId, deptId, skuId, unit }) =>
@@ -713,9 +806,9 @@
 
     const refreshDcvRatedSkuFilter = async ({ clearUnrated = false } = {}) => {
       if (!isDcv) return;
-      const labourId = toPositiveInt(dcvLabourSelect?.value);
-      const deptId = toPositiveInt(dcvDepartmentSelect?.value);
-      if (!labourId) {
+      const pairs = getCompleteDcvPairs();
+      if (!pairs.length) {
+        setDcvStageHint("");
         if (dcvRatedSkuIds === null) return;
         dcvRatedSkuIds = null;
         syncAllRowsFromDom();
@@ -723,9 +816,30 @@
         return;
       }
 
+      // Every selected pair must have a rate for an article, or the save fails on that
+      // pair. Offering only the intersection means a voucher can never be built that is
+      // guaranteed to be rejected.
       let ratedSkuIds = null;
+      let narrowedByDeptName = "";
       try {
-        ratedSkuIds = await fetchDcvRatedSkuIds({ labourId, deptId });
+        for (const pair of pairs) {
+          // eslint-disable-next-line no-await-in-loop
+          const pairSkuIds = await fetchDcvRatedSkuIds({
+            labourId: pair.labour_id,
+            deptId: pair.dept_id,
+          });
+          if (!(pairSkuIds instanceof Set)) continue;
+          if (ratedSkuIds === null) {
+            ratedSkuIds = new Set(pairSkuIds);
+            narrowedByDeptName = departmentNameById.get(Number(pair.dept_id)) || "";
+            continue;
+          }
+          const before = ratedSkuIds.size;
+          ratedSkuIds = new Set([...ratedSkuIds].filter((skuId) => pairSkuIds.has(skuId)));
+          if (ratedSkuIds.size < before) {
+            narrowedByDeptName = departmentNameById.get(Number(pair.dept_id)) || "";
+          }
+        }
       } catch (err) {
         // Leave the dropdown unfiltered rather than hiding every article
         // because one lookup failed.
@@ -733,6 +847,16 @@
         return;
       }
       if (!(ratedSkuIds instanceof Set)) return;
+
+      // An empty list is otherwise a dead end -- say which department emptied it.
+      setDcvStageHint(
+        ratedSkuIds.size === 0 && narrowedByDeptName
+          ? String(<%- JSON.stringify(t("dcv_no_rated_articles_for_department")) %>).replace(
+              "{department}",
+              narrowedByDeptName,
+            )
+          : "",
+      );
 
       dcvRatedSkuIds = ratedSkuIds;
       syncAllRowsFromDom();
@@ -1279,7 +1403,7 @@
             ${stageCellHtml}
             <td class="border-b border-slate-200 px-2 py-2"><select data-row-field="${secondFieldName}" data-field="${secondFieldName}" data-row-index="${rowIndex}" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"} ${secondFieldDisabled}>${secondOptionsHtml}</select></td>
             <td class="border-b border-slate-200 px-2 py-2"><input data-row-field="qty" data-field="qty" data-row-index="${rowIndex}" type="number" min="0" step="${qtyStep}" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" value="${row.qty || 0}" ${canSave ? "" : "readonly"}></td>
-            <td class="border-b border-slate-200 px-2 py-2"><input data-row-field="rate" data-field="rate" data-row-index="${rowIndex}" type="number" min="0" step="0.0001" class="h-8 w-full rounded-lg border border-slate-300 ${isDcv ? "bg-slate-100" : "bg-white"} px-2 text-right text-xs" value="${row.rate || 0}" ${(canSave && !isDcv) ? "" : "readonly"}></td>
+            <td class="border-b border-slate-200 px-2 py-2"><input data-row-field="rate" data-field="rate" data-row-index="${rowIndex}" type="number" min="0" step="0.0001" class="h-8 w-full rounded-lg border border-slate-300 ${isDcv ? "bg-slate-100" : "bg-white"} px-2 text-right text-xs" value="${row.rate || 0}" ${(canSave && !isDcv) ? "" : "readonly"}>${buildDcvRateBreakdownHtml(row, rowIndex)}</td>
             <td class="border-b border-slate-200 px-2 py-2"><input data-row-field="amount" data-field="amount" data-row-index="${rowIndex}" type="number" min="0" step="0.01" class="h-8 w-full rounded-lg border border-slate-300 bg-slate-50 px-2 text-right text-xs text-slate-700" value="${row.amount || 0}" readonly></td>
             ${availabilityCellHtml}
             <td class="border-b border-slate-200 px-2 py-2 text-center"><button type="button" data-remove-row="${rowIndex}" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600 ${canSave ? "" : "opacity-40 pointer-events-none"}" aria-label="${<%- JSON.stringify(t("delete")) %>}" title="${<%- JSON.stringify(t("delete")) %>}"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button></td>
@@ -1436,23 +1560,49 @@
       const rowIndex = Number(rowEl.getAttribute("data-row-index") || -1);
       if (rowIndex < 0 || !rowsState[rowIndex]) return;
 
-      const labourId = toPositiveInt(dcvLabourSelect?.value);
-      const deptId = toPositiveInt(dcvDepartmentSelect?.value);
+      const pairs = getCompleteDcvPairs();
       const skuId = toPositiveInt(rowEl.querySelector('[data-field="sku_id"]')?.value);
       const unit = String(rowEl.querySelector('[data-field="unit"]')?.value || rowsState[rowIndex].unit || defaultDcvUnitCode || "PAIR").toUpperCase();
-      if (!labourId || !deptId || !skuId || !unit) return;
+      if (!pairs.length || !skuId || !unit) return;
 
       try {
-        const resolved = await fetchDcvRate({
-          labourId,
-          deptId,
-          skuId,
-          unit,
-        });
-        const rate = toNum(resolved?.rate, 0);
+        // The article is done once per selected department, so the rate shown is the
+        // sum of the per-department rates and the amount covers the whole voucher.
+        const perDepartmentRates = [];
+        for (const pair of pairs) {
+          // eslint-disable-next-line no-await-in-loop
+          const resolved = await fetchDcvRate({
+            labourId: pair.labour_id,
+            deptId: pair.dept_id,
+            skuId,
+            unit,
+          });
+          perDepartmentRates.push({
+            dept_id: Number(pair.dept_id),
+            dept_name: departmentNameById.get(Number(pair.dept_id)) || "",
+            labour_id: Number(pair.labour_id),
+            rate: toNum(resolved?.rate, 0),
+          });
+        }
+        const rate = toNum(
+          perDepartmentRates.reduce((sum, row) => sum + toNum(row.rate, 0), 0),
+          4,
+        );
+        rowsState[rowIndex].rate_breakdown = perDepartmentRates;
         const rateInput = rowEl.querySelector('[data-field="rate"]');
         if (rateInput instanceof HTMLInputElement) {
           rateInput.value = String(rate);
+        }
+        // Rates resolve after the grid has rendered, so refresh just this cell's
+        // per-department split rather than re-rendering every row.
+        const rateCell = rateInput?.closest("td");
+        if (rateCell) {
+          rateCell.querySelector("[data-dcv-rate-toggle]")?.remove();
+          rateCell.querySelector("[data-dcv-rate-breakdown]")?.remove();
+          rateCell.insertAdjacentHTML(
+            "beforeend",
+            buildDcvRateBreakdownHtml(rowsState[rowIndex], rowIndex),
+          );
         }
         rowsState[rowIndex].rate = rate;
         rowsState[rowIndex].amount = toAmount(toNum(rowsState[rowIndex].qty, 0) * rate);
@@ -1838,23 +1988,59 @@
       syncSearchableReadonlyState(lossTypeHeaderSelect);
     };
     syncLossHeaderState();
-    refreshDcvDepartmentOptions({ preserveSelection: true });
     if (isDcv) {
+      // Reopening a saved voucher restores the pairs it was posted with; a new one
+      // starts with a single empty pair, which is the old single-department form.
+      initialDcvStages.forEach((pair) => {
+        const deptId = toPositiveInt(pair?.dept_id);
+        if (!deptId) return;
+        dcvStagePairs.push({
+          dept_id: deptId,
+          labour_id: toPositiveInt(pair?.labour_id),
+        });
+      });
+      renderDcvStagePairs();
       window.setTimeout(() => {
         // An already-saved voucher keeps its lines, so never clear here.
         refreshDcvLineDependencies({ clearUnrated: false });
       }, 0);
     }
 
-    if (isDcv && dcvLabourSelect instanceof HTMLSelectElement) {
-      dcvLabourSelect.addEventListener("change", async () => {
-        refreshDcvDepartmentOptions({ preserveSelection: false });
+    if (isDcv && dcvStageList) {
+      dcvStageList.addEventListener("change", async (event) => {
+        const field = event.target?.getAttribute?.("data-stage-field");
+        if (!field) return;
+        const index = Number(event.target.getAttribute("data-stage-index") || -1);
+        if (index < 0 || !dcvStagePairs[index]) return;
+        const value = toPositiveInt(event.target.value);
+        if (field === "dept_id") {
+          dcvStagePairs[index].dept_id = value;
+          // Whoever was selected may not work in the newly chosen department.
+          const stillAllowed = getAllowedLaboursForDepartment(value).some(
+            (labour) => Number(labour.id) === Number(dcvStagePairs[index].labour_id),
+          );
+          if (!stillAllowed) dcvStagePairs[index].labour_id = null;
+        } else if (field === "labour_id") {
+          dcvStagePairs[index].labour_id = value;
+        }
+        renderDcvStagePairs();
+        await refreshDcvLineDependencies({ clearUnrated: true });
+      });
+
+      dcvStageList.addEventListener("click", async (event) => {
+        const removeButton = event.target?.closest?.("[data-dcv-stage-remove]");
+        if (!removeButton) return;
+        const index = Number(removeButton.getAttribute("data-stage-index") || -1);
+        if (index < 0 || dcvStagePairs.length < 2) return;
+        dcvStagePairs.splice(index, 1);
+        renderDcvStagePairs();
         await refreshDcvLineDependencies({ clearUnrated: true });
       });
     }
-    if (isDcv && dcvDepartmentSelect instanceof HTMLSelectElement) {
-      dcvDepartmentSelect.addEventListener("change", async () => {
-        await refreshDcvLineDependencies({ clearUnrated: true });
+    if (isDcv && dcvStageAddButton) {
+      dcvStageAddButton.addEventListener("click", () => {
+        dcvStagePairs.push({ dept_id: null, labour_id: null });
+        renderDcvStagePairs();
       });
     }
     if (isDcv && voucherDateInput instanceof HTMLInputElement) {
@@ -1890,6 +2076,21 @@
     });
 
     linesBody.addEventListener("click", (event) => {
+      const rateToggle = event.target.closest("[data-dcv-rate-toggle]");
+      if (rateToggle && isDcv) {
+        const rowIndex = Number(rateToggle.getAttribute("data-row-index") || -1);
+        if (rowIndex >= 0) {
+          if (dcvOpenRateBreakdowns.has(rowIndex)) dcvOpenRateBreakdowns.delete(rowIndex);
+          else dcvOpenRateBreakdowns.add(rowIndex);
+          const panel = linesBody.querySelector(`[data-dcv-rate-breakdown][data-row-index="${rowIndex}"]`);
+          panel?.classList.toggle("hidden", !dcvOpenRateBreakdowns.has(rowIndex));
+          rateToggle.innerHTML = rateToggle.innerHTML.replace(
+            dcvOpenRateBreakdowns.has(rowIndex) ? "▾" : "▴",
+            dcvOpenRateBreakdowns.has(rowIndex) ? "▴" : "▾",
+          );
+        }
+        return;
+      }
       const availabilityButton = event.target.closest("[data-dcv-availability-btn]");
       if (availabilityButton && isDcv) {
         const rowEl = availabilityButton.closest("tr[data-row-index]");
@@ -1982,15 +2183,25 @@
         return;
       }
       if (isDcv) {
-        const labourId = toPositiveInt(dcvLabourSelect?.value);
-        const departmentId = toPositiveInt(dcvDepartmentSelect?.value);
-        if (!labourId) {
-          showError(`${<%- JSON.stringify(t("labour")) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
+        syncDcvStageHiddenInputs();
+        const completePairs = getCompleteDcvPairs();
+        if (!completePairs.length) {
+          showError(`${<%- JSON.stringify(t("department")) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
           event.preventDefault();
           return;
         }
-        if (!departmentId) {
-          showError(`${<%- JSON.stringify(t("department")) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
+        // A department with nobody against it has no one to pay. Blocking here is
+        // clearer than letting the server reject the whole voucher.
+        const incompletePair = dcvStagePairs.find(
+          (pair) => toPositiveInt(pair?.dept_id) && !toPositiveInt(pair?.labour_id),
+        );
+        if (incompletePair) {
+          showError(
+            String(<%- JSON.stringify(t("dcv_labour_required_for_department")) %>).replace(
+              "{department}",
+              departmentNameById.get(Number(incompletePair.dept_id)) || "",
+            ),
+          );
           event.preventDefault();
           return;
         }
@@ -2001,7 +2212,11 @@
         event.preventDefault();
         return;
       }
-      linesJsonInput.value = JSON.stringify(validatedLines);
+      // rate_breakdown is display-only state for the expander; the server resolves each
+      // department's rate itself, so keep it out of the payload.
+      linesJsonInput.value = JSON.stringify(
+        validatedLines.map(({ rate_breakdown, ...line }) => line),
+      );
     });
 
     form.querySelector("[data-load-voucher]")?.addEventListener("click", () => {

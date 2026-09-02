@@ -1375,6 +1375,12 @@ const translations = {
     select_department: "Select Department",
     select_labour: "Select Labour",
     select_sku: "Select SKU",
+    dcv_departments_completed: "Departments Completed",
+    dcv_add_department: "Add department",
+    dcv_labour_required_for_department:
+      "Select a labour for {department}, or remove that department.",
+    dcv_no_rated_articles_for_department:
+      "No articles are rated for every selected department. Check the labour rates for {department}.",
     cash_account_required: "Cash account is required for cash purchase.",
     return_reason_damaged: "Damaged",
     return_reason_wrong_item: "Wrong Item",
@@ -3434,6 +3440,12 @@ translations.ur = {
   select_department: "شعبہ منتخب کریں",
   select_labour: "لیبر منتخب کریں",
   select_sku: "SKU منتخب کریں",
+  dcv_departments_completed: "مکمل شدہ شعبے",
+  dcv_add_department: "شعبہ شامل کریں",
+  dcv_labour_required_for_department:
+    "{department} کے لیے لیبر منتخب کریں، ورنہ یہ شعبہ ہٹا دیں۔",
+  dcv_no_rated_articles_for_department:
+    "کوئی آرٹیکل ایسا نہیں جس کے ریٹ تمام منتخب شعبوں کے لیے موجود ہوں۔ {department} کے لیبر ریٹ چیک کریں۔",
   abnormal_loss_voucher: "غیر معمولی نقصان ووچر",
   finished_production_voucher: "فنشڈ پروڈکشن ووچر",
   semi_finished_production_voucher: "سیمی فنشڈ پروڈکشن ووچر",

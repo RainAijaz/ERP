@@ -70,6 +70,7 @@ let approvalRequestHasVoucherTypeCodeColumn;
 let productionStagesTableSupport;
 let productionLineStageColumnSupport;
 let dcvHeaderStageColumnSupport;
+let dcvLineTableSupport;
 let abnormalLossStageColumnSupport;
 let bomStageRoutingTableSupport;
 let bomSfgLineTableSupport;
@@ -347,6 +348,12 @@ const hasDcvHeaderStageColumnTx = async (trx) => {
     "stage_id",
   );
   return dcvHeaderStageColumnSupport;
+};
+
+const hasDcvLineTableTx = async (trx) => {
+  if (typeof dcvLineTableSupport === "boolean") return dcvLineTableSupport;
+  dcvLineTableSupport = await tableExistsTx(trx, "erp.dcv_line");
+  return dcvLineTableSupport;
 };
 
 const hasAbnormalLossStageColumnTx = async (trx) => {
@@ -1389,6 +1396,135 @@ const validateDepartmentForLabourTx = async ({
   return deptId;
 };
 
+const validateDcvStagePairsTx = async ({
+  trx,
+  req,
+  rawStages,
+  fallbackDeptId,
+  fallbackLabourId,
+  skuIds = [],
+}) => {
+  const supportsDcvStage = await hasDcvHeaderStageColumnTx(trx);
+  const rawList = Array.isArray(rawStages) ? rawStages : [];
+
+  // No pairs sent means a single-department post from an older form or an API caller:
+  // fall back to the flat dept_id/labour_id so nothing that works today breaks.
+  const candidates = rawList.length
+    ? rawList
+    : [{ dept_id: fallbackDeptId, labour_id: fallbackLabourId }];
+
+  const pairs = [];
+  const seenDeptIds = new Set();
+  for (const candidate of candidates) {
+    const rawDeptId = toPositiveInt(
+      candidate?.dept_id ?? candidate?.department_id,
+    );
+    const rawLabourId = toPositiveInt(candidate?.labour_id);
+    // A department with nobody against it has no one to pay, so it cannot post.
+    if (!rawDeptId) throw new HttpError(400, "Department is required");
+    if (!rawLabourId) {
+      throw new HttpError(
+        400,
+        "Select a labour for every department on this voucher",
+      );
+    }
+
+    const labourId = await validateLabourTx({
+      trx,
+      req,
+      labourId: rawLabourId,
+      allowNull: false,
+    });
+    const deptId = await validateDepartmentForLabourTx({
+      trx,
+      departmentId: rawDeptId,
+      labourId,
+      requireProduction: true,
+    });
+    if (seenDeptIds.has(Number(deptId))) {
+      throw new HttpError(
+        400,
+        "The same department is selected more than once on this voucher",
+      );
+    }
+    seenDeptIds.add(Number(deptId));
+
+    const requestedStageId = toPositiveInt(
+      candidate?.stage_id ?? candidate?.stageId,
+    );
+    const stageId = requestedStageId
+      ? await validateStageTx({
+          trx,
+          stageId: requestedStageId,
+          departmentId: deptId,
+          allowNull: false,
+        })
+      : await resolveActiveStageForDepartmentTx({
+          trx,
+          departmentId: deptId,
+          allowNull: !supportsDcvStage,
+        });
+
+    pairs.push({ dept_id: deptId, labour_id: labourId, stage_id: stageId });
+  }
+
+  if (pairs.length < 2) return pairs;
+
+  const sequenceByStageId = await loadBomStageSequenceForSkusTx({
+    trx,
+    skuIds,
+    stageIds: pairs.map((pair) => pair.stage_id),
+  });
+  // Stages absent from the routing sort last and keep their entered order; the
+  // per-line "not mapped in approved BOM" check reports them properly anyway.
+  return [...pairs].sort((a, b) => {
+    const seqA = sequenceByStageId.get(Number(a.stage_id));
+    const seqB = sequenceByStageId.get(Number(b.stage_id));
+    if (seqA == null && seqB == null) return 0;
+    if (seqA == null) return 1;
+    if (seqB == null) return -1;
+    return seqA - seqB;
+  });
+};
+
+// Lowest routing sequence each stage holds across the approved BOMs of the SKUs being
+// posted. Articles on one voucher normally share a routing; taking the minimum keeps the
+// order stable and sensible when they do not.
+
+const loadBomStageSequenceForSkusTx = async ({
+  trx,
+  skuIds = [],
+  stageIds = [],
+}) => {
+  const normalizedSkuIds = [
+    ...new Set((skuIds || []).map((id) => toPositiveInt(id)).filter(Boolean)),
+  ];
+  const normalizedStageIds = [
+    ...new Set((stageIds || []).map((id) => toPositiveInt(id)).filter(Boolean)),
+  ];
+  if (!normalizedSkuIds.length || !normalizedStageIds.length) return new Map();
+  if (!(await hasBomStageRoutingTableTx(trx))) return new Map();
+
+  const rows = await trx("erp.bom_stage_routing as bsr")
+    .join("erp.bom_header as bh", "bh.id", "bsr.bom_id")
+    .join("erp.items as i", "i.id", "bh.item_id")
+    .join("erp.variants as v", "v.item_id", "i.id")
+    .join("erp.skus as s", "s.variant_id", "v.id")
+    .select("bsr.stage_id")
+    .min({ sequence_no: "bsr.sequence_no" })
+    .where("bh.status", "APPROVED")
+    .whereIn("s.id", normalizedSkuIds)
+    .whereIn("bsr.stage_id", normalizedStageIds)
+    .groupBy("bsr.stage_id");
+
+  return new Map(
+    (rows || []).map((row) => [
+      Number(row.stage_id),
+      Number(row.sequence_no || 0),
+    ]),
+  );
+};
+
 const validateReasonCodeTx = async ({ trx, reasonCodeId, voucherTypeCode }) => {
   const normalizedReasonCodeId = toPositiveInt(reasonCodeId);
   if (!normalizedReasonCodeId) return null;
@@ -1514,14 +1650,40 @@ const validateProductionOrPlanLinesTx = async ({
   });
 };
 
+const collapseDcvEntryRows = (rawLines = []) => {
+  const lines = Array.isArray(rawLines) ? rawLines : [];
+  const seenEntryRows = new Set();
+  const collapsed = [];
+  for (const line of lines) {
+    const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
+    const entryRow = toPositiveInt(meta.dcv_entry_row ?? line?.dcv_entry_row);
+    if (!entryRow) {
+      collapsed.push(line);
+      continue;
+    }
+    if (seenEntryRows.has(entryRow)) continue;
+    seenEntryRows.add(entryRow);
+    collapsed.push(line);
+  }
+  return collapsed;
+};
+
+// Articles are entered ONCE in the form and expanded here: one voucher line per
+// (article x department), each priced at its own department's labour rate. Keeping the
+// expansion on real voucher lines means every downstream total, WIP cost fold and
+// rollback keeps working per department with no special-casing.
+
 const validateDcvLinesTx = async ({
   trx,
   req,
-  labourId,
-  deptId,
+  stages = [],
   rawLines = [],
   dcvUnits = [],
 }) => {
+  const stagePairs = Array.isArray(stages) ? stages.filter(Boolean) : [];
+  if (!stagePairs.length) {
+    throw new HttpError(400, "Department and labour are required");
+  }
   const lines = Array.isArray(rawLines) ? rawLines : [];
   if (!lines.length) throw new HttpError(400, "Voucher lines are required");
 
@@ -1558,47 +1720,67 @@ const validateDcvLinesTx = async ({
   }
 
   const t = req?.res?.locals?.t;
+  const departmentMap = await loadProductionDepartmentMapTx({
+    trx,
+    departmentIds: stagePairs.map((stage) => stage.dept_id),
+  });
+  const departmentLabel = (deptId) =>
+    String(departmentMap.get(Number(deptId))?.name || `#${deptId}`);
 
-  return Promise.all(
-    lines.map(async (line, index) => {
-      const lineNo = Number(index + 1);
-      const skuId = toPositiveInt(line?.sku_id || line?.skuId);
-      const sku = skuMap.get(Number(skuId));
-      if (!sku) throw new HttpError(400, `Line ${lineNo}: SKU is invalid`);
+  // Pass 1: validate each article the user actually typed. Errors here quote the row
+  // number the user can see, and fire once rather than once per department.
+  const articles = lines.map((line, index) => {
+    const rowNo = Number(index + 1);
+    const skuId = toPositiveInt(line?.sku_id || line?.skuId);
+    const sku = skuMap.get(Number(skuId));
+    if (!sku) throw new HttpError(400, `Line ${rowNo}: SKU is invalid`);
 
-      const requestedUnitCode =
-        String(line?.unit || line?.entry_unit || statusToUnit(line?.status))
-          .trim()
-          .toUpperCase() || "PAIR";
-      const resolvedUnit = unitByCode.get(requestedUnitCode);
-      if (!resolvedUnit) {
-        throw new HttpError(
-          400,
-          `Line ${lineNo}: selected unit is invalid for Pair conversion`,
-        );
-      }
+    const requestedUnitCode =
+      String(line?.unit || line?.entry_unit || statusToUnit(line?.status))
+        .trim()
+        .toUpperCase() || "PAIR";
+    const resolvedUnit = unitByCode.get(requestedUnitCode);
+    if (!resolvedUnit) {
+      throw new HttpError(
+        400,
+        `Line ${rowNo}: selected unit is invalid for Pair conversion`,
+      );
+    }
 
-      const qty = toPositiveNumber(line?.qty, 3);
-      if (!qty)
-        throw new HttpError(
-          400,
-          `Line ${lineNo}: quantity must be greater than zero`,
-        );
+    const qty = toPositiveNumber(line?.qty, 3);
+    if (!qty)
+      throw new HttpError(
+        400,
+        `Line ${rowNo}: quantity must be greater than zero`,
+      );
 
-      const rawPairs = Number(qty) * Number(resolvedUnit.factorToPair);
-      const totalPairs = Number(rawPairs.toFixed(3));
-      if (!Number.isInteger(totalPairs)) {
-        throw new HttpError(
-          400,
-          `Line ${lineNo}: quantity must convert to whole pairs`,
-        );
-      }
+    const rawPairs = Number(qty) * Number(resolvedUnit.factorToPair);
+    const totalPairs = Number(rawPairs.toFixed(3));
+    if (!Number.isInteger(totalPairs)) {
+      throw new HttpError(
+        400,
+        `Line ${rowNo}: quantity must convert to whole pairs`,
+      );
+    }
 
+    return { rowNo, skuId: Number(skuId), sku, resolvedUnit, qty, totalPairs };
+  });
+
+  // Pass 2: price each article once per department. Ordered department-major so the
+  // saved line order matches the order the departments are posted in.
+  const combinations = [];
+  stagePairs.forEach((stage) => {
+    articles.forEach((article) => combinations.push({ stage, article }));
+  });
+
+  const expanded = await Promise.all(
+    combinations.map(async ({ stage, article }) => {
+      const { rowNo, skuId, sku, resolvedUnit, qty, totalPairs } = article;
       const resolvedRatePayload = await resolveDcvRateForSku({
         req,
-        labourId,
-        deptId,
-        skuId: Number(skuId),
+        labourId: stage.labour_id,
+        deptId: stage.dept_id,
+        skuId,
         unitCode: resolvedUnit.code,
       });
       if (
@@ -1606,17 +1788,25 @@ const validateDcvLinesTx = async ({
         Number(resolvedRatePayload?.rate || 0) <= 0
       ) {
         const skuLabel = buildSkuDisplayLabel(sku);
-        const fallback = `Line ${lineNo}: Labour rate is missing for ${skuLabel}. Please add Labour+Department+SKU rate in Labour Rates.`;
+        const fallback = `Line ${rowNo}: Labour rate is missing for ${skuLabel}. Please add Labour+Department+SKU rate in Labour Rates.`;
         const localizedTemplate =
           typeof t === "function"
             ? t("error_dcv_missing_labour_rate_for_sku")
             : "";
-        const message = String(localizedTemplate || "").trim()
+        const baseMessage = String(localizedTemplate || "").trim()
           ? String(localizedTemplate)
-              .replace("{line}", String(lineNo))
+              .replace("{line}", String(rowNo))
               .replace("{sku}", String(skuLabel))
           : fallback;
-        throw new HttpError(400, message);
+        // Say WHICH department is missing the rate -- with several on one voucher,
+        // the message is useless without it.
+        const departmentWord =
+          (typeof t === "function" && String(t("department") || "").trim()) ||
+          "Department";
+        throw new HttpError(
+          400,
+          `${baseMessage} (${departmentWord}: ${departmentLabel(stage.dept_id)})`,
+        );
       }
       const rate = Number(resolvedRatePayload?.rate || 0);
       const safeRate =
@@ -1629,7 +1819,6 @@ const validateDcvLinesTx = async ({
         : "LOOSE";
 
       return {
-        line_no: lineNo,
         line_kind: "SKU",
         sku_id: Number(skuId),
         uom_id: Number(resolvedUnit.id),
@@ -1640,14 +1829,26 @@ const validateDcvLinesTx = async ({
           unit: resolvedUnit.code,
           status: normalizedStatus,
           total_pairs: Number(totalPairs),
+          // The article row the user typed, so the form can fold the expanded
+          // lines back into one row per article when the voucher is reopened.
+          dcv_entry_row: rowNo,
         },
         unit: resolvedUnit.code,
         status: normalizedStatus,
         is_packed: normalizedStatus === "PACKED",
         total_pairs: Number(totalPairs),
+        // Deliberately NOT named labour_id: insertVoucherLinesTx copies a line's
+        // labour_id straight into voucher_line, and a SKU line that also carries one
+        // violates CHECK (num_nonnulls(...) = 1). These are read by
+        // upsertVoucherExtensionsTx and written to erp.dcv_line instead.
+        dcv_dept_id: Number(stage.dept_id),
+        dcv_labour_id: Number(stage.labour_id),
+        dcv_stage_id: toPositiveInt(stage.stage_id),
       };
     }),
   );
+
+  return expanded.map((line, index) => ({ ...line, line_no: index + 1 }));
 };
 
 const validateDcvStageFlowTx = async ({
@@ -2457,43 +2658,35 @@ const normalizeAndValidatePayloadTx = async ({
   }
 
   if (voucherTypeCode === PRODUCTION_VOUCHER_TYPES.departmentCompletion) {
-    const supportsDcvStage = await hasDcvHeaderStageColumnTx(trx);
     const dcvUnits = await loadPairConvertibleUomOptionsTx(trx);
-    const labourId = await validateLabourTx({
+    const dcvRawLines = collapseDcvEntryRows(payload?.lines);
+    const dcvStages = await validateDcvStagePairsTx({
       trx,
       req,
-      labourId: payload?.labour_id,
-      allowNull: false,
+      rawStages: payload?.dcv_stages,
+      fallbackDeptId: payload?.dept_id || payload?.department_id,
+      fallbackLabourId: payload?.labour_id,
+      skuIds: dcvRawLines
+        .map((line) => toPositiveInt(line?.sku_id || line?.skuId))
+        .filter(Boolean),
     });
-    const deptId = await validateDepartmentForLabourTx({
-      trx,
-      departmentId: payload?.dept_id || payload?.department_id,
-      labourId,
-      requireProduction: true,
-    });
-    const requestedStageId = toPositiveInt(
-      payload?.stage_id || payload?.stageId,
-    );
-    const stageId = requestedStageId
-      ? await validateStageTx({
-          trx,
-          stageId: requestedStageId,
-          departmentId: deptId,
-          allowNull: false,
-        })
-      : await resolveActiveStageForDepartmentTx({
-          trx,
-          departmentId: deptId,
-          allowNull: !supportsDcvStage,
-        });
+    // dcv_header keeps the first pair in routing order, so every existing
+    // single-department query and report reads exactly as it does today.
+    const [primaryStage] = dcvStages;
+    const deptId = primaryStage.dept_id;
+    const labourId = primaryStage.labour_id;
+    const stageId = primaryStage.stage_id;
+
     const lines = await validateDcvLinesTx({
       trx,
       req,
-      labourId,
-      deptId,
-      rawLines: payload?.lines,
+      stages: dcvStages,
+      rawLines: dcvRawLines,
       dcvUnits,
     });
+    // Only the FIRST department is checked against existing WIP. The rest draw from
+    // pairs this very voucher creates a moment later, so checking them against the
+    // balance as it stands now would block every multi-department save.
     await validateDcvStageFlowTx({
       trx,
       req,
@@ -2501,14 +2694,18 @@ const normalizeAndValidatePayloadTx = async ({
       departmentId: deptId,
       voucherDate,
       voucherId,
-      lines,
+      lines: lines.filter(
+        (line) => Number(line.dcv_dept_id) === Number(deptId),
+      ),
     });
     await validateDcvSfgAvailabilityTx({
       trx,
       req,
       stageId,
       voucherId,
-      lines,
+      lines: lines.filter(
+        (line) => Number(line.dcv_dept_id) === Number(deptId),
+      ),
     });
     return {
       voucherDate,
@@ -2518,6 +2715,7 @@ const normalizeAndValidatePayloadTx = async ({
       deptId,
       labourId,
       stageId,
+      dcvStages,
       planKind: null,
       reasonCodeId: null,
     };
@@ -2642,6 +2840,32 @@ const upsertVoucherExtensionsTx = async ({
           ? ["dept_id", "labour_id", "stage_id"]
           : ["dept_id", "labour_id"],
       );
+
+    // Per-line department/labour. dcv_header above keeps the first pair so older
+    // single-department queries stay correct; these rows are what the labour ledger
+    // and the WIP posting read when a voucher spans several departments.
+    if (await hasDcvLineTableTx(trx)) {
+      const dcvLineRows = (validated.lines || [])
+        .map((line) => {
+          const voucherLineId = lineByNo.get(Number(line.line_no));
+          const deptId = toPositiveInt(line.dcv_dept_id);
+          const labourId = toPositiveInt(line.dcv_labour_id);
+          if (!voucherLineId || !deptId || !labourId) return null;
+          return {
+            voucher_line_id: voucherLineId,
+            dept_id: deptId,
+            labour_id: labourId,
+            stage_id: toPositiveInt(line.dcv_stage_id),
+          };
+        })
+        .filter(Boolean);
+      if (dcvLineRows.length) {
+        await trx("erp.dcv_line")
+          .insert(dcvLineRows)
+          .onConflict("voucher_line_id")
+          .merge(["dept_id", "labour_id", "stage_id"]);
+      }
+    }
     return;
   }
 
@@ -4407,27 +4631,116 @@ const writeProductionCommissionTx = async ({
   }
 };
 
-const applyDcvToWipTx = async ({ trx, voucherId, branchId, voucherDate }) => {
+const loadDcvLinesWithDepartmentsTx = async ({ trx, voucherId, header }) => {
+  const supportsDcvLine = await hasDcvLineTableTx(trx);
+  const query = trx("erp.voucher_line as vl")
+    .select(
+      "vl.id",
+      "vl.line_no",
+      "vl.sku_id",
+      "vl.qty",
+      "vl.amount",
+      "vl.meta",
+    )
+    .where({ "vl.voucher_header_id": voucherId, "vl.line_kind": "SKU" })
+    .orderBy("vl.line_no", "asc");
+
+  const rows = supportsDcvLine
+    ? await query
+        .leftJoin("erp.dcv_line as dl", "dl.voucher_line_id", "vl.id")
+        .select(
+          "dl.dept_id as line_dept_id",
+          "dl.labour_id as line_labour_id",
+          "dl.stage_id as line_stage_id",
+        )
+    : await query;
+
+  const headerDeptId = toPositiveInt(header?.dept_id);
+  const headerStageId = toPositiveInt(header?.stage_id);
+  return rows.map((row) => ({
+    ...row,
+    dept_id: toPositiveInt(row.line_dept_id) || headerDeptId,
+    labour_id: toPositiveInt(row.line_labour_id),
+    stage_id: toPositiveInt(row.line_stage_id) || headerStageId,
+  }));
+};
+
+// One entry per department on the voucher, ordered the way the BOM routes them.
+// Order is the whole point: department N's WIP draw only succeeds once department N-1
+// has posted its credit, and both happen inside one transaction.
+
+const buildDcvDepartmentGroupsTx = async ({ trx, lines = [] }) => {
+  const groupsByDept = new Map();
+  for (const line of lines) {
+    const deptId = toPositiveInt(line?.dept_id);
+    if (!deptId) continue;
+    if (!groupsByDept.has(deptId)) {
+      groupsByDept.set(deptId, {
+        deptId,
+        stageId: toPositiveInt(line?.stage_id),
+        lines: [],
+      });
+    }
+    const group = groupsByDept.get(deptId);
+    if (!group.stageId) group.stageId = toPositiveInt(line?.stage_id);
+    group.lines.push(line);
+  }
+
+  const groups = [...groupsByDept.values()];
+  for (const group of groups) {
+    if (group.stageId) continue;
+    group.stageId = await resolveActiveStageForDepartmentTx({
+      trx,
+      departmentId: group.deptId,
+      allowNull: true,
+    });
+  }
+  if (groups.length < 2) return groups;
+
+  const sequenceByStageId = await loadBomStageSequenceForSkusTx({
+    trx,
+    skuIds: lines.map((line) => toPositiveInt(line?.sku_id)).filter(Boolean),
+    stageIds: groups.map((group) => group.stageId),
+  });
+  return groups.sort((a, b) => {
+    const seqA = sequenceByStageId.get(Number(a.stageId));
+    const seqB = sequenceByStageId.get(Number(b.stageId));
+    if (seqA == null && seqB == null) return 0;
+    if (seqA == null) return 1;
+    if (seqB == null) return -1;
+    return seqA - seqB;
+  });
+};
+
+const applyDcvToWipTx = async ({
+  trx,
+  voucherId,
+  branchId,
+  voucherDate,
+}) => {
   const header = await trx("erp.dcv_header")
     .select("dept_id", "stage_id")
     .where({ voucher_id: voucherId })
     .first();
   if (!header) return;
 
-  const deptId = Number(header.dept_id);
-  const stageId =
-    toPositiveInt(header.stage_id) ||
-    (await resolveActiveStageForDepartmentTx({
-      trx,
-      departmentId: deptId,
-      allowNull: true,
-    }));
-  const lines = await trx("erp.voucher_line")
-    .select("id", "line_no", "sku_id", "qty", "amount", "meta")
-    .where({ voucher_header_id: voucherId, line_kind: "SKU" });
-  if (!lines.length) return;
+  const allLines = await loadDcvLinesWithDepartmentsTx({
+    trx,
+    voucherId,
+    header,
+  });
+  if (!allLines.length) return;
 
-  const normalizedLines = lines.map((line) => {
+  // A voucher may complete several consecutive departments at once. Post them in BOM
+  // routing order: department N draws the pairs department N-1 credits earlier in this
+  // same transaction, so the chain settles with no special handling.
+  const departmentGroups = await buildDcvDepartmentGroupsTx({
+    trx,
+    lines: allLines,
+  });
+
+  const [firstGroup] = departmentGroups;
+  const normalizedFirstLines = firstGroup.lines.map((line) => {
     const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
     return {
       line_no: Number(line.line_no || 0) || null,
@@ -4436,33 +4749,41 @@ const applyDcvToWipTx = async ({ trx, voucherId, branchId, voucherDate }) => {
       total_pairs: Number(meta.total_pairs || line.qty || 0),
     };
   });
+  // Only the first department is checked against the balance as it stands. Later
+  // departments consume pairs this voucher has not created yet, so checking them here
+  // would reject every multi-department voucher.
   await validateDcvSfgAvailabilityTx({
     trx,
     req: { branchId: Number(branchId) },
-    stageId,
-    lines: normalizedLines,
+    stageId: firstGroup.stageId,
+    lines: normalizedFirstLines,
   });
   await validateDcvStageFlowTx({
     trx,
     req: { branchId: Number(branchId) },
-    stageId,
-    departmentId: deptId,
+    stageId: firstGroup.stageId,
+    departmentId: firstGroup.deptId,
     voucherDate,
-    lines: normalizedLines,
+    lines: normalizedFirstLines,
   });
 
-  const skuDisplayMap = await loadSkuDisplayMapTx({
-    trx,
-    skuIds: lines.map((line) => toPositiveInt(line?.sku_id)).filter(Boolean),
-  });
+  const allSkuIds = allLines
+    .map((line) => toPositiveInt(line?.sku_id))
+    .filter(Boolean);
+  const skuDisplayMap = await loadSkuDisplayMapTx({ trx, skuIds: allSkuIds });
   const skuMap = await loadSkuMapTx({
     trx,
-    skuIds: lines.map((line) => toPositiveInt(line?.sku_id)).filter(Boolean),
+    skuIds: allSkuIds,
     itemTypes: ["FG", "SFG"],
   });
   const bomProfileBySku = new Map();
   // Output that reached stock this run, collected for the commission write below.
   const commissionOutputs = [];
+
+  for (const group of departmentGroups) {
+  const deptId = group.deptId;
+  const stageId = group.stageId;
+  const lines = group.lines;
 
   for (const line of lines) {
     const skuId = Number(line.sku_id || 0);
@@ -4572,7 +4893,6 @@ const applyDcvToWipTx = async ({ trx, voucherId, branchId, voucherDate }) => {
         voucherLineId: toPositiveInt(line.id),
         voucherDate,
         writeLedger: true,
-        allowNegativeStock: allowNegativeRm === true,
       });
       stageSfgConsumedCost = Number(
         (stageSfgConsumedCost + Number(consumedValue || 0)).toFixed(2),
@@ -4697,6 +5017,7 @@ const applyDcvToWipTx = async ({ trx, voucherId, branchId, voucherDate }) => {
         });
     }
   }
+  }
 
   await writeProductionCommissionTx({
     trx,
@@ -4722,20 +5043,16 @@ const applyDcvToGeneratedVouchersTx = async ({
     .first();
   if (!header) return;
 
-  const deptId = toPositiveInt(header.dept_id);
-  const stageId =
-    toPositiveInt(header.stage_id) ||
-    (await resolveActiveStageForDepartmentTx({
-      trx,
-      departmentId: deptId,
-      allowNull: true,
-    }));
-  if (!deptId) return;
+  if (!toPositiveInt(header.dept_id)) return;
 
-  const lines = await trx("erp.voucher_line")
-    .select("line_no", "sku_id", "qty", "meta")
-    .where({ voucher_header_id: voucherId, line_kind: "SKU" })
-    .orderBy("line_no", "asc");
+  // Each line already stands for one (article x department), so material is consumed
+  // per line from that line's own department. buildConsumptionLinesFromShortfall filters
+  // the BOM's material by department, so every department's material is relieved.
+  const lines = await loadDcvLinesWithDepartmentsTx({
+    trx,
+    voucherId,
+    header,
+  });
   if (!lines.length) return;
 
   const skuDisplayMap = await loadSkuDisplayMapTx({
@@ -4753,6 +5070,15 @@ const applyDcvToGeneratedVouchersTx = async ({
       line?.meta && typeof line.meta === "object" ? line.meta : {};
     const qtyPairs = Number(lineMeta.total_pairs || line.qty || 0);
     if (!skuId || !Number.isInteger(qtyPairs) || qtyPairs <= 0) continue;
+    const deptId = toPositiveInt(line.dept_id);
+    if (!deptId) continue;
+    const stageId =
+      toPositiveInt(line.stage_id) ||
+      (await resolveActiveStageForDepartmentTx({
+        trx,
+        departmentId: deptId,
+        allowNull: true,
+      }));
 
     let bomProfile = bomBySku.get(skuId);
     if (!bomProfile) {
@@ -4812,16 +5138,29 @@ const applyDcvToGeneratedVouchersTx = async ({
       lineNo: Number(line.line_no || 0) || null,
       skuLabel: fgSkuLabel,
     });
+    // Keyed by SKU *and* department: a voucher covering several departments consumes
+    // each stage's own SFG, and the consumption line has to say which stage took it.
     stageSfgRequirements.forEach((reqRow) => {
-      const nextPairs =
-        Number(sfgPairsBySku.get(reqRow.sfg_sku_id) || 0) +
-        Number(reqRow.required_pairs || 0);
-      sfgPairsBySku.set(Number(reqRow.sfg_sku_id), Number(nextPairs));
+      const key = `${Number(reqRow.sfg_sku_id)}:${Number(deptId)}`;
+      const existing = sfgPairsBySku.get(key);
+      if (existing) {
+        existing.pairs = Number(existing.pairs) + Number(reqRow.required_pairs || 0);
+        return;
+      }
+      sfgPairsBySku.set(key, {
+        sfg_sku_id: Number(reqRow.sfg_sku_id),
+        dept_id: Number(deptId),
+        stage_id: toPositiveInt(stageId),
+        pairs: Number(reqRow.required_pairs || 0),
+      });
     });
   }
 
   if (sfgPairsBySku.size) {
-    const sfgSkuIds = [...sfgPairsBySku.keys()];
+    const sfgRequirements = [...sfgPairsBySku.values()];
+    const sfgSkuIds = [
+      ...new Set(sfgRequirements.map((row) => Number(row.sfg_sku_id))),
+    ];
     const sfgSkuMap = await loadSkuMapTx({
       trx,
       skuIds: sfgSkuIds,
@@ -4834,21 +5173,21 @@ const applyDcvToGeneratedVouchersTx = async ({
       );
     }
 
-    for (const sfgSkuId of sfgSkuIds) {
-      const qtyPairs = Number(sfgPairsBySku.get(sfgSkuId) || 0);
+    for (const requirement of sfgRequirements) {
+      const qtyPairs = Number(requirement.pairs || 0);
       if (!Number.isInteger(qtyPairs) || qtyPairs <= 0) continue;
-      const sfgSku = sfgSkuMap.get(Number(sfgSkuId));
+      const sfgSku = sfgSkuMap.get(Number(requirement.sfg_sku_id));
       consumptionLines.push({
         line_no: consumptionLineNo,
         line_kind: "SKU",
-        sku_id: Number(sfgSkuId),
+        sku_id: Number(requirement.sfg_sku_id),
         uom_id: toPositiveInt(sfgSku?.base_uom_id),
         qty: Number(qtyPairs),
         rate: 0,
         amount: 0,
         meta: {
-          department_id: Number(deptId),
-          stage_id: toPositiveInt(stageId),
+          department_id: Number(requirement.dept_id),
+          stage_id: toPositiveInt(requirement.stage_id),
           auto_generated: true,
           source: "DCV_SFG_CONSUMPTION",
         },
@@ -5543,6 +5882,9 @@ const saveProductionVoucherCoreTx = async ({
     remarks: validated.remarks,
     dept_id: validated.deptId,
     labour_id: validated.labourId,
+    // Every department/labour on the voucher, so approving reproduces the same
+    // postings. dept_id/labour_id above stay the first pair for older payloads.
+    dcv_stages: validated.dcvStages,
     plan_kind: validated.planKind,
     reason_code_id: validated.reasonCodeId,
     lines: validated.lines,
@@ -6217,12 +6559,35 @@ const loadProductionVoucherDetails = async ({
   let lossHeader = null;
   let sourceHeader = null;
   let generatedLinks = null;
+  let dcvStages = [];
 
   if (voucherTypeCode === PRODUCTION_VOUCHER_TYPES.departmentCompletion) {
     dcvHeader = await knex("erp.dcv_header")
       .select("dept_id", "labour_id", ...(supportsDcvStage ? ["stage_id"] : []))
       .where({ voucher_id: header.id })
       .first();
+    // Every department/labour on the voucher, in saved line order, so reopening a
+    // multi-department voucher shows the pairs it was posted with.
+    if (await hasDcvLineTableTx(knex)) {
+      const dcvLineRows = await knex("erp.dcv_line as dl")
+        .join("erp.voucher_line as vl", "vl.id", "dl.voucher_line_id")
+        .select("dl.dept_id", "dl.labour_id", "dl.stage_id")
+        .where({ "vl.voucher_header_id": header.id })
+        .orderBy("vl.line_no", "asc");
+      const seenDeptIds = new Set();
+      dcvStages = dcvLineRows
+        .filter((row) => {
+          const deptId = Number(row.dept_id);
+          if (seenDeptIds.has(deptId)) return false;
+          seenDeptIds.add(deptId);
+          return true;
+        })
+        .map((row) => ({
+          dept_id: Number(row.dept_id),
+          labour_id: Number(row.labour_id),
+          stage_id: toPositiveInt(row.stage_id),
+        }));
+    }
   } else if (voucherTypeCode === PRODUCTION_VOUCHER_TYPES.productionPlan) {
     planHeader = await knex("erp.production_plan_header")
       .select("plan_kind")
@@ -6385,6 +6750,42 @@ const loadProductionVoucherDetails = async ({
     });
   }
 
+  // A multi-department DCV stores one line per (article x department). The form shows
+  // the articles the user typed, so fold them back: one row per article, rate and amount
+  // summed across departments -- the combined rate the grid displays. Single-department
+  // vouchers have no entry-row marker and pass through unchanged.
+  if (
+    voucherTypeCode === PRODUCTION_VOUCHER_TYPES.departmentCompletion &&
+    mappedLines.length &&
+    dcvStages.length > 1
+  ) {
+    const foldedByEntryRow = new Map();
+    const folded = [];
+    lines.forEach((rawLine, index) => {
+      const entryRow = toPositiveInt(rawLine?.meta?.dcv_entry_row);
+      const mapped = mappedLines[index];
+      if (!mapped) return;
+      if (!entryRow) {
+        folded.push(mapped);
+        return;
+      }
+      const existing = foldedByEntryRow.get(entryRow);
+      if (!existing) {
+        const seed = { ...mapped, line_no: folded.length + 1 };
+        foldedByEntryRow.set(entryRow, seed);
+        folded.push(seed);
+        return;
+      }
+      existing.rate = Number(
+        (Number(existing.rate || 0) + Number(mapped.rate || 0)).toFixed(4),
+      );
+      existing.amount = Number(
+        (Number(existing.amount || 0) + Number(mapped.amount || 0)).toFixed(2),
+      );
+    });
+    mappedLines = folded;
+  }
+
   const abnormalLossType =
     voucherTypeCode === PRODUCTION_VOUCHER_TYPES.abnormalLoss
       ? String(
@@ -6431,6 +6832,8 @@ const loadProductionVoucherDetails = async ({
         : toPositiveInt(dcvHeader?.dept_id),
     labour_id: toPositiveInt(dcvHeader?.labour_id),
     stage_id: toPositiveInt(dcvHeader?.stage_id),
+    // Every department/labour pair on the voucher, for the form's pair list.
+    dcv_stages: dcvStages,
     plan_kind: String(planHeader?.plan_kind || "").toUpperCase() || null,
     reason_code_id: toPositiveInt(lossHeader?.reason_code_id),
     loss_type: abnormalLossType,
