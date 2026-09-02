@@ -270,6 +270,22 @@
     const emptyMsg = modalForm.querySelector("[data-rate-list-empty]");
     const itemSelect = modalForm.querySelector('select[name="item_id"]');
 
+    // The WhatsApp opt-in is shared by both modes (it renders outside either
+    // container), so its default and its hint are set per mode rather than in
+    // the markup. Create defaults to OFF: adding an article is the common case
+    // and a message to the whole sales group should be a deliberate click.
+    const waOptIn = document.querySelector('#sku-whatsapp-optin input[name="send_whatsapp"]');
+    const waOptInHint = document.querySelector("[data-whatsapp-optin-hint]");
+    const setWhatsAppOptIn = (mode) => {
+      if (waOptIn) waOptIn.checked = mode === "edit";
+      if (waOptInHint) {
+        waOptInHint.textContent =
+          mode === "edit"
+            ? waOptInHint.dataset.hintUpdate
+            : waOptInHint.dataset.hintNew;
+      }
+    };
+
     const createContainer = document.getElementById("create-mode-container");
     const editContainer = document.getElementById("edit-rates-container");
     const editList = document.getElementById("bulk-edit-list");
@@ -425,6 +441,7 @@
           if (modalDescriptionEl) modalDescriptionEl.textContent = "<%= t('skus_description') %>";
           
           createContainer.querySelectorAll("[required]").forEach(el => el.disabled = false);
+          setWhatsAppOptIn("create");
        });
     });
 
@@ -448,6 +465,7 @@
           modalForm.action = "<%= basePath %>/bulk-update<%= viewQuery %>";
           
           createContainer.querySelectorAll("[required]").forEach(el => el.disabled = true);
+          setWhatsAppOptIn("edit");
 
           editList.innerHTML = '<div class="text-center p-4 text-slate-400"><%= t("loading") %>...</div>';
           try {

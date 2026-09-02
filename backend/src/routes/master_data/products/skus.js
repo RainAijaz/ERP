@@ -580,6 +580,11 @@ router.post(
       // meant a 40-SKU article arrived as 40 near-identical approvals, while a
       // bulk rate EDIT of the same 40 arrived as one.
       const plannedVariants = [];
+      // Variants this submission actually inserted, kept so the new article can
+      // be announced on WhatsApp once the transaction commits. Only the FG rows
+      // land here: both SFG paths insert at rate 0 (a mirror carries no price of
+      // its own) and the > 0 filter at the send site would drop them anyway.
+      const createdRatedVariants = [];
       await knex.transaction(async (trx) => {
         const item = await trx("erp.items")
           .select("code", "name", "item_type")
@@ -769,6 +774,12 @@ router.post(
                       entityId: variant.id || variant,
                       action: "CREATE",
                     });
+                    // Same defensive read as the audit log above: some drivers
+                    // return the bare id rather than a row object.
+                    createdRatedVariants.push({
+                      id: Number(variant?.id ?? variant),
+                      newRate: appliedRate,
+                    });
                     createdCount++;
                   } else {
                     if (process.env.DEBUG_SKU_APPROVAL === "1") {
@@ -933,6 +944,11 @@ router.post(
               item_name: item.name,
               item_type: itemType,
               variants: plannedVariants,
+              // Mirrors the single-edit and bulk-rate payloads: the approver's
+              // Send / Approve-only modal shows this as the requester's stated
+              // preference. Without it a deliberate opt-out is lost the moment
+              // the create needs approval.
+              send_whatsapp: req.body.send_whatsapp === "1",
             },
             status: "PENDING",
             requested_by: req.user.id,
@@ -953,6 +969,30 @@ router.post(
             "&success=true&msg=" +
             encodeURIComponent(noChangesMsg),
         );
+      }
+
+      // The only place a NEW article gets announced outside the approvals
+      // screen. An admin never reaches that screen -- shouldRequireApproval
+      // returns false for them, so their create is written inline -- which left
+      // the whole feature unreachable for the one role that uses it most.
+      // Opt-in only (`=== "1"`, matching /bulk-update and /:id): an unchecked
+      // box posts no field at all, so anything other than an explicit tick is
+      // silence.
+      const rateNotifyOptIn = req.body.send_whatsapp === "1";
+      const newArticleUpdates = createdRatedVariants.filter(
+        (variant) => Number.isInteger(variant.id) && Number(variant.newRate) > 0,
+      );
+      if (rateNotifyOptIn && newArticleUpdates.length > 0) {
+        // After commit, never inside the transaction: the notification reads
+        // sku_code back through the outer knex, which cannot see uncommitted
+        // rows and would report every SKU as "#<id>".
+        await sendSkuRateNotification({
+          knex,
+          chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
+          updates: newArticleUpdates,
+          user: req.user,
+          isNew: true,
+        });
       }
 
       if (approvalRequired && queuedCount > 0) {

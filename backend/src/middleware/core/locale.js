@@ -4372,6 +4372,8 @@ Object.assign(translations.en, {
   records: "records",
   send_whatsapp_notification: "Send WhatsApp Notification",
   send_whatsapp_notification_hint: "Notify the sales group about this rate change",
+  send_whatsapp_notification_hint_new:
+    "Notify the sales group about this new article",
   send_new_article_rate_title: "Send new-article rate?",
   send_new_article_rate_body:
     "Send the new article's rate message to the WhatsApp group?",
@@ -4642,6 +4644,8 @@ Object.assign(translations.ur, {
   records: "ریکارڈز",
   send_whatsapp_notification: "واٹس ایپ اطلاع بھیجیں",
   send_whatsapp_notification_hint: "اس ریٹ تبدیلی کے بارے میں سیلز گروپ کو مطلع کریں",
+  send_whatsapp_notification_hint_new:
+    "اس نئے آرٹیکل کے بارے میں سیلز گروپ کو مطلع کریں",
   send_new_article_rate_title: "نیا آرٹیکل ریٹ بھیجیں؟",
   send_new_article_rate_body:
     "کیا نئے آرٹیکل کا ریٹ پیغام واٹس ایپ گروپ پر بھیجیں؟",
