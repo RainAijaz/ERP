@@ -865,6 +865,17 @@ const loadSkuDisplayMapTx = async ({ trx, skuIds = [] }) => {
   return new Map(rows.map((row) => [Number(row.sku_id), row]));
 };
 
+// Resolves one SKU to its human label for error text. Used on failure paths only,
+// so a bare id never reaches the user.
+const loadSkuLabelTx = async ({ trx, skuId }) => {
+  const normalizedSkuId = toPositiveInt(skuId);
+  if (!normalizedSkuId) return "Unknown SKU";
+  const map = await loadSkuDisplayMapTx({ trx, skuIds: [normalizedSkuId] });
+  return buildSkuDisplayLabel(
+    map.get(normalizedSkuId) || { sku_code: `#${normalizedSkuId}` },
+  );
+};
+
 const loadBomHeaderByItemIdTx = async ({ trx, itemId }) => {
   const normalizedItemId = toPositiveInt(itemId);
   if (!normalizedItemId) return null;
@@ -3302,6 +3313,12 @@ const applySkuStockOutTx = async ({
   voucherDate,
   writeLedger = true,
   allowNegativeStock = false,
+  // Failure-path wording only: `shortagePrefix` locates the voucher row
+  // ("Line 2:"), `shortagePurpose` says why this stock was being drawn, and
+  // `shortageHint` closes with what the user can do about it.
+  shortagePrefix = "",
+  shortagePurpose = "",
+  shortageHint = "",
 }) => {
   const normalizedBranchId = toPositiveInt(branchId);
   const normalizedSkuId = toPositiveInt(skuId);
@@ -3324,6 +3341,16 @@ const applySkuStockOutTx = async ({
     );
   }
 
+  const linePrefix = String(shortagePrefix || "").trim()
+    ? `${String(shortagePrefix).trim()} `
+    : "";
+  const purposeSentence = String(shortagePurpose || "").trim()
+    ? ` ${String(shortagePurpose).trim()}`
+    : "";
+  const hintSentence = String(shortageHint || "").trim()
+    ? ` ${String(shortageHint).trim()}`
+    : "";
+
   const rows = await trx("erp.stock_balance_sku")
     .select("is_packed", "qty_pairs", "value", "wac")
     .where({
@@ -3343,11 +3370,21 @@ const applySkuStockOutTx = async ({
   // Shortfalls are routed by the voucher's Neg. Stock control, not refused here.
   // The shortfall is drawn from the loose bucket so it lands in one place.
   if (!allowNegativeStock && totalAvailablePairs < normalizedQtyPairsOut) {
+    const skuLabel = await loadSkuLabelTx({ trx, skuId: normalizedSkuId });
+    const shortPairs = normalizedQtyPairsOut - totalAvailablePairs;
     const shortageError = new HttpError(
       400,
-      `${normalizedCategory} loss quantity exceeds available stock for SKU ${normalizedSkuId} (required ${normalizedQtyPairsOut}, available ${totalAvailablePairs})`,
+      `${linePrefix}Not enough ${normalizedCategory} stock for ${skuLabel}.${purposeSentence} Required ${normalizedQtyPairsOut} pair(s), but this branch has ${totalAvailablePairs} pair(s) on hand - short by ${shortPairs} pair(s).${hintSentence}`,
     );
     shortageError.code = RM_STOCK_SHORTAGE_ERROR_CODE;
+    shortageError.shortage = {
+      category: normalizedCategory,
+      skuId: normalizedSkuId,
+      skuLabel,
+      requiredPairs: normalizedQtyPairsOut,
+      availablePairs: totalAvailablePairs,
+      shortPairs,
+    };
     throw shortageError;
   }
 
@@ -3380,9 +3417,13 @@ const applySkuStockOutTx = async ({
       !allowNegativeStock &&
       (nextQtyPairsRaw < 0 || nextValueRaw < -0.05)
     ) {
+      // Quantity was already cleared above, so this is a value drift: the bucket
+      // holds the pairs but not the cost of drawing them.
+      const skuLabel = await loadSkuLabelTx({ trx, skuId: normalizedSkuId });
+      const bucketLabel = row.is_packed === true ? "packed" : "loose";
       throw new HttpError(
         400,
-        `${normalizedCategory} loss posting would make stock negative for SKU ${normalizedSkuId}`,
+        `${linePrefix}Cannot draw ${consumePairs} pair(s) of ${normalizedCategory} stock for ${skuLabel}.${purposeSentence} Its ${bucketLabel} stock holds ${rowQtyPairs} pair(s) valued at ${roundCost2(Number(row?.value || 0))}, but drawing ${consumePairs} pair(s) costs ${consumedValue}, which would push the recorded value negative. The stock value for this SKU has drifted from its quantity and needs an admin to reconcile it before this voucher can post.`,
       );
     }
 
@@ -3418,9 +3459,10 @@ const applySkuStockOutTx = async ({
 
   if (remainingPairs > 0) {
     if (!allowNegativeStock) {
+      const skuLabel = await loadSkuLabelTx({ trx, skuId: normalizedSkuId });
       throw new HttpError(
         400,
-        `${normalizedCategory} loss posting failed due to stock split inconsistency for SKU ${normalizedSkuId}`,
+        `${linePrefix}Could not draw ${normalizedQtyPairsOut} pair(s) of ${normalizedCategory} stock for ${skuLabel}: ${remainingPairs} pair(s) are still unaccounted for after the packed and loose buckets were used. The packed/loose split for this SKU is inconsistent and needs an admin to reconcile it.`,
       );
     }
     // Nothing left on hand to draw from: take the balance of the line negative out
@@ -4893,6 +4935,11 @@ const applyDcvToWipTx = async ({
         voucherLineId: toPositiveInt(line.id),
         voucherDate,
         writeLedger: true,
+        shortagePrefix: lineNo ? `Line ${lineNo}:` : "",
+        // This is a BOM component consumption, not a loss: name the finished
+        // article and stage that pulled it so the message is actionable.
+        shortagePurpose: `The approved BOM for ${skuLabel} consumes it at this stage.`,
+        shortageHint: `Complete or receive this SFG into stock first, or have this voucher approved for negative stock.`,
       });
       stageSfgConsumedCost = Number(
         (stageSfgConsumedCost + Number(consumedValue || 0)).toFixed(2),
@@ -5314,11 +5361,16 @@ const applyLossToWipTx = async ({
       const skuItemType = String(row?.sku_item_type || "")
         .trim()
         .toUpperCase();
-      if (lossType === "SFG_LOSS" && skuItemType && skuItemType !== "SFG") {
-        throw new HttpError(400, `SFG loss line has non-SFG SKU ${skuId}`);
-      }
-      if (lossType === "FG_LOSS" && skuItemType && skuItemType !== "FG") {
-        throw new HttpError(400, `FG loss line has non-FG SKU ${skuId}`);
+      if (
+        (lossType === "SFG_LOSS" && skuItemType && skuItemType !== "SFG") ||
+        (lossType === "FG_LOSS" && skuItemType && skuItemType !== "FG")
+      ) {
+        const expectedType = lossType === "SFG_LOSS" ? "SFG" : "FG";
+        const skuLabel = await loadSkuLabelTx({ trx, skuId });
+        throw new HttpError(
+          400,
+          `${expectedType} loss can only be recorded against an ${expectedType} article, but ${skuLabel} is a ${skuItemType} article. Remove this line or switch the loss type.`,
+        );
       }
       await applySkuStockOutTx({
         trx,
@@ -5331,6 +5383,9 @@ const applyLossToWipTx = async ({
         voucherDate,
         writeLedger: true,
         allowNegativeStock,
+        shortagePurpose: "This voucher writes it off as a loss.",
+        shortageHint:
+          "Reduce the loss quantity to what is actually on hand, or have this voucher approved for negative stock.",
       });
       continue;
     }
@@ -5352,9 +5407,10 @@ const applyLossToWipTx = async ({
     const availablePairs = Number(balance?.qty_pairs || 0);
     const availableCost = Number(balance?.cost_value || 0);
     if (availablePairs < qtyPairs) {
+      const skuLabel = await loadSkuLabelTx({ trx, skuId });
       throw new HttpError(
         400,
-        `DVC abandon quantity exceeds pending WIP balance for SKU ${skuId}`,
+        `Cannot abandon ${qtyPairs} pair(s) of ${skuLabel}: only ${availablePairs} pair(s) are pending in this department's WIP - short by ${qtyPairs - availablePairs} pair(s).`,
       );
     }
 
