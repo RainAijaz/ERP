@@ -649,7 +649,9 @@
         trigger?.getAttribute("data-download-filename") || fallbackName,
       ).trim() || fallbackName;
 
-      const blob = new Blob([csvChunks.join("\n\n")], {
+      // Excel reads a BOM-less CSV as ANSI, which turns Urdu names into mojibake
+      // even though the bytes are correct UTF-8. The BOM makes it pick UTF-8.
+      const blob = new Blob(["﻿" + csvChunks.join("\n\n")], {
         type: "text/csv;charset=utf-8;",
       });
       const link = document.createElement("a");
@@ -675,6 +677,11 @@
         });
       window.__pdfLibsPromise = loadScript("/vendor/jspdf.umd.min.js")
         .then(() => loadScript("/vendor/jspdf.plugin.autotable.min.js"))
+        // Urdu/Arabic text is unrenderable in jsPDF's default Helvetica; this
+        // helper embeds a Unicode font on demand. It is a small shim -- the
+        // 300KB font itself is only fetched when a report actually contains
+        // Arabic-script characters.
+        .then(() => loadScript("/vendor/pdf-urdu-font.js"))
         .then(() => {
           if (!window.jspdf?.jsPDF) throw new Error("jsPDF loaded without jsPDF object");
           return window.jspdf.jsPDF;
@@ -715,58 +722,82 @@
               return { content, colSpan, rowSpan };
             });
 
-          tables.forEach((table) => {
-            const tableTitle = String(table.getAttribute("data-export-title") || "").trim();
-            const headers = Array.from(table.querySelectorAll("thead tr"))
-              .map(pdfCells)
-              .filter((row) => row.length);
-            // tfoot carries the totals row on some reports (e.g. Commission
-            // Ledger); without it the PDF silently drops the grand total.
-            const body = Array.from(table.querySelectorAll("tbody tr, tfoot tr"))
-              .filter((row) => row.dataset.inFilter !== "false" && !row.hidden)
-              .map(pdfCells);
-            if (!headers.length && !body.length) return;
+          // Read every table up front so the text can be scanned for Urdu before
+          // any of it is drawn -- the font has to be registered on `doc` before
+          // the first doc.text() call, and registering it is asynchronous.
+          const datasets = tables
+            .map((table) => ({
+              tableTitle: String(table.getAttribute("data-export-title") || "").trim(),
+              headers: Array.from(table.querySelectorAll("thead tr"))
+                .map(pdfCells)
+                .filter((row) => row.length),
+              // tfoot carries the totals row on some reports (e.g. Commission
+              // Ledger); without it the PDF silently drops the grand total.
+              body: Array.from(table.querySelectorAll("tbody tr, tfoot tr"))
+                .filter((row) => row.dataset.inFilter !== "false" && !row.hidden)
+                .map(pdfCells),
+            }))
+            .filter((set) => set.headers.length || set.body.length);
 
-            if (renderedTables > 0) doc.addPage();
-            renderedTables += 1;
-            doc.setFontSize(13);
-            doc.text(title, 28, 28);
-            doc.setFontSize(9);
-            doc.setTextColor(100);
-            doc.text(new Date().toLocaleString(), 28, 42);
-            cursorY = 52;
-            if (tableTitle) {
-              doc.setFontSize(10);
-              doc.setTextColor(30);
-              doc.text(tableTitle, 28, cursorY);
-              cursorY += 10;
-            }
+          const cellString = (cell) => (cell && typeof cell === "object" ? cell.content : cell);
+          const sampleText = [title]
+            .concat(
+              datasets.flatMap((set) =>
+                [set.tableTitle].concat(
+                  set.headers.concat(set.body).flatMap((row) => row.map(cellString)),
+                ),
+              ),
+            )
+            .join(" ");
 
-            doc.autoTable({
-              head: headers,
-              body,
-              startY: cursorY,
-              margin: { left: 28, right: 28 },
-              styles: { fontSize: 7, cellPadding: 3, overflow: "linebreak" },
-              headStyles: { fillColor: [30, 41, 59], textColor: 255 },
-              alternateRowStyles: { fillColor: [248, 250, 252] },
-              horizontalPageBreak: true,
-              horizontalPageBreakRepeat: 0,
+          return window.__pdfUrduFont.ensure(doc, sampleText).then((urduFont) => {
+            datasets.forEach((set) => {
+              if (renderedTables > 0) doc.addPage();
+              renderedTables += 1;
+              doc.setFontSize(13);
+              doc.text(title, 28, 28);
+              doc.setFontSize(9);
+              doc.setTextColor(100);
+              doc.text(new Date().toLocaleString(), 28, 42);
+              cursorY = 52;
+              if (set.tableTitle) {
+                doc.setFontSize(10);
+                doc.setTextColor(30);
+                doc.text(set.tableTitle, 28, cursorY);
+                cursorY += 10;
+              }
+
+              doc.autoTable({
+                head: set.headers,
+                body: set.body,
+                startY: cursorY,
+                margin: { left: 28, right: 28 },
+                styles: {
+                  fontSize: 7,
+                  cellPadding: 3,
+                  overflow: "linebreak",
+                  ...(urduFont ? { font: urduFont } : {}),
+                },
+                headStyles: { fillColor: [30, 41, 59], textColor: 255 },
+                alternateRowStyles: { fillColor: [248, 250, 252] },
+                horizontalPageBreak: true,
+                horizontalPageBreakRepeat: 0,
+              });
             });
-          });
 
-          const slug = path
-            .replace(/^\/reports\//, "")
-            .replace(/[^a-zA-Z0-9_-]+/g, "-")
-            .replace(/-+/g, "-")
-            .replace(/^-|-$/g, "");
-          const fallbackName = `${slug || "report"}.pdf`;
-          const downloadName = String(
-            trigger?.getAttribute("data-download-filename") || fallbackName,
-          )
-            .trim()
-            .replace(/\.csv$/i, ".pdf") || fallbackName;
-          doc.save(downloadName);
+            const slug = path
+              .replace(/^\/reports\//, "")
+              .replace(/[^a-zA-Z0-9_-]+/g, "-")
+              .replace(/-+/g, "-")
+              .replace(/^-|-$/g, "");
+            const fallbackName = `${slug || "report"}.pdf`;
+            const downloadName = String(
+              trigger?.getAttribute("data-download-filename") || fallbackName,
+            )
+              .trim()
+              .replace(/\.csv$/i, ".pdf") || fallbackName;
+            doc.save(downloadName);
+          });
         })
         .catch((err) => {
           console.error(err);
