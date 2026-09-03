@@ -1125,6 +1125,21 @@ const loadBomProfileBySkuTx = async ({ trx, skuId }) => {
   };
 };
 
+// Two DIFFERENT questions share this resolver, and conflating them is what stranded WIP
+// at every 'Follow Sequence' = off department:
+//
+//   previousRequiredDeptId  -- THE GATE. "May this stage start yet?" Only a route that is
+//                              both required AND sequence-enforced blocks its successor, so
+//                              clearing enforce_sequence must null this out.
+//   flowPredecessors        -- THE HAND-OFF. "Whose pool do this stage's pairs come out of?"
+//                              WIP is a per-department pool, so EVERY stage has to take its
+//                              pairs from somewhere; enforce_sequence has nothing to say
+//                              about that. Nearest-first, and optional routes are included
+//                              because a bypassed one is simply empty and falls through,
+//                              while a performed one is holding the pairs. The list still
+//                              STOPS at the gate: reaching back past a sequence-enforced
+//                              predecessor would silently drain an earlier tray instead of
+//                              raising the stage-flow shortage the gate exists to raise.
 const resolveDcvStageTransitionForBomProfile = ({
   bomProfile,
   stageId,
@@ -1143,6 +1158,7 @@ const resolveDcvStageTransitionForBomProfile = ({
       requiredRoutes: [],
       previousRequiredStageId: null,
       previousRequiredDeptId: null,
+      flowPredecessors: [],
     };
   }
 
@@ -1188,6 +1204,42 @@ const resolveDcvStageTransitionForBomProfile = ({
     )
     .sort((a, b) => Number(b.sequence_no || 0) - Number(a.sequence_no || 0))[0];
 
+  // Deliberately NOT filtered by is_required or enforce_sequence: see the note above the
+  // function. Nearest-first, so the caller drains the closest department that actually holds
+  // pairs and falls back through the chain past any stage production bypassed.
+  const orderedFlowPredecessors = [...orderedRoutes]
+    .filter(
+      (route) =>
+        Number(route.sequence_no || 0) < currentSeq &&
+        toPositiveInt(route.dept_id),
+    )
+    .sort((a, b) => Number(b.sequence_no || 0) - Number(a.sequence_no || 0))
+    .map((route) => ({
+      stage_id: Number(route.stage_id),
+      sequence_no: Number(route.sequence_no || 0),
+      dept_id: toPositiveInt(route.dept_id),
+      stage_name: String(route.stage_name || ""),
+    }));
+
+  // ...but the chain STOPS at the gate. Reaching back past a sequence-enforced predecessor
+  // would let a stage help itself to the pairs of a department that has not done its work
+  // yet, quietly turning "previous stage WIP is insufficient" into a silent double-draw of
+  // an earlier tray. Everything NEARER than the gate stays in: those are the stages the gate
+  // has nothing to say about (bypassed optional ones, any-order ones), and they are exactly
+  // where the pairs really sit.
+  const gateDeptId = shouldEnforceSequence
+    ? toPositiveInt(previousRequiredRoute?.dept_id)
+    : null;
+  const gateIndex = gateDeptId
+    ? orderedFlowPredecessors.findIndex(
+        (route) => Number(route.dept_id) === Number(gateDeptId),
+      )
+    : -1;
+  const flowPredecessors =
+    gateIndex >= 0
+      ? orderedFlowPredecessors.slice(0, gateIndex + 1)
+      : orderedFlowPredecessors;
+
   return {
     hasStageRouting: true,
     currentRoute: {
@@ -1222,6 +1274,7 @@ const resolveDcvStageTransitionForBomProfile = ({
     previousRequiredDeptId: shouldEnforceSequence
       ? toPositiveInt(previousRequiredRoute?.dept_id)
       : null,
+    flowPredecessors,
   };
 };
 
@@ -1958,23 +2011,32 @@ const validateDcvStageFlowTx = async ({
     const requiredPairs = Number(linePairsBySku.get(skuId) || 0);
     if (!stageFlow.hasStageRouting) continue;
 
-    if (stageFlow.previousRequiredDeptId) {
-      // First, try predecessor stock of the exact same SKU.
-      const previousDeptId = toPositiveInt(stageFlow.previousRequiredDeptId);
-      const addBackBySku = await resolveWipAddBackBySkuTx({
-        deptId: previousDeptId,
-        skuIds: [skuId],
-      });
-      const pool = await getCurrentWipBalanceTx({
-        trx,
-        branchId: req.branchId,
-        skuId,
-        deptId: previousDeptId,
-      });
-      const availablePairs = Number(
-        Number(pool?.qty_pairs || 0) +
-          Number(addBackBySku.get(Number(skuId)) || 0),
-      );
+    // The GATE decides WHETHER to block; the flow chain decides WHAT counts as available.
+    // Checking only the sequence-enforced predecessor would reject a voucher the poster
+    // would accept, now that it drains the nearest department actually holding pairs.
+    const flowPredecessors = Array.isArray(stageFlow.flowPredecessors)
+      ? stageFlow.flowPredecessors
+      : [];
+    if (stageFlow.previousRequiredDeptId && flowPredecessors.length) {
+      const previousDeptId = toPositiveInt(flowPredecessors[0].dept_id);
+      // First, try predecessor stock of the exact same SKU, nearest stage first.
+      let availablePairs = 0;
+      for (const predecessor of flowPredecessors) {
+        const addBackBySku = await resolveWipAddBackBySkuTx({
+          deptId: predecessor.dept_id,
+          skuIds: [skuId],
+        });
+        const pool = await getCurrentWipBalanceTx({
+          trx,
+          branchId: req.branchId,
+          skuId,
+          deptId: predecessor.dept_id,
+        });
+        availablePairs += Number(
+          Number(pool?.qty_pairs || 0) +
+            Number(addBackBySku.get(Number(skuId)) || 0),
+        );
+      }
       const directDeficit = Math.max(0, requiredPairs - availablePairs);
       let conversionCoverPairs = 0;
       if (directDeficit > 0) {
@@ -4865,26 +4927,38 @@ const applyDcvToWipTx = async ({
     let previousStageCost = 0;
     let stageSfgConsumedCost = 0;
     let conversionMeta = null;
-    if (stageFlow.hasStageRouting && stageFlow.previousRequiredDeptId) {
-      // Step 1: consume direct predecessor WIP for this SKU.
-      const allocatedDirect = await allocateFromWipPoolTx({
-        trx,
-        branchId,
-        skuId,
-        deptId: stageFlow.previousRequiredDeptId,
-        targetPairs: qtyPairs,
-        voucherDate,
-        sourceVoucherId: voucherId,
-      });
-      let totalConsumedPairs = Number(allocatedDirect.consumedPairs || 0);
-      let totalConsumedCost = Number(allocatedDirect.consumedCost || 0);
-      if (totalConsumedPairs < qtyPairs) {
+    const flowPredecessors = Array.isArray(stageFlow.flowPredecessors)
+      ? stageFlow.flowPredecessors
+      : [];
+    if (stageFlow.hasStageRouting && flowPredecessors.length) {
+      // Step 1: consume predecessor WIP for this SKU, nearest stage first. Walking the
+      // chain rather than one department is what keeps a 'Follow Sequence' = off stage
+      // from becoming a pure producer -- it credits its own pool either way, so if it
+      // never debits anyone its pairs sit there forever and no later stage claims them.
+      let totalConsumedPairs = 0;
+      let totalConsumedCost = 0;
+      for (const predecessor of flowPredecessors) {
+        if (totalConsumedPairs >= qtyPairs) break;
+        const allocated = await allocateFromWipPoolTx({
+          trx,
+          branchId,
+          skuId,
+          deptId: predecessor.dept_id,
+          targetPairs: Math.max(0, qtyPairs - totalConsumedPairs),
+          voucherDate,
+          sourceVoucherId: voucherId,
+        });
+        totalConsumedPairs += Number(allocated.consumedPairs || 0);
+        totalConsumedCost += Number(allocated.consumedCost || 0);
+      }
+      const nearestPredecessor = flowPredecessors[0] || null;
+      if (totalConsumedPairs < qtyPairs && nearestPredecessor) {
         const neededPairs = Math.max(0, qtyPairs - totalConsumedPairs);
         // Step 2: cover remaining predecessor shortage via better-grade conversion.
         const converted = await allocateFromBetterGradePoolTx({
           trx,
           branchId,
-          deptId: stageFlow.previousRequiredDeptId,
+          deptId: nearestPredecessor.dept_id,
           targetSkuId: skuId,
           targetPairs: neededPairs,
           voucherDate,
@@ -4898,16 +4972,17 @@ const applyDcvToWipTx = async ({
             conversion_applied: true,
             conversion_mode: "IN_STAGE_GRADE_CONVERSION",
             conversion_from_stage_id: toPositiveInt(
-              stageFlow.previousRequiredStageId,
+              nearestPredecessor.stage_id,
             ),
-            conversion_from_dept_id: toPositiveInt(
-              stageFlow.previousRequiredDeptId,
-            ),
+            conversion_from_dept_id: toPositiveInt(nearestPredecessor.dept_id),
             conversion_sources: converted.sources,
           };
         }
       }
-      if (totalConsumedPairs < qtyPairs) {
+      // Only a sequence-enforced stage may block: that IS what the gate means. An
+      // any-order stage posted ahead of its predecessors legitimately finds the chain
+      // empty, so it takes what is there and carries on.
+      if (totalConsumedPairs < qtyPairs && stageFlow.previousRequiredDeptId) {
         const shortageError = new HttpError(
           400,
           `Line ${lineNo}: stage flow blocked for SKU ${skuLabel}; previous stage WIP is insufficient`,
@@ -7697,25 +7772,32 @@ const resolveDcvAvailabilityForLine = async ({
     };
 
     let previousStage = null;
-    if (stageFlow.hasStageRouting && stageFlow.previousRequiredDeptId) {
-      const previousDeptId = toPositiveInt(stageFlow.previousRequiredDeptId);
-      const wipAddBackBySku = await resolveWipAddBackBySkuTx({
-        deptId: previousDeptId,
-        skuIds: [normalizedSkuId],
-      });
-      // Availability panel mirrors posting logic: direct predecessor + convertible better-grade pools.
-      const pool = await getCurrentWipBalanceTx({
-        trx,
-        branchId: req.branchId,
-        skuId: normalizedSkuId,
-        deptId: previousDeptId,
-      });
-      const addBackPairs = Number(
-        wipAddBackBySku.get(Number(normalizedSkuId)) || 0,
-      );
-      const availablePairs = Number(
-        Number(pool?.qty_pairs || 0) + addBackPairs,
-      );
+    const flowPredecessors = Array.isArray(stageFlow.flowPredecessors)
+      ? stageFlow.flowPredecessors
+      : [];
+    const nearestPredecessor = flowPredecessors[0] || null;
+    if (stageFlow.hasStageRouting && nearestPredecessor) {
+      const previousDeptId = toPositiveInt(nearestPredecessor.dept_id);
+      // Availability panel mirrors posting logic: the whole predecessor chain nearest-first
+      // (the poster falls back past any stage that is empty) + convertible better-grade
+      // pools at the nearest one.
+      let availablePairs = 0;
+      for (const predecessor of flowPredecessors) {
+        const wipAddBackBySku = await resolveWipAddBackBySkuTx({
+          deptId: predecessor.dept_id,
+          skuIds: [normalizedSkuId],
+        });
+        const pool = await getCurrentWipBalanceTx({
+          trx,
+          branchId: req.branchId,
+          skuId: normalizedSkuId,
+          deptId: predecessor.dept_id,
+        });
+        availablePairs += Number(
+          Number(pool?.qty_pairs || 0) +
+            Number(wipAddBackBySku.get(Number(normalizedSkuId)) || 0),
+        );
+      }
       const requiredPairs = Number(producedPairs);
       const directDeficitPairs = Math.max(0, requiredPairs - availablePairs);
       let convertiblePairs = 0;
@@ -7753,15 +7835,12 @@ const resolveDcvAvailabilityForLine = async ({
       const effectiveAvailablePairs = Number(availablePairs + convertiblePairs);
       const deficitPairs = Math.max(0, requiredPairs - effectiveAvailablePairs);
       previousStage = {
-        stage_id: toPositiveInt(stageFlow.previousRequiredStageId),
+        stage_id: toPositiveInt(nearestPredecessor.stage_id),
         stage_name: String(
-          stageFlow.requiredRoutes.find(
-            (route) =>
-              Number(route.stage_id) ===
-              Number(stageFlow.previousRequiredStageId),
-          )?.stage_name || `Stage ${stageFlow.previousRequiredStageId}`,
+          nearestPredecessor.stage_name ||
+            `Stage ${nearestPredecessor.stage_id}`,
         ),
-        dept_id: toPositiveInt(stageFlow.previousRequiredDeptId),
+        dept_id: previousDeptId,
         available_pairs: Number(availablePairs),
         convertible_pairs: Number(convertiblePairs),
         effective_available_pairs: Number(effectiveAvailablePairs),

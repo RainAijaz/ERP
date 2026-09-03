@@ -39,6 +39,8 @@
     "test:e2e:whatsapp-notifications": "playwright test tests/e2e/whatsapp-payment-notifications.spec.js",
     "diag:approval-email": "node src/scripts/diagnose-approval-email.js",
     "diag:wip-stage-balance": "node src/scripts/diagnose-wip-stage-balance.js",
+    "test:wip-stage-handoff": "node src/scripts/test-wip-stage-handoff.js",
+    "repair:wip-stranded": "node src/scripts/repair-stranded-wip-stage-balance.js",
     "audit:urdu-ui": "node src/scripts/audit-urdu-ui-coverage.js",
     "localize:urdu:db": "node src/scripts/backfill-urdu-core-seed-text.js",
     "clear:labour-rates": "node src/scripts/clear-labour-rates.js",
