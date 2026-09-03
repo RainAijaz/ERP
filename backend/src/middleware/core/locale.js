@@ -5207,6 +5207,8 @@ Object.assign(translations.en, {
   work_in_process_transfer: "Work In Process Transfer",
   production_stage: "Production Stage",
   transfer_stage_output: "Send part-finished pairs to another branch",
+  wip_select_stage_first:
+    "Select a production stage first — available pairs are counted at that stage.",
 });
 
 Object.assign(translations.ur, {
@@ -5216,6 +5218,8 @@ Object.assign(translations.ur, {
   work_in_process_transfer: "زیرِ تکمیل کام کی منتقلی",
   production_stage: "پیداواری مرحلہ",
   transfer_stage_output: "نامکمل جوڑے دوسری برانچ بھیجیں",
+  wip_select_stage_first:
+    "پہلے پیداواری مرحلہ منتخب کریں — دستیاب جوڑے اسی مرحلے پر شمار ہوتے ہیں۔",
 });
 
 // Ledger description labels. The party/account ledgers compose a sales line

@@ -179,16 +179,16 @@
 
         <% if (currentMode === 'out') { %>
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center" data-wip-row hidden>
-          <label class="text-sm font-semibold text-slate-700 lg:col-start-7 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel('work_in_process', 'Work In Process') %></label>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel('work_in_process', 'Work In Process') %></label>
           <div class="lg:col-span-4">
             <label class="flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-snug text-slate-700">
               <input type="checkbox" name="is_wip_transfer" value="true" class="h-4 w-4 shrink-0" data-wip-toggle <%= selectedVoucher?.is_wip_transfer ? 'checked' : '' %> <%= !canSaveVoucher ? 'disabled' : '' %>>
               <span><%= toFriendlyLabel('transfer_stage_output', 'Send part-finished pairs to another branch') %></span>
             </label>
           </div>
-          <label class="text-sm font-semibold text-slate-700 lg:col-start-7 lg:col-span-2 lg:text-right lg:pr-3" data-wip-stage-label hidden><%= toFriendlyLabel('production_stage', 'Production Stage') %></label>
-          <div class="lg:col-span-4" data-wip-stage-wrap hidden>
-            <select name="stage_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-wip-stage <%= !canSaveVoucher ? 'disabled' : '' %>>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3" data-wip-stage-label><%= toFriendlyLabel('production_stage', 'Production Stage') %></label>
+          <div class="lg:col-span-4 transition" data-wip-stage-wrap>
+            <select name="stage_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400" data-wip-stage <%= !canSaveVoucher ? 'disabled' : '' %>>
               <option value=""><%= toFriendlyLabel('select_stage', 'Select Stage') %></option>
               <% (options.productionStages || []).forEach((stage) => { %>
                 <option value="<%= stage.id %>" data-dept-id="<%= stage.dept_id %>" <%= Number(selectedVoucher?.stage_id || 0) === Number(stage.id) ? 'selected' : '' %>><%= stage.name %></option>
@@ -285,6 +285,7 @@
         <% } %>
       </div>
 
+      <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800" data-wip-stage-hint hidden><%= toFriendlyLabel('wip_select_stage_first', 'Select a production stage first — available pairs are counted at that stage.') %></div>
       <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
           <table class="w-full min-w-[1160px] text-xs" data-lines-table>
@@ -710,6 +711,7 @@
     const wipStageSelect = form.querySelector('[data-wip-stage]');
     const wipStageLabel = form.querySelector('[data-wip-stage-label]');
     const wipStageWrap = form.querySelector('[data-wip-stage-wrap]');
+    const wipStageHint = form.querySelector('[data-wip-stage-hint]');
     const wipPoolMap = new Map(
       (Array.isArray(options.wipPool) ? options.wipPool : []).map((row) => [
         `${Number(row.dept_id || 0)}:${Number(row.sku_id || 0)}`,
@@ -722,15 +724,28 @@
       Number(wipStageSelect?.selectedOptions?.[0]?.getAttribute('data-dept-id') || 0);
     const wipAvailablePairs = (skuId) =>
       Number(wipPoolMap.get(`${selectedStageDeptId()}:${Number(skuId || 0)}`) || 0);
+    // Availability is counted per stage, so a WIP dispatch with no stage picked reads as
+    // "nothing in stock" on every row. Gate the item picker until the stage is chosen.
+    const wipStageMissing = () => isWipActive() && !Number(wipStageSelect?.value || 0);
     const syncWipVisibility = () => {
       if (!wipRow) return;
       const eligible = activeStockType === 'FG' || activeStockType === 'SFG';
       wipRow.hidden = !eligible;
       if (!eligible && wipToggle) wipToggle.checked = false;
       const on = isWipActive();
-      if (wipStageWrap) wipStageWrap.hidden = !on;
-      if (wipStageLabel) wipStageLabel.hidden = !on;
-      if (wipStageSelect) wipStageSelect.required = on;
+      // The stage keeps its slot in the grid whether or not it applies. That half of the row
+      // is empty anyway, so ticking the box fills it instead of pushing the form down a line.
+      if (wipStageWrap) wipStageWrap.classList.toggle('opacity-60', !on);
+      if (wipStageLabel) {
+        // text-slate-700 outranks text-slate-400 in the built sheet, so swap, do not just add.
+        wipStageLabel.classList.toggle('text-slate-700', on);
+        wipStageLabel.classList.toggle('text-slate-400', !on);
+      }
+      if (wipStageSelect) {
+        wipStageSelect.disabled = !on || !canSave;
+        wipStageSelect.required = on;
+      }
+      if (wipStageHint) wipStageHint.hidden = !wipStageMissing();
     };
 
     const applyOutDerived = (row) => {
@@ -1108,13 +1123,14 @@
     const renderOutRows = () => {
       ensureOutRows();
       const showCostAmount = shouldShowCostAmountColumns();
+      const stageMissing = wipStageMissing();
       linesBody.innerHTML = outRows
         .map((row, rowIndex) => {
           const stockType = activeStockType;
           const unitOptions = getOutUnitOptions(row, stockType);
           const itemCell = stockType === 'RM'
             ? `<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-out-change="item_id" data-row-index="${rowIndex}" data-row-field="item" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? '' : 'disabled'}><option value=""></option>${rmItems.map((item) => `<option value="${Number(item.id)}" ${Number(row.item_id || 0) === Number(item.id) ? 'selected' : ''}>${escapeHtml(item.name || item.code || item.id)}</option>`).join('')}</select>`
-            : `<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-out-change="sku_id" data-row-index="${rowIndex}" data-row-field="item" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? '' : 'disabled'}><option value=""></option>${skuList.filter((sku) => String(sku.stock_type || '').toUpperCase() === stockType).map((sku) => `<option value="${Number(sku.id)}" ${Number(row.sku_id || 0) === Number(sku.id) ? 'selected' : ''}>${escapeHtml(sku.sku_name || sku.sku_code || sku.id)}</option>`).join('')}</select>`;
+            : `<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-out-change="sku_id" data-row-index="${rowIndex}" data-row-field="item" data-searchable-select="true" data-searchable-variant="unified" ${canSave && !stageMissing ? '' : 'disabled'}><option value=""></option>${skuList.filter((sku) => String(sku.stock_type || '').toUpperCase() === stockType).map((sku) => `<option value="${Number(sku.id)}" ${Number(row.sku_id || 0) === Number(sku.id) ? 'selected' : ''}>${escapeHtml(sku.sku_name || sku.sku_code || sku.id)}</option>`).join('')}</select>`;
 
           const colorCell = stockType === 'RM'
             ? (() => {
@@ -1534,6 +1550,8 @@
 
     if (wipStageSelect) {
       wipStageSelect.addEventListener('change', () => {
+        // The hint and the item picker both key off the stage, so re-sync before redrawing.
+        syncWipVisibility();
         outRows = outRows.map((row) => applyOutDerived(row));
         renderRows();
       });
