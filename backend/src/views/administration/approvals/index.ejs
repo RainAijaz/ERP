@@ -43,7 +43,11 @@
       );
     }
     if (row?.entity_type !== "SKU") return false;
-    if (getAction(row) === "create") return true;
+    // A new variant is only worth prompting about when it carries a rate the
+    // group could be told about. Linked-SFG mirrors queue at 0 and the approve
+    // route's own `rate > 0` guard drops them, so prompting on those asked a
+    // question whose every answer sent nothing.
+    if (getAction(row) === "create") return Number(payload.sale_rate) > 0;
     return payload.sale_rate !== null && payload.sale_rate !== undefined;
   };
   // "" when the request predates the checkbox being carried through approvals.

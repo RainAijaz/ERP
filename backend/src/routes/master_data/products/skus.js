@@ -575,11 +575,16 @@ router.post(
       let queuedCount = 0;
       let createdCountTotal = 0;
       let pendingCountTotal = 0;
-      // Every variant this submission wants to create, collected so the whole
-      // batch can be queued as ONE approval request. Queuing a row per variant
-      // meant a 40-SKU article arrived as 40 near-identical approvals, while a
-      // bulk rate EDIT of the same 40 arrived as one.
-      const plannedVariants = [];
+      // Each variant this submission wants to create is queued as its OWN
+      // approval request, so an approver can approve or reject one SKU without
+      // taking the whole submission with it. (A single SKU_BULK_CREATE row per
+      // submission was tried and reverted; the batched shape still previews and
+      // applies for requests already PENDING from that period.)
+      //
+      // Carried into every queued payload so the approver's Send / Approve-only
+      // modal can show what the requester asked for. An unchecked checkbox posts
+      // no field at all, so anything but an explicit "1" is a no.
+      const requesterWantsWhatsApp = req.body.send_whatsapp === "1";
       // Variants this submission actually inserted, kept so the new article can
       // be announced on WhatsApp once the transaction commits. Only the FG rows
       // land here: both SFG paths insert at rate 0 (a mirror carries no price of
@@ -671,13 +676,28 @@ router.post(
                   color_id,
                   packing_type_id: null,
                   sale_rate: 0,
+                  // The preview builder picks its dropdowns off this. Without
+                  // it the View modal falls back to FG options and cannot
+                  // resolve an SFG item, so the panel renders blank.
+                  item_type: "SFG",
+                  send_whatsapp: requesterWantsWhatsApp,
                   _summary: buildSkuCode(base, [
                     size_id ? sizeMap.get(size_id) : null,
                     color_id ? colorMap.get(color_id) : null,
                     suffix,
                   ]),
                 };
-                plannedVariants.push(plannedSfg);
+                await trx("erp.approval_request").insert({
+                  branch_id: req.branchId,
+                  request_type: "MASTER_DATA_CHANGE",
+                  entity_type: "SKU",
+                  entity_id: "NEW",
+                  summary: `New Variant: ${plannedSfg._summary}`,
+                  new_value: plannedSfg,
+                  status: "PENDING",
+                  requested_by: req.user.id,
+                  requested_at: trx.fn.now(),
+                });
                 queuedCount++;
                 pendingCount++;
               }
@@ -818,9 +838,31 @@ router.post(
                       color_id,
                       packing_type_id,
                       sale_rate: appliedRate,
-                      _summary: `${item.name} ${sizeMap.get(size_id)} ${packingMap.get(packing_type_id)} ${gradeMap.get(grade_id)}`,
+                      item_type: "FG",
+                      send_whatsapp: requesterWantsWhatsApp,
+                      // Built with the same helper and argument order the
+                      // applier uses to name the SKU, so the approvals row reads
+                      // exactly like the SKU it will create. Colour has to be in
+                      // here: without it two variants that differ only by colour
+                      // queue as two rows an approver cannot tell apart.
+                      _summary: buildSkuCode(item.name, [
+                        sizeMap.get(size_id),
+                        packingMap.get(packing_type_id),
+                        gradeMap.get(grade_id),
+                        color_id ? colorMap.get(color_id) : null,
+                      ]),
                     };
-                    plannedVariants.push(plannedVariant);
+                    await trx("erp.approval_request").insert({
+                      branch_id: req.branchId,
+                      request_type: "MASTER_DATA_CHANGE",
+                      entity_type: "SKU",
+                      entity_id: "NEW",
+                      summary: `New Variant: ${plannedVariant._summary}`,
+                      new_value: plannedVariant,
+                      status: "PENDING",
+                      requested_by: req.user.id,
+                      requested_at: trx.fn.now(),
+                    });
                     queuedCount++;
                     pendingCount++;
                   }
@@ -909,13 +951,27 @@ router.post(
                           color_id,
                           packing_type_id: null,
                           sale_rate: 0,
+                          // Mirrors live on the SFG item, not the article -- the
+                          // preview needs SFG options to resolve them.
+                          item_type: "SFG",
+                          send_whatsapp: requesterWantsWhatsApp,
                           _summary: buildSkuCode(base, [
                             sizeMap.get(size_id),
                             color_id ? colorMap.get(color_id) : null,
                             suffix,
                           ]),
                         };
-                        plannedVariants.push(plannedSfg);
+                        await trx("erp.approval_request").insert({
+                          branch_id: req.branchId,
+                          request_type: "MASTER_DATA_CHANGE",
+                          entity_type: "SKU",
+                          entity_id: "NEW",
+                          summary: `New Variant: ${plannedSfg._summary}`,
+                          new_value: plannedSfg,
+                          status: "PENDING",
+                          requested_by: req.user.id,
+                          requested_at: trx.fn.now(),
+                        });
                         queuedCount++;
                       }
                     }
@@ -924,36 +980,6 @@ router.post(
               }
             }
           }
-        }
-
-        // One request for the whole submission, mirroring how a bulk rate edit
-        // is queued (SKU_BULK_RATE_UPDATE). The payload carries the article's
-        // own variants AND any linked-SFG mirrors, each with its own item_id,
-        // so the applier can create them all without re-deriving the matrix.
-        if (plannedVariants.length) {
-          const itemLabel = item.name || item.code || "";
-          await trx("erp.approval_request").insert({
-            branch_id: req.branchId,
-            request_type: "MASTER_DATA_CHANGE",
-            entity_type: "SKU_BULK_CREATE",
-            entity_id: "BULK",
-            summary: `${res.locals.t("add")} ${res.locals.t("skus")}${itemLabel ? " - " + itemLabel : ""} (${plannedVariants.length})`,
-            new_value: {
-              _action: "bulk_create",
-              item_id,
-              item_name: item.name,
-              item_type: itemType,
-              variants: plannedVariants,
-              // Mirrors the single-edit and bulk-rate payloads: the approver's
-              // Send / Approve-only modal shows this as the requester's stated
-              // preference. Without it a deliberate opt-out is lost the moment
-              // the create needs approval.
-              send_whatsapp: req.body.send_whatsapp === "1",
-            },
-            status: "PENDING",
-            requested_by: req.user.id,
-            requested_at: trx.fn.now(),
-          });
         }
 
         createdCountTotal = createdCount;
@@ -977,8 +1003,8 @@ router.post(
       // the whole feature unreachable for the one role that uses it most.
       // Opt-in only (`=== "1"`, matching /bulk-update and /:id): an unchecked
       // box posts no field at all, so anything other than an explicit tick is
-      // silence.
-      const rateNotifyOptIn = req.body.send_whatsapp === "1";
+      // silence. Same flag the queued payloads above carry.
+      const rateNotifyOptIn = requesterWantsWhatsApp;
       const newArticleUpdates = createdRatedVariants.filter(
         (variant) => Number.isInteger(variant.id) && Number(variant.newRate) > 0,
       );
