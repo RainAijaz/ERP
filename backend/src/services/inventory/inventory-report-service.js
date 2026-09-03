@@ -4928,8 +4928,9 @@ const applyStockLedgerBaseFilters = ({
   return query;
 };
 
-// Two of the columns the ledger "Details" cell reads were added by later
-// migrations, so a DB that has not run them must not break the whole report.
+// Some of what the ledger "Details" cell reads was added by later migrations
+// (erp.dcv_line only exists once the multi-department DCV migration has run),
+// so a DB that has not run them must not break the whole report.
 let stockLedgerDetailColumnSupportPromise = null;
 const loadStockLedgerDetailColumnSupport = () => {
   if (!stockLedgerDetailColumnSupportPromise) {
@@ -4938,29 +4939,99 @@ const loadStockLedgerDetailColumnSupport = () => {
         .withSchema("erp")
         .hasColumn(table, column)
         .catch(() => false);
+    const hasTable = (table) =>
+      knex.schema
+        .withSchema("erp")
+        .hasTable(table)
+        .catch(() => false);
     stockLedgerDetailColumnSupportPromise = Promise.all([
       hasColumn("voucher_header", "remarks_ur"),
       hasColumn("purchase_return_header_ext", "notes"),
+      hasTable("dcv_line"),
     ])
-      .then(([remarksUr, purchaseReturnNotes]) => ({
+      .then(([remarksUr, purchaseReturnNotes, dcvLine]) => ({
         remarksUr,
         purchaseReturnNotes,
+        dcvLine,
       }))
-      .catch(() => ({ remarksUr: false, purchaseReturnNotes: false }));
+      .catch(() => ({
+        remarksUr: false,
+        purchaseReturnNotes: false,
+        dcvLine: false,
+      }));
   }
   return stockLedgerDetailColumnSupportPromise;
 };
+
+// The voucher cell shows the raw type code (DCV, STN_OUT, ...) because that is
+// what users read on the printed voucher, but a code alone does not say what
+// the movement WAS. These labels sit under it. They exist because the
+// erp.voucher_type names are either module-blind ("Department Completion
+// Voucher (DCV)" never says "production") or just a longer spelling of the
+// code; any type not listed here falls back to its voucher_type name.
+const STOCK_LEDGER_VOUCHER_TYPE_LABELS = Object.freeze({
+  DCV: {
+    key: "voucher_kind_production_completion",
+    fallback: "Production Completion",
+  },
+  CONSUMP: {
+    key: "voucher_kind_production_consumption",
+    fallback: "Production Consumption",
+  },
+  LABOUR_PROD: {
+    key: "voucher_kind_production_labour",
+    fallback: "Production Labour",
+  },
+  PROD_PLAN: {
+    key: "voucher_kind_production_plan",
+    fallback: "Production Plan",
+  },
+  LOSS: { key: "voucher_kind_abnormal_loss", fallback: "Abnormal Loss" },
+  STN_OUT: {
+    key: "voucher_kind_branch_transfer_out",
+    fallback: "Branch Transfer (Sent)",
+  },
+  GRN_IN: {
+    key: "voucher_kind_branch_transfer_in",
+    fallback: "Branch Transfer (Received)",
+  },
+  STOCK_COUNT_ADJ: {
+    key: "voucher_kind_stock_count",
+    fallback: "Stock Count Adjustment",
+  },
+  OPENING_STOCK: {
+    key: "voucher_kind_opening_stock",
+    fallback: "Opening Stock",
+  },
+  PI: { key: "voucher_kind_purchase_invoice", fallback: "Purchase Invoice" },
+  PR: { key: "voucher_kind_purchase_return", fallback: "Purchase Return" },
+  SALES_VOUCHER: { key: "voucher_kind_sale", fallback: "Sale" },
+  SALES_ORDER: { key: "voucher_kind_sales_order", fallback: "Sales Order" },
+  RDV: {
+    key: "voucher_kind_returnable_dispatch",
+    fallback: "Returnable Dispatch",
+  },
+  RRV: {
+    key: "voucher_kind_returnable_receipt",
+    fallback: "Returnable Receipt",
+  },
+});
 
 // Every stock-moving voucher type keeps its narrative somewhere different:
 // a reason code (stock count, abnormal loss, returnable dispatch), a reason
 // enum (purchase return), free-text notes (stock count, incoming transfer,
 // purchase invoice/return), a per-line return reason (sales return), or just
 // voucher_header.remarks. The Details cell shows whichever ones the row has,
-// reasons first, so the ledger explains WHY the stock moved.
+// so the ledger explains WHY the stock moved.
+//
+// It leads with the COUNTERPARTY — the branch a transfer went to, the customer
+// or supplier, the production department — because that is what the voucher
+// number hides: "STN_OUT-237" does not say which branch received the goods.
 //
 // Segments are returned untranslated-but-tagged: { text } is DB text rendered
-// as-is, { key } is a translation key the view resolves (never call t() on a
-// DB-stored label).
+// as-is, { key } is a translation key the view resolves, and
+// { labelKey, labelFallback, text } is a translated label in front of DB text
+// (never call t() on a DB-stored label).
 const buildStockLedgerDetailSegments = (row) => {
   const segments = [];
   const seen = new Set();
@@ -4971,6 +5042,61 @@ const buildStockLedgerDetailSegments = (row) => {
     seen.add(text);
     segments.push({ text });
   };
+
+  const pushLabeled = (labelKey, labelFallback, value) => {
+    const text = String(value || "").trim();
+    if (!text) return;
+    const dedupeKey = `${labelKey} ${text}`;
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    segments.push({ labelKey, labelFallback, text });
+  };
+
+  const voucherTypeCode = String(row?.voucher_type_code || "")
+    .trim()
+    .toUpperCase();
+
+  // Transfers: the Branch column shows the branch this row belongs to, so the
+  // half worth spelling out is the OTHER end plus the bill book the goods
+  // travelled on.
+  if (voucherTypeCode === "STN_OUT") {
+    pushLabeled("sent_to", "Sent to", row?.transfer_dest_branch);
+    pushLabeled("bill_book_no", "Bill Book No", row?.transfer_bill_no);
+  } else if (voucherTypeCode === "GRN_IN") {
+    pushLabeled("received_from", "Received from", row?.transfer_source_branch);
+    if (Number(row?.transfer_source_voucher_no || 0) > 0) {
+      pushLabeled(
+        "against_voucher",
+        "Against",
+        `STN_OUT-${row.transfer_source_voucher_no}`,
+      );
+    }
+    pushLabeled("bill_book_no", "Bill Book No", row?.transfer_source_bill_no);
+  }
+
+  // Production: which department/labour completed the stock, and — for the
+  // consumption voucher the completion generates — which DCV it belongs to.
+  pushLabeled("department", "Department", row?.production_department);
+  pushLabeled("labour", "Labour", row?.production_labour);
+  if (Number(row?.source_production_voucher_no || 0) > 0) {
+    pushLabeled(
+      "against_voucher",
+      "Against",
+      `DCV-${row.source_production_voucher_no}`,
+    );
+  }
+
+  pushLabeled(
+    "customer",
+    "Customer",
+    row?.sales_customer_name || row?.sales_walkin_customer,
+  );
+  pushLabeled(
+    "supplier",
+    "Supplier",
+    row?.purchase_supplier_name || row?.purchase_return_supplier_name,
+  );
+  pushLabeled("party", "Party", row?.returnable_party_name);
 
   const purchaseReturnReason = String(row?.purchase_return_reason || "")
     .trim()
@@ -5084,8 +5210,53 @@ const loadStockLedgerRows = async ({
     )
     .leftJoin("erp.purchase_return_header_ext as prh", "prh.voucher_id", "vh.id")
     .leftJoin("erp.rgp_outward as rgo", "rgo.voucher_id", "vh.id")
-    .leftJoin("erp.rgp_reason_registry as rgr", "rgr.code", "rgo.reason_code")
+    // An RRV carries no party/reason of its own — both live on the RDV it
+    // returns against.
+    .leftJoin("erp.rgp_inward as rgi", "rgi.voucher_id", "vh.id")
+    .leftJoin(
+      "erp.rgp_outward as rgo2",
+      "rgo2.voucher_id",
+      "rgi.rgp_out_voucher_id",
+    )
+    .leftJoin("erp.rgp_reason_registry as rgr", function () {
+      this.on(
+        "rgr.code",
+        "=",
+        knex.raw("COALESCE(rgo.reason_code, rgo2.reason_code)"),
+      );
+    })
     .leftJoin("erp.return_reasons as srr", "srr.id", "sln.return_reason_id")
+    // Counterparty sources for the Details cell.
+    .leftJoin("erp.stock_transfer_out_header as sto", "sto.voucher_id", "vh.id")
+    .leftJoin("erp.branches as stob", "stob.id", "sto.dest_branch_id")
+    .leftJoin(
+      "erp.voucher_header as srcvh",
+      "srcvh.id",
+      "gih.against_stn_out_id",
+    )
+    .leftJoin("erp.branches as srcb", "srcb.id", "srcvh.branch_id")
+    .leftJoin(
+      "erp.stock_transfer_out_header as srcsto",
+      "srcsto.voucher_id",
+      "gih.against_stn_out_id",
+    )
+    .leftJoin("erp.consumption_header as coh", "coh.voucher_id", "vh.id")
+    .leftJoin(
+      "erp.voucher_header as prodvh",
+      "prodvh.id",
+      "coh.source_production_id",
+    )
+    .leftJoin("erp.sales_header as shd", "shd.voucher_id", "vh.id")
+    .leftJoin("erp.parties as scp", "scp.id", "shd.customer_party_id")
+    .leftJoin("erp.parties as pip", "pip.id", "pih.supplier_party_id")
+    .leftJoin("erp.parties as prp", "prp.id", "prh.supplier_party_id")
+    .leftJoin("erp.parties as rgpp", function () {
+      this.on(
+        "rgpp.id",
+        "=",
+        knex.raw("COALESCE(rgo.vendor_party_id, rgo2.vendor_party_id)"),
+      );
+    })
     .select(
       "sl.id",
       "sl.txn_date",
@@ -5111,6 +5282,21 @@ const loadStockLedgerRows = async ({
         "sales_return_reason",
         filters.locale,
       ),
+      localizedNameSelect("stob", "transfer_dest_branch", filters.locale),
+      "sto.bill_book_no as transfer_bill_no",
+      localizedNameSelect("srcb", "transfer_source_branch", filters.locale),
+      "srcvh.voucher_no as transfer_source_voucher_no",
+      "srcsto.bill_book_no as transfer_source_bill_no",
+      "prodvh.voucher_no as source_production_voucher_no",
+      localizedNameSelect("scp", "sales_customer_name", filters.locale),
+      "shd.customer_name as sales_walkin_customer",
+      localizedNameSelect("pip", "purchase_supplier_name", filters.locale),
+      localizedNameSelect(
+        "prp",
+        "purchase_return_supplier_name",
+        filters.locale,
+      ),
+      localizedNameSelect("rgpp", "returnable_party_name", filters.locale),
     )
     .select(
       detailColumnSupport.remarksUr && filters.locale === "ur"
@@ -5125,6 +5311,42 @@ const loadStockLedgerRows = async ({
   if (detailColumnSupport.purchaseReturnNotes) {
     txnQuery = txnQuery.select("prh.notes as purchase_return_notes");
   }
+
+  // A DCV can complete several departments in one voucher, each worked by a
+  // different labour, so the department that produced THIS ledger row lives on
+  // erp.dcv_line. dcv_header only holds the first one — it is the fallback
+  // for a DB that has not run the multi-department migration yet.
+  txnQuery = txnQuery.leftJoin(
+    "erp.dcv_header as dch",
+    "dch.voucher_id",
+    "vh.id",
+  );
+  if (detailColumnSupport.dcvLine) {
+    txnQuery = txnQuery
+      .leftJoin("erp.dcv_line as dcl", "dcl.voucher_line_id", "vl.id")
+      .leftJoin("erp.departments as dcd", function () {
+        this.on(
+          "dcd.id",
+          "=",
+          knex.raw("COALESCE(dcl.dept_id, dch.dept_id)"),
+        );
+      })
+      .leftJoin("erp.labours as dclb", function () {
+        this.on(
+          "dclb.id",
+          "=",
+          knex.raw("COALESCE(dcl.labour_id, dch.labour_id)"),
+        );
+      });
+  } else {
+    txnQuery = txnQuery
+      .leftJoin("erp.departments as dcd", "dcd.id", "dch.dept_id")
+      .leftJoin("erp.labours as dclb", "dclb.id", "dch.labour_id");
+  }
+  txnQuery = txnQuery.select(
+    localizedNameSelect("dcd", "production_department", filters.locale),
+    localizedNameSelect("dclb", "production_labour", filters.locale),
+  );
 
   if (filters.stockType === STOCK_TYPES.rawMaterial) {
     txnQuery = txnQuery
@@ -5225,11 +5447,20 @@ const loadStockLedgerRows = async ({
       );
     });
 
+    const voucherTypeCode = String(row?.voucher_type_code || "").trim();
+    const voucherTypeName = String(row?.voucher_type_name || "").trim();
+    const voucherKindLabel =
+      STOCK_LEDGER_VOUCHER_TYPE_LABELS[voucherTypeCode.toUpperCase()] || null;
+
     return {
       id: Number(row?.id || 0),
       txnDate: String(row?.txn_date || ""),
-      voucherTypeCode: String(row?.voucher_type_code || "").trim(),
-      voucherTypeName: String(row?.voucher_type_name || "").trim(),
+      voucherTypeCode,
+      voucherTypeName,
+      // The view resolves the key and falls back to the English wording, then
+      // to the DB voucher_type name for any type not in the curated map.
+      voucherKindKey: voucherKindLabel?.key || "",
+      voucherKindFallback: voucherKindLabel?.fallback || voucherTypeName,
       voucherNo: Number(row?.voucher_no || 0) || null,
       voucherHeaderId: Number(row?.voucher_header_id || 0) || null,
       branchId: Number(row?.branch_id || 0) || null,

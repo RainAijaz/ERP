@@ -308,17 +308,33 @@
             <% rows.forEach((row) => { %>
               <% const detailText = (() => {
                 // The article is fixed by the filter (and shown above the table),
-                // so Details carries the voucher's own reason / notes / remarks.
+                // so Details carries the voucher's counterparty (which branch,
+                // customer, supplier, department) plus its reason / notes / remarks.
                 const segments = Array.isArray(row.detailSegments) ? row.detailSegments : [];
                 const text = segments
-                  .map((segment) => String(segment?.key ? t(segment.key) : segment?.text || "").trim())
+                  .map((segment) => {
+                    const value = String(segment?.key ? t(segment.key) : segment?.text || "").trim();
+                    if (!value) return "";
+                    const label = segment?.labelKey
+                      ? tt(segment.labelKey, String(segment.labelFallback || "").trim())
+                      : "";
+                    return label ? `${label}: ${value}` : value;
+                  })
                   .filter(Boolean)
                   .join(" • ");
                 return text || "-";
               })(); %>
+              <% const voucherKindText = row.voucherKindKey
+                ? tt(row.voucherKindKey, String(row.voucherKindFallback || "").trim())
+                : String(row.voucherKindFallback || "").trim(); %>
               <tr class="bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100">
                 <td class="px-3 py-2"><%= formatDate(row.txnDate) %></td>
-                <td class="px-3 py-2"><%= `${row.voucherTypeCode || "-"}-${row.voucherNo || "-"}` %></td>
+                <td class="px-3 py-2">
+                  <div><%= `${row.voucherTypeCode || "-"}-${row.voucherNo || "-"}` %></div>
+                  <% if (voucherKindText) { %>
+                    <div class="text-xs text-slate-500"><%= voucherKindText %></div>
+                  <% } %>
+                </td>
                 <td class="px-3 py-2"><%= detailText %></td>
                 <% if (showLedgerColorSizeColumns) { %>
                   <td class="px-3 py-2"><%= row.colorName || "-" %></td>

@@ -4922,6 +4922,55 @@ Object.assign(translations.ur, {
   not_now: "ابھی نہیں",
 });
 
+// Stock Ledger: the voucher code alone ("DCV-4", "STN_OUT-237") never says what
+// the movement was or where it went, so the report prints a plain-language
+// voucher kind under the code and leads the Details cell with the counterparty.
+// Same trailing-Object.assign rule as the blocks above -- every en key needs its
+// ur twin here or Urdu renders "ترجمہ درکار".
+Object.assign(translations.en, {
+  sent_to: "Sent to",
+  received_from: "Received from",
+  against_voucher: "Against",
+  party: "Party",
+  voucher_kind_production_completion: "Production Completion",
+  voucher_kind_production_consumption: "Production Consumption",
+  voucher_kind_production_labour: "Production Labour",
+  voucher_kind_production_plan: "Production Plan",
+  voucher_kind_abnormal_loss: "Abnormal Loss",
+  voucher_kind_branch_transfer_out: "Branch Transfer (Sent)",
+  voucher_kind_branch_transfer_in: "Branch Transfer (Received)",
+  voucher_kind_stock_count: "Stock Count Adjustment",
+  voucher_kind_opening_stock: "Opening Stock",
+  voucher_kind_purchase_invoice: "Purchase Invoice",
+  voucher_kind_purchase_return: "Purchase Return",
+  voucher_kind_sale: "Sale",
+  voucher_kind_sales_order: "Sales Order",
+  voucher_kind_returnable_dispatch: "Returnable Dispatch",
+  voucher_kind_returnable_receipt: "Returnable Receipt",
+});
+
+Object.assign(translations.ur, {
+  sent_to: "بھیجا گیا",
+  received_from: "موصول ہوا از",
+  against_voucher: "کے مقابل",
+  party: "پارٹی",
+  voucher_kind_production_completion: "پروڈکشن تکمیل",
+  voucher_kind_production_consumption: "پروڈکشن کھپت",
+  voucher_kind_production_labour: "پروڈکشن لیبر",
+  voucher_kind_production_plan: "پروڈکشن پلان",
+  voucher_kind_abnormal_loss: "غیر معمولی نقصان",
+  voucher_kind_branch_transfer_out: "برانچ ٹرانسفر (بھیجا گیا)",
+  voucher_kind_branch_transfer_in: "برانچ ٹرانسفر (موصول)",
+  voucher_kind_stock_count: "اسٹاک کاؤنٹ ایڈجسٹمنٹ",
+  voucher_kind_opening_stock: "ابتدائی اسٹاک",
+  voucher_kind_purchase_invoice: "خریداری انوائس",
+  voucher_kind_purchase_return: "خریداری واپسی",
+  voucher_kind_sale: "فروخت",
+  voucher_kind_sales_order: "سیلز آرڈر",
+  voucher_kind_returnable_dispatch: "قابل واپسی روانگی",
+  voucher_kind_returnable_receipt: "قابل واپسی وصولی",
+});
+
 const formatDateDisplay = (value, fallback = "-") => {
   if (value === null || value === undefined || value === "") return fallback;
   const text = String(value).trim();
