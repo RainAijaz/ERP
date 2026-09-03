@@ -611,7 +611,8 @@
           currentModalState.status === "PENDING" &&
           (currentModalState.action === "update" || currentModalState.action === "create") &&
           getEditPanel() &&
-          getEditPanel().querySelectorAll("[data-field]").length > 0,
+          (getEditPanel().querySelectorAll("[data-field]").length > 0 ||
+            getEditPanel().querySelectorAll("[data-approval-rate-row]").length > 0),
       );
       if (editBtn) editBtn.classList.toggle("hidden", !eligible || editMode);
       if (editCancelBtn) editCancelBtn.classList.toggle("hidden", !eligible || !editMode);
@@ -632,6 +633,22 @@
       }
       setEditButtons();
     };
+
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-approval-row-remove]");
+      if (!button || button.disabled) return;
+      const row = button.closest("[data-approval-rate-row]");
+      if (!row) return;
+      const panel = button.closest("[data-approval-preview]");
+      if (panel) {
+        let removed = [];
+        try { removed = JSON.parse(panel.dataset.removedRateRowIds || "[]"); } catch (err) { removed = []; }
+        const rowId = button.getAttribute("data-rate-row-id");
+        if (rowId && !removed.includes(String(rowId))) removed.push(String(rowId));
+        panel.dataset.removedRateRowIds = JSON.stringify(removed);
+      }
+      row.remove();
+    });
 
     const collectEditedValues = (panel) => {
       const values = {};
@@ -671,6 +688,13 @@
       multiCheckboxMap.forEach((items, key) => {
         values[key] = items;
       });
+      let rateRowIds = [];
+      let removedRateRowIds = [];
+      try { rateRowIds = JSON.parse(panel.dataset.rateRowIds || "[]"); } catch (err) { rateRowIds = []; }
+      try { removedRateRowIds = JSON.parse(panel.dataset.removedRateRowIds || "[]"); } catch (err) { removedRateRowIds = []; }
+      if (rateRowIds.length) {
+        values.selected_row_ids = rateRowIds.filter((id) => !removedRateRowIds.includes(String(id)));
+      }
       const hrBulkMode = String(panel?.dataset?.hrBulkMode || "").trim().toUpperCase();
       if (hrBulkMode === "BULK_COMMISSION_SKU_UPSERT" || hrBulkMode === "SKU_MULTI_UPSERT" || hrBulkMode === "BULK_LABOUR_RATE_SKU_UPSERT" || hrBulkMode === "BULK_LABOUR_RATE_COPY") {
         let rows = [];
@@ -688,7 +712,7 @@
               sku_id: row.sku_id ?? row.skuId ?? null,
               new_rate: nextRate,
             };
-          });
+          }).filter((row) => !values.selected_row_ids || values.selected_row_ids.includes(String(row.sku_id)));
         }
       }
       return values;
@@ -779,6 +803,9 @@
       const rateList = panel.querySelector("[data-sku-rate-list]");
       const emptyMsg = panel.querySelector("[data-rate-list-empty]");
       if (!rateList) return;
+      const variants = Array.isArray(values?.variants) ? values.variants : [];
+      panel.dataset.rateRowIds = JSON.stringify(variants.map((variant) => String(variant.id)));
+      panel.dataset.removedRateRowIds = "[]";
 
       rateList.innerHTML = "";
       if (emptyMsg) emptyMsg.style.display = "none";
@@ -856,12 +883,73 @@
       return text || previewText.none;
     };
 
+    const resolvePreviousRate = (row) =>
+      row?.previous_rate ?? row?.previousRate ?? row?.old_rate ?? row?.current_rate ?? row?.rate_before ?? null;
+
+    const resolveNextRate = (row) => row?.new_rate ?? row?.newRate ?? row?.rate ?? row?.value ?? null;
+
+    const toRateNumber = (value) => {
+      if (value == null || value === "") return null;
+      const cast = Number(value);
+      return Number.isFinite(cast) ? cast : null;
+    };
+
+    // Bulk rate payloads carry every SKU in scope, including the ones the requester left alone,
+    // so the approver needs the untouched rows visually separated from the real edits.
+    const resolveRateChangeStatus = (previous, next) => {
+      const prev = toRateNumber(previous);
+      const nextValue = toRateNumber(next);
+      if (prev == null && nextValue == null) return "unchanged";
+      if (prev == null) return "new";
+      if (nextValue == null) return "cleared";
+      return Math.abs(prev - nextValue) < 0.005 ? "unchanged" : "changed";
+    };
+
+    // Plain 50-level tints on purpose: the /70 opacity variants are not in the
+    // prebuilt public/styles.css, so they would render as no background at all.
+    const rateChangeStyles = {
+      new: { row: "bg-emerald-50", rate: "font-semibold text-emerald-700", badge: "bg-emerald-100 text-emerald-700" },
+      changed: { row: "bg-amber-50", rate: "font-semibold text-amber-700", badge: "bg-amber-100 text-amber-700" },
+      cleared: { row: "bg-rose-50", rate: "font-semibold text-rose-700", badge: "bg-rose-100 text-rose-700" },
+      unchanged: { row: "", rate: "text-slate-400", badge: "" },
+    };
+
+    const buildRateChangeBadge = (status, previous, nextRate) => {
+      const style = rateChangeStyles[status] || rateChangeStyles.unchanged;
+      const base = `ml-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold ${style.badge}`;
+      if (status === "new") return `<span class="${base} uppercase">${previewText.newLabel}</span>`;
+      if (status === "cleared") return `<span class="${base} uppercase">${previewText.changed}</span>`;
+      if (status !== "changed") return "";
+      const prev = toRateNumber(previous);
+      const next = toRateNumber(nextRate);
+      if (prev == null || next == null) return `<span class="${base} uppercase">${previewText.changed}</span>`;
+      const delta = next - prev;
+      return `<span class="${base}">${delta > 0 ? "+" : "-"}${Math.abs(delta).toFixed(2)}</span>`;
+    };
+
+    const buildRateRowHtml = (entry) => {
+      const style = rateChangeStyles[entry.status] || rateChangeStyles.unchanged;
+      const tone = entry.status === "unchanged" ? "text-slate-400" : "text-slate-700";
+      const rowId = entry.row?.sku_id ?? entry.row?.skuId ?? entry.row?.id ?? "";
+      return `
+              <tr class="${style.row}" data-approval-rate-row data-rate-row-id="${rowId}">
+                <td class="px-3 py-1.5 ${tone}">${resolveSkuText(entry.row)}</td>
+                <td class="px-3 py-1.5 ${tone}">${resolveArticleText(entry.row)}</td>
+                <td class="px-3 py-1.5 ${tone}">${toRateText(entry.previous)}</td>
+                <td class="px-3 py-1.5 ${style.rate}">${toRateText(entry.nextRate)}${buildRateChangeBadge(entry.status, entry.previous, entry.nextRate)}</td>
+                <td class="px-2 py-1.5 text-right"><button type="button" data-approval-row-remove data-rate-row-id="${rowId}" class="rounded border border-rose-200 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-rose-600">${previewText.remove}</button></td>
+              </tr>
+            `;
+    };
+
     const applyHrBulkPanels = (panel, values) => {
       if (!panel || !values || typeof values !== "object") return;
       const mode = String(values.mode || "").toUpperCase();
       const rows = Array.isArray(values.rows) ? values.rows : [];
       panel.dataset.hrBulkMode = mode;
       panel.dataset.hrBulkRows = JSON.stringify(rows);
+      panel.dataset.rateRowIds = JSON.stringify(rows.map((row) => String(row?.sku_id ?? row?.skuId ?? "")).filter(Boolean));
+      panel.dataset.removedRateRowIds = "[]";
 
       const commissionPanel = panel.querySelector("[data-commission-bulk-panel]");
       const commissionBody = panel.querySelector("[data-commission-bulk-body]");
@@ -961,15 +1049,26 @@
       }
       values._previewAction = previewAction;
       applyValuesToFields(panel, values);
+      panel.querySelectorAll("[data-approval-row-remove]").forEach((button) => {
+        button.classList.toggle("hidden", !isAdmin);
+      });
       if (previewType === "raw-materials") {
         applyRawMaterialRates(panel, values);
       }
       if (previewType === "skus") {
         applySkuPreview(panel, values);
       }
+      if (previewType === "sku-bulk-rates") {
+        const variants = Array.isArray(values?.variants) ? values.variants : [];
+        panel.dataset.rateRowIds = JSON.stringify(variants.map((variant) => String(variant.id)));
+        panel.dataset.removedRateRowIds = "[]";
+      }
       if (previewType === "hr-payroll") {
         applyHrBulkPanels(panel, values);
       }
+      panel.querySelectorAll("[data-approval-row-remove]").forEach((button) => {
+        button.classList.toggle("hidden", !isAdmin);
+      });
       const fieldCount = panel.querySelectorAll("[data-field]").length;
       const fallbackBox = panel.querySelector("[data-preview-fallback]");
       if (fallbackBox) {

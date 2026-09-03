@@ -953,12 +953,12 @@ router.post(
       let approvalRequired = await shouldRequireApproval(
         req,
         "master_data.products.skus",
-        "delete",
+        "edit",
       );
       const allowed = hasPermission(
         req.user,
         "master_data.products.skus",
-        "delete",
+        "edit",
       );
       if (!allowed && !approvalRequired) {
         approvalRequired = true;
@@ -1119,12 +1119,12 @@ router.post(
       let approvalRequired = await shouldRequireApproval(
         req,
         "master_data.products.skus",
-        "delete",
+        "edit",
       );
       const allowed = hasPermission(
         req.user,
         "master_data.products.skus",
-        "delete",
+        "edit",
       );
       if (process.env.DEBUG_SKU_PERMS === "1") {
         console.log("[SKU PERM DEBUG]", {
@@ -1149,7 +1149,16 @@ router.post(
           entity_id: String(id),
           summary: `${res.locals.t("edit")} ${res.locals.t("skus")}${skuLabel ? " - " + skuLabel : ""}`,
           old_value: { _action: "update", sale_rate: currentRate },
-          new_value: { _action: "update", sale_rate: req.body.sale_rate },
+          // Carry the requester's WhatsApp checkbox into the payload. Approving
+          // a rate change messages the sales group, and without this the choice
+          // made on the form was dropped the moment the edit needed approval.
+          // The approver still confirms on the approvals screen -- this only
+          // tells them what the requester asked for.
+          new_value: {
+            _action: "update",
+            sale_rate: req.body.sale_rate,
+            send_whatsapp: req.body.send_whatsapp === "1",
+          },
           status: "PENDING",
           requested_by: req.user.id,
           requested_at: knex.fn.now(),
