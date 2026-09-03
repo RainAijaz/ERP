@@ -1479,8 +1479,8 @@ const translations = {
       "Plan future production quantities without posting consumption or labour.",
     production_reports: "Production Reports",
     production_reports_purpose_tooltip:
-      "Entry point for production control, planning, and pending flow reports.",
-    production_control_report: "Production Control Report",
+      "Entry point for production, planning, and pending flow reports.",
+    production_control_report: "Production Report",
     production_control_report_purpose_tooltip:
       "Tracks approved production output by voucher, SKU, and department.",
     consumption_report: "Consumption Report",
@@ -3400,7 +3400,7 @@ translations.ur = {
   production_category_semi_finished: "نیم تیار",
   production_overhead: "پروڈکشن اوور ہیڈ لاگت کا تجزیہ",
   production_reports: "پیداواری رپورٹس",
-  production_control_report: "پیداواری کنٹرول رپورٹ",
+  production_control_report: "پیداواری رپورٹ",
   consumption_report: "کنزمپشن رپورٹ",
   planned_consumption: "منصوبہ بند کھپت",
   consumption_report_purpose_tooltip:
@@ -3934,7 +3934,7 @@ translations.ur = {
   purchase_reports_purpose_tooltip:
     "Purchases ko party, material, quantity aur amount ke sath analyze karta hai.",
   production_reports_purpose_tooltip:
-    "Production control, planning, aur pending flow reports ka main section.",
+    "Production, planning, aur pending flow reports ka main section.",
   production_control_report_purpose_tooltip:
     "Approved production output ko voucher, SKU aur department ke hisab se track karta hai.",
   consumption_report_purpose_tooltip:

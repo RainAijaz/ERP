@@ -5,7 +5,7 @@
   const summaryRows = Array.isArray(reportData?.summaryRows) ? reportData.summaryRows : [];
   const selectedOrderBy = ["voucher", "sku", "department"].includes(String(filters?.orderBy || "").toLowerCase())
     ? String(filters.orderBy).toLowerCase()
-    : "voucher";
+    : "department";
   const selectedReportType = ["details", "summary"].includes(String(filters?.reportType || "").toLowerCase())
     ? String(filters.reportType).toLowerCase()
     : "details";
@@ -21,7 +21,7 @@
   const selectedSkuUnit = ["ALL", "PAIR", "DZN"].includes(String(filters?.skuUnit || "").toUpperCase())
     ? String(filters?.skuUnit || "").toUpperCase()
     : "ALL";
-  const selectedStageScope = String(filters?.stageScope || "ALL").toUpperCase() === "FINAL_ONLY" ? "FINAL_ONLY" : "ALL";
+  const selectedStageScope = String(filters?.stageScope || "FINAL_ONLY").toUpperCase() === "FINAL_ONLY" ? "FINAL_ONLY" : "ALL";
   const branchAllSelected = !selectedBranchIds.length;
   const departmentAllSelected = !selectedDepartmentIds.length;
   const labourAllSelected = !selectedLabourIds.length;

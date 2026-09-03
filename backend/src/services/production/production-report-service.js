@@ -156,18 +156,18 @@ const normalizeSkuUnit = (value) => {
 };
 
 const normalizeStageScope = (value) => {
-  const normalized = String(value || "ALL")
+  const normalized = String(value || "FINAL_ONLY")
     .trim()
     .toUpperCase();
   return normalized === "FINAL_ONLY" ? "FINAL_ONLY" : "ALL";
 };
 
 const normalizeProductionControlOrderBy = (value) => {
-  const normalized = String(value || "voucher")
+  const normalized = String(value || "department")
     .trim()
     .toLowerCase();
   if (["voucher", "sku", "department"].includes(normalized)) return normalized;
-  return "voucher";
+  return "department";
 };
 
 const normalizeReportType = (value) => {
