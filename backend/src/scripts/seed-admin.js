@@ -1,5 +1,6 @@
 const knex = require("../db/knex");
 const { hashPassword } = require("../middleware/core/auth");
+const { adminRoleSqlPredicate } = require("../utils/admin-role");
 
 const username = process.env.SEED_ADMIN_USERNAME || "admin";
 const password = process.env.SEED_ADMIN_PASSWORD || "admin123";
@@ -18,7 +19,12 @@ const run = async () => {
     throw new Error("SEED_ADMIN_EMAIL is required.");
   }
 
-  const role = await knex("erp.role_templates").select("id").whereRaw("lower(trim(name)) = 'admin'").first();
+  // Prefer the stored flag; the name match is only for a database that predates
+  // erp.role_templates.is_admin. See utils/admin-role.js.
+  const role = await knex("erp.role_templates")
+    .select("id")
+    .whereRaw(await adminRoleSqlPredicate())
+    .first();
 
   if (!role) {
     throw new Error("Admin role template not found");

@@ -30,7 +30,7 @@
         <select name="primary_role_id" required class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" data-searchable-select="true" data-searchable-variant="unified">
           <option value=""><%= t('select_role') %></option>
           <% roles.forEach(r => { %>
-            <option value="<%= r.id %>" data-role-name="<%= String(r.name || '').trim().toLowerCase() %>" <%= user && user.primary_role_id == r.id ? 'selected' : '' %>><%= r.name %></option>
+            <option value="<%= r.id %>" data-role-name="<%= String(r.name || '').trim().toLowerCase() %>" data-role-is-admin="<%= r.is_admin === true ? '1' : '0' %>" <%= user && user.primary_role_id == r.id ? 'selected' : '' %>><%= r.name %></option>
           <% }) %>
         </select>
       </div>
@@ -85,8 +85,16 @@
         ),
       );
 
+    // Mirrors utils/admin-role.js: the stored flag decides, and the role name is
+    // consulted only on a database where erp.role_templates.is_admin is missing
+    // (every option then renders data-role-is-admin="0").
     const isAdminRoleSelected = () => {
       const selected = roleSelect.options[roleSelect.selectedIndex];
+      if (selected?.dataset?.roleIsAdmin === "1") return true;
+      const anyFlagged = Array.from(roleSelect.options).some(
+        (opt) => opt.dataset?.roleIsAdmin === "1",
+      );
+      if (anyFlagged) return false;
       const roleName = String(selected?.dataset?.roleName || selected?.textContent || "")
         .trim()
         .toLowerCase();

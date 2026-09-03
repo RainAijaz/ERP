@@ -3,6 +3,10 @@ const bcrypt = require("bcrypt");
 const knex = require("../../db/knex");
 const { navConfig } = require("../../utils/nav-config");
 const { isActionApplicable } = require("../../utils/scope-action-policy");
+const {
+  roleTemplatesHaveAdminFlag,
+  isAdminRoleRow,
+} = require("../../utils/admin-role");
 const { HttpError } = require("../errors/http-error");
 const { parseCookies, setCookie } = require("../utils/cookies");
 
@@ -319,6 +323,9 @@ const loadUserContextCached = async (userId) => {
 };
 
 const loadUserContext = async (userId) => {
+  const hasAdminFlag = await roleTemplatesHaveAdminFlag();
+  const roleColumns = hasAdminFlag ? ["id", "name", "is_admin"] : ["id", "name"];
+
   const user = await knex("erp.users")
     .select("id", "name", "name_ur", "username", "status", "primary_role_id")
     .where({ id: userId })
@@ -335,7 +342,7 @@ const loadUserContext = async (userId) => {
   const [role, branchRows, rolePermissionRows, overrideRows] =
     await Promise.all([
       knex("erp.role_templates")
-        .select("id", "name")
+        .select(roleColumns)
         .where({ id: user.primary_role_id })
         .first(),
       knex("erp.user_branch").select("branch_id").where({ user_id: userId }),
@@ -462,10 +469,9 @@ const loadUserContext = async (userId) => {
     status: user.status,
     primaryRoleId: user.primary_role_id,
     primaryRoleName: role?.name || null,
-    isAdmin:
-      String(role?.name || "")
-        .trim()
-        .toLowerCase() === "admin",
+    // Reads erp.role_templates.is_admin. Falls back to the legacy role-name match
+    // only while that column is missing -- see utils/admin-role.js.
+    isAdmin: isAdminRoleRow(role),
     branchIds,
     permissions,
   };

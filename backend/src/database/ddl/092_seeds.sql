@@ -241,7 +241,7 @@ VALUES
   ('SCREEN','master_data.basic_info.cities','Cities', 'Master Data'),
   ('SCREEN','master_data.basic_info.product_groups','Product Groups', 'Master Data'),
   ('SCREEN','master_data.basic_info.product_subgroups','Product Subgroups', 'Master Data'),
-  ('SCREEN','master_data.basic_info.product_types','Product Types', 'Master Data'),
+  ('SCREEN','master_data.basic_info.product_types','Product Categories', 'Master Data'),
   ('SCREEN','master_data.basic_info.sales_discount_policies','Sales Discount Policies', 'Master Data'),
   ('SCREEN','master_data.basic_info.party_groups','Party Groups', 'Master Data'),
   ('SCREEN','master_data.basic_info.account_groups','Account Groups', 'Master Data'),
