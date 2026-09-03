@@ -2075,6 +2075,7 @@ router.post(
 
       let changedFields = [];
       let requestSnapshot = null;
+      let cancelledByEmptyRateSelection = false;
       await knex.transaction(async (trx) => {
         const request = await trx("erp.approval_request").where({ id }).first();
         if (!request || request.status !== "PENDING") {
@@ -2084,6 +2085,29 @@ router.post(
 
         const sanitized = sanitizeEditedValues(request, submitted);
         if (sanitized.error) {
+          if (sanitized.error === "approval_edit_empty_rate_selection") {
+            cancelledByEmptyRateSelection = true;
+            await trx("erp.approval_request").where({ id }).update({
+              status: "REJECTED",
+              decided_by: req.user.id,
+              decided_at: trx.fn.now(),
+              decision_notes: res.locals.t("approval_rate_selection_cancelled"),
+            });
+            await insertActivityLog(trx, {
+              branch_id: request.branch_id,
+              user_id: req.user.id,
+              entity_type: request.entity_type,
+              entity_id: request.entity_id,
+              action: "REJECT",
+              ip_address: req.ip,
+              context: {
+                source: "approval-request-edit",
+                approval_request_id: request.id,
+                reason: "empty_rate_selection",
+              },
+            });
+            return;
+          }
           throw new HttpError(400, res.locals.t(sanitized.error));
         }
         if (!sanitized.changedFields.length) {
@@ -2125,12 +2149,12 @@ router.post(
         notifyApprovalDecision({
           userId: requestSnapshot.requested_by,
           payload: {
-            status: "PENDING",
+            status: cancelledByEmptyRateSelection ? "REJECTED" : "PENDING",
             requestId: requestSnapshot.id,
             summary: requestSnapshot.summary || "",
             link: "/administration/approvals?status=PENDING",
             message: res.locals
-              .t("approval_request_updated_detail")
+              .t(cancelledByEmptyRateSelection ? "approval_rejected_detail" : "approval_request_updated_detail")
               .replace("{summary}", requestSnapshot.summary || ""),
             sticky: true,
           },
@@ -2139,8 +2163,13 @@ router.post(
 
       return res.json({
         ok: true,
-        message: res.locals.t("approval_request_updated"),
+        message: res.locals.t(
+          cancelledByEmptyRateSelection
+            ? "approval_rate_selection_cancelled"
+            : "approval_request_updated",
+        ),
         changed_fields: changedFields,
+        cancelled: cancelledByEmptyRateSelection,
       });
     } catch (err) {
       console.error("[approvals:edit]", {

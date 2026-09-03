@@ -10,12 +10,13 @@
         <th class="px-3 py-2 text-left"><%= t("sku") || "SKU" %></th>
         <th class="px-3 py-2 text-left"><%= t("details") || "Details" %></th>
         <th class="px-3 py-2 text-right"><%= t("rate") || "Rate" %></th>
+        <th class="px-3 py-2 text-right"><%= t("actions") || "Actions" %></th>
       </tr>
     </thead>
     <tbody class="divide-y divide-slate-100">
       <% if (!variants.length) { %>
         <tr>
-          <td colspan="3" class="px-3 py-4 text-center text-slate-400"><%= t("no_entries") %></td>
+          <td colspan="4" class="px-3 py-4 text-center text-slate-400"><%= t("no_entries") %></td>
         </tr>
       <% } %>
       <% variants.forEach(function(variant) {
@@ -27,10 +28,11 @@
           Math.abs(Number(variant.old_rate) - Number(variant.new_rate)) >= 0.0001;
         const rowClass = hasChanged && side === 'new' ? 'bg-emerald-50/50' : '';
       %>
-        <tr class="hover:bg-slate-50 <%= rowClass %>">
+        <tr class="hover:bg-slate-50 <%= rowClass %>" data-approval-rate-row data-rate-row-id="<%= variant.id %>">
           <td class="px-3 py-2.5 font-mono text-xs text-slate-600"><%= variant.sku_code || ('#' + variant.id) %></td>
           <td class="px-3 py-2.5 text-slate-700 text-xs"><%= variant.variant_label || '' %></td>
           <td class="px-3 py-2.5 text-right font-semibold text-slate-800"><%= displayRate %></td>
+          <td class="px-3 py-2.5 text-right"><button type="button" data-approval-row-remove data-rate-row-id="<%= variant.id %>" class="rounded border border-rose-200 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-rose-600"><%= t("remove") || "Remove" %></button></td>
         </tr>
       <% }) %>
     </tbody>

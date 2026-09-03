@@ -69,6 +69,10 @@ const translations = {
     approval_no_changes: "No changes found in approval request.",
     approval_edit_failed: "Unable to update approval request.",
     approval_edit_invalid_payload: "Invalid approval edit payload.",
+    approval_edit_invalid_rate_selection: "Invalid rate row selection.",
+    approval_edit_empty_rate_selection: "At least one rate row must remain.",
+    approval_rate_selection_cancelled:
+      "Approval request cancelled because all rate rows were removed.",
     approval_edit_no_fields: "No editable fields found in this request.",
     approval_edit_delete_not_allowed: "Delete requests cannot be edited.",
     approval_request_not_found:
@@ -2514,6 +2518,9 @@ translations.ur = {
     "ڈیلیٹ کی درخواستوں میں ترمیم نہیں کی جا سکتی۔",
   approval_edit_failed: "منظوری کی درخواست کو اپ ڈیٹ کرنے سے قاصر۔",
   approval_edit_invalid_payload: "غلط منظوری ترمیم پے لوڈ۔",
+  approval_edit_invalid_rate_selection: "غلط ریٹ قطار کا انتخاب۔",
+  approval_edit_empty_rate_selection: "کم از کم ایک ریٹ قطار باقی رہنی چاہیے۔",
+  approval_rate_selection_cancelled: "تمام ریٹ قطاریں ہٹانے کی وجہ سے منظوری کی درخواست منسوخ کر دی گئی۔",
   approval_edit_no_fields: "اس درخواست میں کوئی قابل تدوین فیلڈ نہیں ملا۔",
   approval_no_changes: "منظوری کی درخواست میں کوئی تبدیلی نہیں ملی۔",
   approval_pending_details: "آپ کی درخواست جمع ہے اور منظوری زیر التواء ہے۔",

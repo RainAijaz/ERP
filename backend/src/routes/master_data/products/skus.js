@@ -1074,12 +1074,12 @@ router.post(
       let approvalRequired = await shouldRequireApproval(
         req,
         "master_data.products.skus",
-        "delete",
+        "edit",
       );
       const allowed = hasPermission(
         req.user,
         "master_data.products.skus",
-        "delete",
+        "edit",
       );
       if (!allowed && !approvalRequired) {
         approvalRequired = true;
@@ -1252,12 +1252,12 @@ router.post(
       let approvalRequired = await shouldRequireApproval(
         req,
         "master_data.products.skus",
-        "delete",
+        "edit",
       );
       const allowed = hasPermission(
         req.user,
         "master_data.products.skus",
-        "delete",
+        "edit",
       );
       if (process.env.DEBUG_SKU_PERMS === "1") {
         console.log("[SKU PERM DEBUG]", {

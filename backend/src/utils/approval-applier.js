@@ -2106,6 +2106,12 @@ const applyBulkLabourRateApproval = async (trx, request) => {
     .filter(Boolean);
   if (!rows.length) return false;
 
+  const skuIds = [...new Set(rows.map((row) => row.skuId))];
+  const existingSkuRows = await trx("erp.skus")
+    .select("id")
+    .whereIn("id", skuIds);
+  if (existingSkuRows.length !== skuIds.length) return false;
+
   await applyLabourBulkSkuRateUpsert({
     trx,
     labourIds,
@@ -2218,7 +2224,9 @@ const applyMasterDataChange = async (trx, request, userId) => {
     for (const v of variants) {
       const id = Number(v.id);
       const rate = Number(v.new_rate);
-      if (!id || !Number.isFinite(rate)) continue;
+      if (!Number.isInteger(id) || id <= 0 || !Number.isFinite(rate)) return false;
+      const variant = await trx("erp.variants").select("id").where({ id }).first();
+      if (!variant) return false;
       const changed = await variantRateChanges(trx, id, rate);
       await trx("erp.variants")
         .where({ id })
