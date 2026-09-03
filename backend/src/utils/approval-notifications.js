@@ -1,4 +1,5 @@
 const { sendMailWithRetry } = require("./email");
+const { adminRoleSqlPredicate } = require("./admin-role");
 
 const escapeHtml = (value) =>
   String(value || "")
@@ -63,9 +64,7 @@ const getActiveAdminEmails = async (knex) => {
       "erp.users.primary_role_id",
     )
     .select("erp.users.email")
-    .whereRaw(
-      "lower(trim(erp.role_templates.name)) in ('admin', 'administrator')",
-    )
+    .whereRaw(await adminRoleSqlPredicate({ notify: true }))
     .andWhereRaw("lower(trim(erp.users.status)) = 'active'")
     .whereNotNull("erp.users.email");
 
@@ -135,9 +134,7 @@ const getActiveApprovalUserIds = async (knex) => {
       "erp.users.primary_role_id",
     )
     .select("erp.users.id")
-    .whereRaw(
-      "lower(trim(erp.role_templates.name)) in ('admin', 'administrator')",
-    )
+    .whereRaw(await adminRoleSqlPredicate({ notify: true }))
     .andWhereRaw("lower(trim(erp.users.status)) = 'active'");
 
   const scopeRow = await knex("erp.permission_scope_registry")

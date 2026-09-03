@@ -163,7 +163,12 @@ CREATE TABLE IF NOT EXISTS role_templates (
   name        text NOT NULL UNIQUE,             -- e.g., Admin, Accounts, Storekeeper, Sales, Production
   name_ur     text,                             -- Urdu display name
   description text,
-  is_active   boolean NOT NULL DEFAULT true
+  is_active   boolean NOT NULL DEFAULT true,
+  -- Full, unconditional access to every scope and action. Every permission check
+  -- in the app short-circuits on this (see utils/admin-role.js). Deliberately a
+  -- stored flag: it used to be inferred by matching name = 'admin', so renaming
+  -- the role silently revoked every bypass.
+  is_admin    boolean NOT NULL DEFAULT false
 );
 
 -- Users master: authentication identity + primary role assignment.

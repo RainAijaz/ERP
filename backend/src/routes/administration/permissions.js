@@ -10,6 +10,10 @@ const {
   getApplicableActionSet,
   isPermissionMatrixScope,
 } = require("../../utils/scope-action-policy");
+const {
+  adminRoleColumns,
+  isAdminRoleRow,
+} = require("../../utils/admin-role");
 const { parseCookies, setCookie } = require("../../middleware/utils/cookies");
 const { queueAuditLog } = require("../../utils/audit-log");
 const {
@@ -163,7 +167,7 @@ router.get(
             .where({ id: target_id })
             .first();
           if (r) targetName = r.name;
-          if (r && String(r.name || "").toLowerCase() === "admin") {
+          if (isAdminRoleRow(r)) {
             writeFlash(res, req.baseUrl, {
               type: "error",
               message: "Admin role permissions cannot be modified.",
@@ -174,9 +178,13 @@ router.get(
       }
 
       // Fetch lists for the dropdowns
+      // Admin roles are hidden from the picker: they hold every permission
+      // unconditionally, so there is nothing here to edit for them.
       const roles = (
-        await knex("erp.role_templates").select("id", "name").orderBy("name")
-      ).filter((role) => String(role.name || "").toLowerCase() !== "admin");
+        await knex("erp.role_templates")
+          .select(await adminRoleColumns())
+          .orderBy("name")
+      ).filter((role) => !isAdminRoleRow(role));
       const users = await knex("erp.users")
         .select("id", "username")
         .orderBy("username");
@@ -450,10 +458,10 @@ router.post(
 
       if (!isUserMode) {
         const roleRow = await trx("erp.role_templates")
-          .select("name")
+          .select(await adminRoleColumns(["name"]))
           .where({ id: target_id })
           .first();
-        if (roleRow && String(roleRow.name || "").toLowerCase() === "admin") {
+        if (isAdminRoleRow(roleRow)) {
           writeFlash(res, req.baseUrl, {
             type: "error",
             message: "Admin role permissions cannot be modified.",
@@ -717,7 +725,7 @@ router.post(
 
       if (isRoleMode) {
         const targetRole = await trx("erp.role_templates")
-          .select("id", "name")
+          .select(await adminRoleColumns())
           .where({ id: targetId })
           .first();
         if (!targetRole) {
@@ -727,7 +735,7 @@ router.post(
           });
           return res.redirect("/administration/permissions?type=role");
         }
-        if (String(targetRole.name || "").toLowerCase() === "admin") {
+        if (isAdminRoleRow(targetRole)) {
           writeFlash(res, req.baseUrl, {
             type: "error",
             message: "Admin role permissions cannot be modified.",

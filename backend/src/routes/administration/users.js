@@ -7,6 +7,11 @@ const {
 const { normalizeFields } = require("../../middleware/utils/validation");
 const { HttpError } = require("../../middleware/errors/http-error");
 const { queueAuditLog } = require("../../utils/audit-log");
+const {
+  adminRoleColumns,
+  isAdminRoleRow,
+  roleTemplatesHaveAdminFlag,
+} = require("../../utils/admin-role");
 
 const router = express.Router();
 
@@ -20,13 +25,21 @@ router.get(
         "administration.users",
         "navigate",
       );
+      const hasAdminFlag = await roleTemplatesHaveAdminFlag();
       const users = canNavigate
         ? await knex("erp.users as u")
             .leftJoin("erp.role_templates as rt", "u.primary_role_id", "rt.id")
             .leftJoin("erp.user_branch as ub", "u.id", "ub.user_id")
             .leftJoin("erp.branches as b", "ub.branch_id", "b.id")
-            .groupBy("u.id", "rt.name")
+            .groupBy(
+              hasAdminFlag
+                ? ["u.id", "rt.name", "rt.is_admin"]
+                : ["u.id", "rt.name"],
+            )
             .select("u.*", "rt.name as role_name")
+            .modify((qb) => {
+              if (hasAdminFlag) qb.select("rt.is_admin as role_is_admin");
+            })
             .select(
               knex.raw(
                 "COALESCE(string_agg(DISTINCT b.name, ', '), '') as branch_names",
@@ -42,10 +55,10 @@ router.get(
         : [];
       const allBranchesLabel = allActiveBranchNames.join(", ");
       const hydratedUsers = users.map((row) => {
-        const isAdminRole =
-          String(row.role_name || "")
-            .trim()
-            .toLowerCase() === "admin";
+        const isAdminRole = isAdminRoleRow({
+          name: row.role_name,
+          is_admin: row.role_is_admin,
+        });
         if (!isAdminRole) return row;
         return {
           ...row,
@@ -91,18 +104,17 @@ router.get(
         userBranches = branches.map((b) => Number(b.branch_id));
       }
 
-      const roles = await knex("erp.role_templates").select("id", "name");
+      const roles = await knex("erp.role_templates").select(
+        await adminRoleColumns(),
+      );
       const allBranches = await knex("erp.branches")
         .where({ is_active: true })
         .orderBy("name");
-      const roleNameById = new Map(
-        roles.map((role) => [Number(role.id), String(role.name || "")]),
+      const roleById = new Map(
+        roles.map((role) => [Number(role.id), role]),
       );
       const isAdminUser = Boolean(
-        user &&
-        String(roleNameById.get(Number(user.primary_role_id)) || "")
-          .trim()
-          .toLowerCase() === "admin",
+        user && isAdminRoleRow(roleById.get(Number(user.primary_role_id))),
       );
 
       if (isAdminUser) {
@@ -229,14 +241,10 @@ router.post(
         .filter((bid) => Number.isInteger(bid) && bid > 0);
 
       const roleRow = await trx("erp.role_templates")
-        .select("name")
+        .select(await adminRoleColumns(["name"]))
         .where({ id: primary_role_id })
         .first();
-      const isAdminRole =
-        roleRow &&
-        String(roleRow.name || "")
-          .trim()
-          .toLowerCase() === "admin";
+      const isAdminRole = isAdminRoleRow(roleRow);
 
       if (isAdminRole || wantsAllBranches) {
         const allBranchRows = await trx("erp.branches")
