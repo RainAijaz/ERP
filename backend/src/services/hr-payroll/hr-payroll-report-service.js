@@ -68,6 +68,22 @@ const resolveLabourEntitySql = async () =>
   (await hasDcvLineTable())
     ? LABOUR_ENTITY_WITH_DCV_LINE_SQL
     : LABOUR_ENTITY_SQL;
+const resolveEntityVoucherScopeContext = async (cfg) => {
+  if (cfg.lineKind !== "LABOUR") {
+    return {
+      supportsDcvLine: false,
+      labourEntitySql: null,
+    };
+  }
+
+  const supportsDcvLine = await hasDcvLineTable();
+  return {
+    supportsDcvLine,
+    labourEntitySql: supportsDcvLine
+      ? LABOUR_ENTITY_WITH_DCV_LINE_SQL
+      : LABOUR_ENTITY_SQL,
+  };
+};
 const AUTO_PAYROLL_VOUCHER_TYPE = "PAYROLL_ACCRUAL";
 const AUTO_PAYROLL_DESCRIPTION = "Monthly salary accrual";
 const AUTO_PAYROLL_DAILY_DESCRIPTION =
@@ -642,11 +658,12 @@ const getEntityConfig = (kind) => {
   return cfg;
 };
 
-const applyEntityVoucherScope = async ({
+const applyEntityVoucherScope = ({
   query,
   cfg,
   entityId,
   includeEntitySelect = false,
+  scopeContext = null,
 }) => {
   if (cfg.lineKind !== "LABOUR") {
     return query
@@ -660,8 +677,11 @@ const applyEntityVoucherScope = async ({
       });
   }
 
-  const supportsDcvLine = await hasDcvLineTable();
-  const labourEntitySql = await resolveLabourEntitySql();
+  const supportsDcvLine = Boolean(scopeContext?.supportsDcvLine);
+  const labourEntitySql = scopeContext?.labourEntitySql;
+  if (!labourEntitySql) {
+    throw new Error("Labour voucher scope context is required");
+  }
 
   return query
     .leftJoin("erp.dcv_header as dcv", "dcv.voucher_id", "vh.id")
@@ -778,6 +798,7 @@ const getLedgerRows = async ({
   const employeeLabel = sqlLabel("employee");
   const creditSaleLabel = `'${String(resolveTranslation(locale, "credit_sale")).replace(/'/g, "''")} #'`;
   const cfg = getEntityConfig(kind);
+  const voucherScopeContext = await resolveEntityVoucherScopeContext(cfg);
   const includeBranchColumn = Boolean(
     req.user?.isAdmin && filters.branchIds.length !== 1,
   );
@@ -828,10 +849,11 @@ const getLedgerRows = async ({
       if (filters.from) qb.where("vh.voucher_date", "<", filters.from);
     });
 
-  openingQuery = await applyEntityVoucherScope({
+  openingQuery = applyEntityVoucherScope({
     query: openingQuery,
     cfg,
     entityId: filters.entityId,
+    scopeContext: voucherScopeContext,
   });
   const openingRow = await openingQuery.first();
 
@@ -915,10 +937,11 @@ const getLedgerRows = async ({
   if (scopedBranchIds.length) {
     detailsQuery = detailsQuery.whereIn("vh.branch_id", scopedBranchIds);
   }
-  detailsQuery = await applyEntityVoucherScope({
+  detailsQuery = applyEntityVoucherScope({
     query: detailsQuery,
     cfg,
     entityId: filters.entityId,
+    scopeContext: voucherScopeContext,
   });
 
   const rawRows = await detailsQuery;
@@ -1369,6 +1392,7 @@ const loadBalanceOptions = async ({ req }) => {
 const getBalanceRows = async ({ req, filters, kind }) => {
   const cfg = getEntityConfig(kind);
   if (!filters.reportLoaded) return [];
+  const voucherScopeContext = await resolveEntityVoucherScopeContext(cfg);
 
   const scopedBranchIds = req.user?.isAdmin
     ? filters.branchIds
@@ -1395,14 +1419,17 @@ const getBalanceRows = async ({ req, filters, kind }) => {
       if (scopedBranchIds.length) qb.whereIn("vh.branch_id", scopedBranchIds);
     });
 
-  balanceSubquery = await applyEntityVoucherScope({
+  balanceSubquery = applyEntityVoucherScope({
     query: balanceSubquery,
     cfg,
     entityId: null,
     includeEntitySelect: true,
+    scopeContext: voucherScopeContext,
   });
   if (cfg.lineKind === "LABOUR") {
-    balanceSubquery = balanceSubquery.groupByRaw(await resolveLabourEntitySql());
+    balanceSubquery = balanceSubquery.groupByRaw(
+      voucherScopeContext.labourEntitySql,
+    );
   } else {
     balanceSubquery = balanceSubquery.groupBy(`vl.${cfg.vlEntityCol}`);
   }
