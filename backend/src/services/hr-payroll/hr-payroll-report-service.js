@@ -171,6 +171,7 @@ const normalizeCommissionRuleRows = async ({ ruleIds, locale }) => {
       "ecr.sku_id",
       "ecr.subgroup_id",
       "ecr.group_id",
+      "ecr.source_rule_id",
       "ecr.commission_basis",
       "ecr.rate_type",
       "ecr.value",
@@ -179,9 +180,21 @@ const normalizeCommissionRuleRows = async ({ ruleIds, locale }) => {
       knex.raw(`${localizedName("sg")} as subgroup_name`),
       knex.raw(`${localizedName("pg")} as group_name`),
       knex.raw(`${localizedName("b")} as branch_name`),
+      "ecr.branch_id",
     );
 
-  return new Map(rows.map((row) => [Number(row.id), row]));
+  const result = new Map(rows.map((row) => [Number(row.id), row]));
+  const sourceRuleIds = [
+    ...new Set(rows.map((row) => toPositiveId(row.source_rule_id)).filter(Boolean)),
+  ].filter((id) => !result.has(id));
+  if (sourceRuleIds.length) {
+    const sourceRows = await normalizeCommissionRuleRows({
+      ruleIds: sourceRuleIds,
+      locale,
+    });
+    sourceRows.forEach((row, id) => result.set(id, row));
+  }
+  return result;
 };
 
 const PAIRS_PER_DOZEN = 12;
@@ -248,6 +261,7 @@ const makeCommissionSummaryRow = ({
   parentKey,
   hierarchyKey,
   _quantityKeys: new Set(),
+  _scopeLabels: new Set(),
 });
 
 const addAmountToCommissionSummaryRow = (row, amount) => {
@@ -278,6 +292,26 @@ const formatRateSuffix = ({ rateType, rate, locale }) => {
   const normalizedRate = Number(rate);
   if (!rateLabel || !Number.isFinite(normalizedRate)) return "";
   return `${rateLabel} - ${toAmount(normalizedRate, 2).toFixed(2)}`;
+};
+
+const formatCommissionScopeName = ({ rule, sku, locale }) => {
+  const t = (key) => resolveTranslation(locale, key);
+  const applyOn = String(rule?.apply_on || "").trim().toUpperCase();
+
+  if (applyOn === "GROUP") {
+    return `${t("apply_on_group")}: ${rule?.group_name || sku?.group_name || "-"}`;
+  }
+  if (applyOn === "SUBGROUP") {
+    return `${t("apply_on_subgroup")}: ${rule?.subgroup_name || sku?.subgroup_name || "-"}`;
+  }
+  if (applyOn === "SKU") {
+    return t("apply_on_sku");
+  }
+
+  const groupName = sku?.group_name || "";
+  return groupName
+    ? `${t("apply_on_group")}: ${groupName}`
+    : t("apply_on_all");
 };
 
 const resolveCommissionScope = ({ fact, rule, sku, locale }) => {
@@ -384,13 +418,31 @@ const buildCommissionHierarchyRows = async ({
   facts.forEach((fact) => {
     const type = String(fact.type || "");
     const rule = fact.ruleId ? ruleContextMap.get(Number(fact.ruleId)) : null;
+    const sourceRule = rule?.source_rule_id
+      ? ruleContextMap.get(Number(rule.source_rule_id))
+      : null;
+    const groupingRule = sourceRule || rule;
     const sku = fact.skuId ? skuContextMap.get(Number(fact.skuId)) : null;
     const typeRow = ensureTypeRow(type);
     addAmountToCommissionSummaryRow(typeRow, fact.amount);
     addDozenToCommissionSummaryRow(typeRow, fact);
 
-    const scope = resolveCommissionScope({ fact, rule, sku, locale });
-    const scopeKey = `${type}|${scope.key}`;
+    const scope = resolveCommissionScope({ fact, rule: groupingRule, sku, locale });
+    const rateType = String(groupingRule?.rate_type || rule?.rate_type || "")
+      .trim()
+      .toUpperCase();
+    const rate = Number.isFinite(Number(fact.rate))
+      ? Number(fact.rate)
+      : Number(groupingRule?.value || rule?.value || 0);
+    const branchId = Number(groupingRule?.branch_id || rule?.branch_id || 0) || 0;
+    const scopeKey = [
+      type,
+      "RATE",
+      String(fact.basis || ""),
+      rateType,
+      Number.isFinite(rate) ? rate : "",
+      branchId,
+    ].join("|");
     if (!scopeRows.has(scopeKey)) {
       scopeRows.set(
         scopeKey,
@@ -406,6 +458,25 @@ const buildCommissionHierarchyRows = async ({
       );
     }
     const scopeRow = scopeRows.get(scopeKey);
+    scopeRow._scopeLabels.add(formatCommissionScopeName({
+      rule: groupingRule,
+      sku,
+      locale,
+    }));
+    if (groupingRule?.branch_name) {
+      scopeRow._scopeLabels.add(
+        `${resolveTranslation(locale, "branch")}: ${groupingRule.branch_name}`,
+      );
+    }
+    const rateSuffix = formatRateSuffix({
+      rateType,
+      rate,
+      locale,
+    });
+    scopeRow.labelText = [
+      [...scopeRow._scopeLabels].filter(Boolean).join(", "),
+      rateSuffix,
+    ].filter(Boolean).join(" - ");
     addAmountToCommissionSummaryRow(scopeRow, fact.amount);
     addDozenToCommissionSummaryRow(scopeRow, fact);
 
@@ -478,7 +549,7 @@ const buildCommissionHierarchyRows = async ({
   );
 
   return result.map((row) => {
-    const { _quantityKeys, sortKey, hierarchyKey, ...publicRow } = row;
+    const { _quantityKeys, _scopeLabels, sortKey, hierarchyKey, ...publicRow } = row;
     return {
       ...publicRow,
       rowKey: hierarchyKey,
