@@ -294,16 +294,13 @@ const summarizeBackdatedRuleInputs = ({
 };
 
 const scheduleAutomaticBackdatedRecalc = ({
-  db = knex,
   ruleChanges = [],
   allowedBranchIds = [],
-  userId = null,
-  source = "commission-rule-save",
-  t = (key) => key,
 } = {}) => {
   const inputs = summarizeBackdatedRuleInputs({ ruleChanges, allowedBranchIds });
-  const summary = {
-    queued: inputs.length > 0,
+  return {
+    queued: false,
+    disabled: true,
     attempted: inputs.length,
     inputs: inputs.map((input) => ({
       from_date: input.fromDate,
@@ -312,34 +309,6 @@ const scheduleAutomaticBackdatedRecalc = ({
       commission_types: input.commissionTypes,
     })),
   };
-
-  if (!inputs.length) return summary;
-
-  const run = async () => {
-    try {
-      const result = await db.transaction((trx) =>
-        applyAutomaticBackdatedRecalc({
-          trx,
-          ruleChanges,
-          allowedBranchIds,
-          userId,
-          source,
-          t,
-        }),
-      );
-      console.log("[commission-recalc] automatic backdated recalculation completed:", result);
-    } catch (err) {
-      console.error("Error in CommissionRecalcService:", err);
-    }
-  };
-
-  if (typeof setImmediate === "function") {
-    setImmediate(run);
-  } else {
-    setTimeout(run, 0);
-  }
-
-  return summary;
 };
 
 const rowKey = (voucherId, employeeId, commissionType) =>
