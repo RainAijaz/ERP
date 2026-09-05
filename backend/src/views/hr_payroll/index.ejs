@@ -3505,6 +3505,15 @@ const currentSeq = ++state.requestSeq;
       clear_orphans: Boolean(clearOrphansBox.checked),
     });
 
+    const currentRecalcPayload = () => ({
+      _csrf: "<%= csrfToken %>",
+      from_date: fromInput.value,
+      to_date: toInput.value,
+      commission_types: typeValues(),
+      employee_id: employeeSel.value || "",
+      clear_orphans: clearOrphansBox.checked ? "1" : "",
+    });
+
     const filtersReady = () =>
       Boolean(fromInput.value && toInput.value && typeValues().length);
 
@@ -3637,7 +3646,7 @@ const currentSeq = ++state.requestSeq;
 
         show(resultsBox, true);
         renderRows();
-        applyBtn.disabled = !(counts.writes > 0) || Boolean(data.over_limit);
+        applyBtn.disabled = !filtersReady() || Boolean(data.over_limit);
         if (data.over_limit) setError(T.overLimit);
         return counts.writes > 0 && !data.over_limit;
       } catch (err) {
@@ -3648,9 +3657,20 @@ const currentSeq = ++state.requestSeq;
     };
 
     const apply = async () => {
-      if (!lastFilters || lastFilterKey !== currentFilterKey()) {
-        const canApply = await runPreview();
-        if (!canApply || !lastFilters) return;
+      const payload = lastFilters && lastFilterKey === currentFilterKey()
+        ? {
+            _csrf: "<%= csrfToken %>",
+            from_date: lastFilters.from_date,
+            to_date: lastFilters.to_date,
+            commission_types: lastFilters.commission_types,
+            employee_id: lastFilters.employee_id || "",
+            clear_orphans: clearOrphansBox.checked ? "1" : "",
+          }
+        : currentRecalcPayload();
+      if (!payload.from_date || !payload.to_date || !payload.commission_types.length) {
+        setError(T.dateRequired);
+        updateApplyState();
+        return;
       }
       if (clearOrphansBox.checked) {
         // Zeroing unmatched commission removes pay that may already have been
@@ -3679,12 +3699,12 @@ const currentSeq = ++state.requestSeq;
             "x-csrf-token": "<%= csrfToken %>",
           },
           body: JSON.stringify({
-            _csrf: "<%= csrfToken %>",
-            from_date: lastFilters.from_date,
-            to_date: lastFilters.to_date,
-            commission_types: lastFilters.commission_types,
-            employee_id: lastFilters.employee_id || "",
-            clear_orphans: clearOrphansBox.checked ? "1" : "",
+            _csrf: payload._csrf,
+            from_date: payload.from_date,
+            to_date: payload.to_date,
+            commission_types: payload.commission_types,
+            employee_id: payload.employee_id,
+            clear_orphans: payload.clear_orphans,
           }),
         });
         const data = await res.json();
