@@ -471,9 +471,19 @@ const buildCommissionHierarchyRows = async ({
       });
   });
 
+  const parentKeys = new Set(
+    [...scopeRows.values(), ...articleRows.values()]
+      .map((row) => row.parentKey)
+      .filter(Boolean),
+  );
+
   return result.map((row) => {
-    const { _quantityKeys, sortKey, parentKey, hierarchyKey, ...publicRow } = row;
-    return publicRow;
+    const { _quantityKeys, sortKey, hierarchyKey, ...publicRow } = row;
+    return {
+      ...publicRow,
+      rowKey: hierarchyKey,
+      hasChildren: parentKeys.has(hierarchyKey),
+    };
   });
 };
 
