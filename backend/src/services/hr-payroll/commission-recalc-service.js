@@ -84,6 +84,13 @@ const toDateOnly = (value) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
 };
 
+const todayYmd = () => {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
+};
+
 const toStringArray = (value) => {
   if (Array.isArray(value)) return value;
   if (value === null || value === undefined || value === "") return [];
@@ -122,6 +129,148 @@ const normalizeRecalcInput = (payload = {}) => {
     clearOrphans: toBool(payload.clear_orphans ?? payload.clearOrphans),
     allowedBranchIds,
   };
+};
+
+const buildBackdatedRuleRecalcInput = ({
+  effectiveFrom,
+  effectiveTo = null,
+  employeeId,
+  commissionType,
+  allowedBranchIds = [],
+} = {}) => {
+  const from = toDateOnly(effectiveFrom);
+  const today = todayYmd();
+  if (!from || from >= today) return null;
+
+  const normalizedType = String(commissionType || "")
+    .trim()
+    .toUpperCase();
+  if (!COMPUTABLE_TYPES.includes(normalizedType)) return null;
+
+  const toFromRule = toDateOnly(effectiveTo);
+  const to = toFromRule && toFromRule < today ? toFromRule : today;
+  if (to < from) return null;
+
+  return normalizeRecalcInput({
+    commission_types: [normalizedType],
+    from_date: from,
+    to_date: to,
+    employee_id: employeeId,
+    clear_orphans: false,
+    allowedBranchIds,
+  });
+};
+
+const backdatedRuleKey = (input) =>
+  [
+    input?.employeeId || "",
+    (input?.commissionTypes || []).join(","),
+    input?.fromDate || "",
+    input?.toDate || "",
+    (input?.allowedBranchIds || []).join(","),
+  ].join("|");
+
+const applyAutomaticBackdatedRecalc = async ({
+  trx,
+  ruleChanges = [],
+  allowedBranchIds = [],
+  userId = null,
+  source = "commission-rule-save",
+  t = (key) => key,
+} = {}) => {
+  if (!trx || !Array.isArray(ruleChanges) || !ruleChanges.length) {
+    return {
+      attempted: 0,
+      writes: 0,
+      skippedOverLimit: 0,
+      inputs: [],
+      results: [],
+    };
+  }
+
+  const inputByKey = new Map();
+  ruleChanges.forEach((change) => {
+    const input = buildBackdatedRuleRecalcInput({
+      effectiveFrom: change?.effective_from ?? change?.effectiveFrom,
+      effectiveTo: change?.effective_to ?? change?.effectiveTo,
+      employeeId: change?.employee_id ?? change?.employeeId,
+      commissionType: change?.commission_type ?? change?.commissionType,
+      allowedBranchIds,
+    });
+    if (!input) return;
+    inputByKey.set(backdatedRuleKey(input), input);
+  });
+
+  const inputs = [...inputByKey.values()];
+  const summary = {
+    attempted: inputs.length,
+    writes: 0,
+    skippedOverLimit: 0,
+    inputs: inputs.map((input) => ({
+      from_date: input.fromDate,
+      to_date: input.toDate,
+      employee_id: input.employeeId,
+      commission_types: input.commissionTypes,
+    })),
+    results: [],
+  };
+
+  for (const input of inputs) {
+    const plan = await buildRecalcPlan({
+      db: trx,
+      input,
+      t,
+    });
+    const writes = plan.rows.filter((row) => row.will_write);
+    if (!writes.length) {
+      summary.results.push({
+        from_date: input.fromDate,
+        to_date: input.toDate,
+        employee_id: input.employeeId,
+        commission_types: input.commissionTypes,
+        writes: 0,
+        skipped_over_limit: false,
+      });
+      continue;
+    }
+    if (plan.over_limit) {
+      summary.skippedOverLimit += 1;
+      summary.results.push({
+        from_date: input.fromDate,
+        to_date: input.toDate,
+        employee_id: input.employeeId,
+        commission_types: input.commissionTypes,
+        writes: writes.length,
+        skipped_over_limit: true,
+      });
+      continue;
+    }
+
+    const result = await applyRecalcPlan({
+      trx,
+      rows: plan.rows,
+      provenance: {
+        at: new Date().toISOString(),
+        by: userId,
+        source,
+        from_date: input.fromDate,
+        to_date: input.toDate,
+        automatic: true,
+      },
+    });
+    summary.writes += writes.length;
+    summary.results.push({
+      from_date: input.fromDate,
+      to_date: input.toDate,
+      employee_id: input.employeeId,
+      commission_types: input.commissionTypes,
+      writes: writes.length,
+      skipped_over_limit: false,
+      result,
+    });
+  }
+
+  return summary;
 };
 
 const rowKey = (voucherId, employeeId, commissionType) =>
@@ -528,7 +677,9 @@ module.exports = {
   VOUCHER_TYPES_BY_COMMISSION_TYPE,
   MAX_RECALC_ROWS,
   normalizeRecalcInput,
+  buildBackdatedRuleRecalcInput,
   buildRecalcPlan,
   applyRecalcPlan,
+  applyAutomaticBackdatedRecalc,
   fetchActiveRulesForScope,
 };

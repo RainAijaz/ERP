@@ -19,6 +19,9 @@ const {
   todayYmd,
 } = require("../services/hr-payroll/commission-rules-service");
 const {
+  applyAutomaticBackdatedRecalc,
+} = require("../services/hr-payroll/commission-recalc-service");
+const {
   applyBulkSkuRateUpsert: applyLabourBulkSkuRateUpsert,
   resolveLabourIds,
   ALL_LABOURS_VALUE,
@@ -1683,7 +1686,7 @@ const applyLabourAllowanceApproval = async (trx, request) => {
   return true;
 };
 
-const applyEmployeeCommissionApproval = async (trx, request) => {
+const applyEmployeeCommissionApproval = async (trx, request, decidedBy = null) => {
   const entityId = request?.entity_id;
   const payload =
     request?.new_value && typeof request.new_value === "object"
@@ -1746,6 +1749,14 @@ const applyEmployeeCommissionApproval = async (trx, request) => {
     reverse_on_returns: row.reverse_on_returns,
     status: row.status,
   };
+  const applyAutomaticRecalc = () =>
+    applyAutomaticBackdatedRecalc({
+      trx,
+      ruleChanges: [row],
+      userId: decidedBy,
+      source: "commission-rule-approval",
+      t: (key) => key,
+    });
 
   if (action === "create") {
     const newId = await supersedeCommissionRule({
@@ -1761,7 +1772,8 @@ const applyEmployeeCommissionApproval = async (trx, request) => {
       effectiveTo,
       values: supersedeValues,
     });
-    return { applied: true, entityId: String(newId) };
+    const automaticRecalc = await applyAutomaticRecalc();
+    return { applied: true, entityId: String(newId), automaticRecalc };
   }
 
   const id = Number(entityId || 0);
@@ -1793,11 +1805,13 @@ const applyEmployeeCommissionApproval = async (trx, request) => {
       effectiveTo,
       values: supersedeValues,
     });
-    return true;
+    const automaticRecalc = await applyAutomaticRecalc();
+    return { applied: true, entityId: String(id), automaticRecalc };
   }
 
   await trx(EMPLOYEE_COMMISSION_TABLE).where({ id }).update(row);
-  return true;
+  const automaticRecalc = await applyAutomaticRecalc();
+  return { applied: true, entityId: String(id), automaticRecalc };
 };
 
 const applyLabourRateApproval = async (trx, request) => {
@@ -1849,7 +1863,7 @@ const applyLabourRateApproval = async (trx, request) => {
   return true;
 };
 
-const applyBulkCommissionApproval = async (trx, request) => {
+const applyBulkCommissionApproval = async (trx, request, decidedBy = null) => {
   const payload =
     request?.new_value && typeof request.new_value === "object"
       ? request.new_value
@@ -1943,7 +1957,19 @@ const applyBulkCommissionApproval = async (trx, request) => {
       rows: rowsForEmployee,
     });
   }
-  return { applied: true, entityId: String(employeeIds[0]) };
+  const automaticRecalc = await applyAutomaticBackdatedRecalc({
+    trx,
+    ruleChanges: employeeIds.map((employeeId) => ({
+      employee_id: employeeId,
+      commission_type: commissionType,
+      effective_from: effectiveFrom,
+      effective_to: effectiveTo,
+    })),
+    userId: decidedBy,
+    source: "commission-bulk-rule-approval",
+    t: (key) => key,
+  });
+  return { applied: true, entityId: String(employeeIds[0]), automaticRecalc };
 };
 
 /**
@@ -2141,7 +2167,7 @@ const applyHrApprovalChange = async (trx, request, decidedBy = null) => {
   if (target === "commission_recalc")
     return applyCommissionRecalcApproval(trx, request, decidedBy);
   if (target === "bulk_commission")
-    return applyBulkCommissionApproval(trx, request);
+    return applyBulkCommissionApproval(trx, request, decidedBy);
   if (target === "bulk_labour_rate_copy")
     return applyLabourRateCopyApproval(trx, request);
   if (target === "bulk_labour_rate")
@@ -2151,7 +2177,7 @@ const applyHrApprovalChange = async (trx, request, decidedBy = null) => {
   if (target === "labour_allowance_rule")
     return applyLabourAllowanceApproval(trx, request);
   if (target === "employee_commission_rule")
-    return applyEmployeeCommissionApproval(trx, request);
+    return applyEmployeeCommissionApproval(trx, request, decidedBy);
   if (target === "labour_rate_rule")
     return applyLabourRateApproval(trx, request);
   if (target === "employee_master")

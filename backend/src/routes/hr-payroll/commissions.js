@@ -25,8 +25,8 @@ const {
   normalizeRecalcInput,
   buildRecalcPlan,
   applyRecalcPlan,
+  applyAutomaticBackdatedRecalc,
   fetchActiveRulesForScope,
-  VOUCHER_TYPES_BY_COMMISSION_TYPE,
 } = require("../../services/hr-payroll/commission-recalc-service");
 // Registers the approvals preview renderer for RECALC_APPROVAL_MODE. Required
 // for its side effect — the registry is a module-level array populated at boot.
@@ -64,45 +64,6 @@ const isEmployeeInScope = async ({ employeeId, req }) => {
     .whereIn("eb.branch_id", allowedBranchIds)
     .first();
   return Boolean(row);
-};
-
-// A rule that starts in the past does NOT retro-fix vouchers already posted:
-// commission is denormalized at voucher time. Rather than silently rewriting
-// them, count what is affected so the screen can offer the Recalculate preview
-// with the range pre-filled. Returns null when nothing is backdated.
-const buildBackdateNotice = async ({
-  effectiveFrom,
-  employeeId,
-  commissionType,
-}) => {
-  const from = normalizeRuleDate(effectiveFrom);
-  const today = todayYmd();
-  if (!from || from >= today) return null;
-
-  const voucherTypeCodes =
-    VOUCHER_TYPES_BY_COMMISSION_TYPE[
-      String(commissionType || "SALESMAN_SALE").trim().toUpperCase()
-    ] || [];
-  if (!voucherTypeCodes.length) return null;
-
-  const row = await knex("erp.voucher_header")
-    .whereIn("voucher_type_code", voucherTypeCodes)
-    .andWhere("status", "APPROVED")
-    .andWhere("voucher_date", ">=", from)
-    .andWhere("voucher_date", "<=", today)
-    .count({ total: "*" })
-    .first();
-
-  const affected = Number(row?.total || 0);
-  if (!affected) return null;
-  return {
-    backdated: true,
-    from_date: from,
-    to_date: today,
-    employee_id: employeeId ? Number(employeeId) : null,
-    commission_type: commissionType,
-    affected_vouchers: affected,
-  };
 };
 
 const page = {
@@ -606,6 +567,20 @@ const page = {
     values.value = toMoney(values.value);
     return null;
   },
+  afterWrite: async ({ trx, values, existing, req, res }) => {
+    const row = {
+      ...(existing || {}),
+      ...(values || {}),
+    };
+    return applyAutomaticBackdatedRecalc({
+      trx,
+      ruleChanges: [row],
+      allowedBranchIds: getAllowedBranchIds(req),
+      userId: req.user?.id || null,
+      source: "commission-rule-save",
+      t: res.locals.t,
+    });
+  },
 };
 
 const router = express.Router();
@@ -896,6 +871,7 @@ router.post(
 
       let createdCount = 0;
       let updatedCount = 0;
+      let autoRecalcResult = null;
       await knex.transaction(async (trx) => {
         for (const plan of rowPlans) {
           if (plan.duplicateIdsToDelete.length) {
@@ -932,6 +908,14 @@ router.post(
             createdCount += 1;
           }
         }
+        autoRecalcResult = await applyAutomaticBackdatedRecalc({
+          trx,
+          ruleChanges: rowPlans.map((plan) => plan.values),
+          allowedBranchIds: getAllowedBranchIds(req),
+          userId: req.user?.id || null,
+          source: "commission-rule-save",
+          t: res.locals.t,
+        });
       });
 
       queueAuditLog(req, {
@@ -944,16 +928,22 @@ router.post(
           mode: "SKU_MULTI_UPSERT",
           created_count: createdCount,
           updated_count: updatedCount,
+          automatic_recalc_writes: autoRecalcResult?.writes || 0,
+          automatic_recalc_skipped_over_limit:
+            autoRecalcResult?.skippedOverLimit || 0,
         },
       });
 
-      const backdate = await buildBackdateNotice({
-        effectiveFrom: sanitizedValues.effective_from,
-        employeeId: employeeIds[0],
-        commissionType: sanitizedValues.commission_type,
-      });
-      if (backdate) {
-        setCookie(res, backdateCookie, JSON.stringify(backdate), {
+      if (autoRecalcResult?.skippedOverLimit && autoRecalcResult.inputs?.[0]) {
+        const fallback = autoRecalcResult.inputs[0];
+        setCookie(res, backdateCookie, JSON.stringify({
+          backdated: true,
+          from_date: fallback.from_date,
+          to_date: fallback.to_date,
+          employee_id: fallback.employee_id,
+          commission_type: fallback.commission_types?.[0] || null,
+          affected_vouchers: autoRecalcResult.results?.[0]?.writes || 0,
+        }), {
           path: req.baseUrl,
           maxAge: 120,
           sameSite: "Lax",
@@ -1226,8 +1216,9 @@ router.post(
         groupId: skuSelectorMap.get(Number(row.skuId))?.groupId ?? null,
       }));
 
+      let autoRecalcResult = null;
       const result = await knex.transaction(async (trx) => {
-        return applyBulkSkuRateUpsert({
+        const applied = await applyBulkSkuRateUpsert({
           trx,
           employeeId: normalized.employeeId,
           applyOn: normalized.applyOn,
@@ -1244,6 +1235,22 @@ router.post(
           status: normalized.status,
           rows: enrichedRows,
         });
+        autoRecalcResult = await applyAutomaticBackdatedRecalc({
+          trx,
+          ruleChanges: [
+            {
+              employee_id: normalized.employeeId,
+              commission_type: normalized.commissionType,
+              effective_from: normalized.effectiveFrom,
+              effective_to: normalized.effectiveTo,
+            },
+          ],
+          allowedBranchIds: getAllowedBranchIds(req),
+          userId: req.user?.id || null,
+          source: "commission-bulk-rule-save",
+          t: res.locals.t,
+        });
+        return applied;
       });
 
       queueAuditLog(req, {
@@ -1257,17 +1264,24 @@ router.post(
           created: result.created,
           updated: result.updated,
           row_count: normalized.rows.length,
+          automatic_recalc_writes: autoRecalcResult?.writes || 0,
+          automatic_recalc_skipped_over_limit:
+            autoRecalcResult?.skippedOverLimit || 0,
         },
       });
 
-      const backdate = await buildBackdateNotice({
-        effectiveFrom: normalized.effectiveFrom,
-        employeeId: normalized.employeeId,
-        commissionType: normalized.commissionType,
-      });
-      // Same cookie the single-rule save uses: the grid reloads to the list
-      // after a bulk save, and the middleware surfaces the notice there. One
-      // path for both rather than a second in-modal prompt.
+      const backdate =
+        autoRecalcResult?.skippedOverLimit && autoRecalcResult.inputs?.[0]
+          ? {
+              backdated: true,
+              from_date: autoRecalcResult.inputs[0].from_date,
+              to_date: autoRecalcResult.inputs[0].to_date,
+              employee_id: autoRecalcResult.inputs[0].employee_id,
+              commission_type:
+                autoRecalcResult.inputs[0].commission_types?.[0] || null,
+              affected_vouchers: autoRecalcResult.results?.[0]?.writes || 0,
+            }
+          : null;
       if (backdate) {
         setCookie(res, backdateCookie, JSON.stringify(backdate), {
           path: req.baseUrl,
@@ -1280,6 +1294,7 @@ router.post(
         ok: true,
         created: result.created,
         updated: result.updated,
+        automatic_recalc: autoRecalcResult,
         backdate,
         message:
           res.locals.t("success_bulk_commission_saved") ||
@@ -1349,8 +1364,8 @@ const buildRecalcInput = (req, source) => {
   });
 };
 
-// Feeds the guardrail panel: rules have no effective dates, so the only honest
-// thing the screen can do is show exactly which rules the recompute will use.
+// Feeds the guardrail panel: rules are effective-dated, so the screen shows the
+// windows the recompute can resolve against each voucher date.
 router.get(
   "/recalc-rules",
   requirePermission("SCREEN", page.scopeKey, "view"),

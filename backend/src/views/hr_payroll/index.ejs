@@ -3301,8 +3301,8 @@ const currentSeq = ++state.requestSeq;
 <%
   // Recalculate Commission — rewrites stored commission for a past date range.
   //
-  // Commission is denormalized at voucher time and rules carry no effective
-  // dates, so a rate corrected today never reaches vouchers already posted.
+  // Commission is denormalized at voucher time. Backdated rule saves run an
+  // automatic bounded recompute; this modal remains the manual audit/retry path.
   // The date range is deliberately free-form: salary cycles here do not start
   // on the 1st.
   const recalcEmployeeField = (page.fields || []).find(function (field) { return field.name === "employee_id"; });
@@ -3315,9 +3315,9 @@ const currentSeq = ++state.requestSeq;
     { value: "PRODUCTION_SFG", labelKey: "commission_type_production_sfg" },
   ];
 %>
-<!-- Backdated rate: the rule now applies from a past date, but commission was
-     denormalized onto vouchers when they were posted, so those still hold the
-     old figure. Offer the review rather than rewriting them silently. -->
+<!-- Backdated rate fallback: automatic recalculation handles normal saves.
+     This band is only shown when the automatic pass needs manual review, such
+     as an over-limit range. -->
 <div class="mx-auto mb-4 hidden max-w-6xl rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900" data-backdate-band>
   <div class="font-semibold" data-backdate-title></div>
   <div class="mt-1 text-xs" data-backdate-body></div>

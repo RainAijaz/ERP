@@ -1,17 +1,17 @@
 // CLI front-end for commission recalculation.
 //
-// Recomputes commission for historical approved vouchers using TODAY'S active
-// employee_commission_rules and writes the result. All the logic lives in
+// Recomputes commission for historical approved vouchers using the commission
+// rules effective on each voucher date and writes the result. All the logic lives in
 // src/services/hr-payroll/commission-recalc-service.js, which is the same engine
 // behind the Recalculate modal on the Sales Commission screen — this script is a
 // thin wrapper so the two can never disagree.
 //
 // Why this is needed: commission is computed once, at voucher time, using
-// whatever rules were active then. Rules are not effective-dated, so a rate
-// corrected today never reaches vouchers already posted.
+// whatever rules were active then. Backdated rule changes need a controlled
+// recompute so stored voucher commission catches up to the effective-date rules.
 //
-// CAUTION: because rules carry no effective dates, this applies TODAY'S rates to
-// old vouchers. If a rate changed since, review the audit CSV before --apply.
+// CAUTION: clearing unmatched commission can remove amounts already recorded
+// for payroll. Review the audit CSV before --clear-orphans --apply.
 //
 // Writes are idempotent: ledger rows upsert on (voucher_id, employee_id,
 // commission_type), and sales-voucher rewrites are recomputed from source.
