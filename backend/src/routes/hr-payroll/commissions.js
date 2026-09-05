@@ -25,7 +25,7 @@ const {
   normalizeRecalcInput,
   buildRecalcPlan,
   applyRecalcPlan,
-  applyAutomaticBackdatedRecalc,
+  scheduleAutomaticBackdatedRecalc,
   fetchActiveRulesForScope,
 } = require("../../services/hr-payroll/commission-recalc-service");
 // Registers the approvals preview renderer for RECALC_APPROVAL_MODE. Required
@@ -567,18 +567,16 @@ const page = {
     values.value = toMoney(values.value);
     return null;
   },
-  afterWrite: async ({ trx, values, existing, req, res }) => {
+  afterCommit: async ({ values, existing, req }) => {
     const row = {
       ...(existing || {}),
       ...(values || {}),
     };
-    return applyAutomaticBackdatedRecalc({
-      trx,
+    return scheduleAutomaticBackdatedRecalc({
       ruleChanges: [row],
       allowedBranchIds: getAllowedBranchIds(req),
       userId: req.user?.id || null,
       source: "commission-rule-save",
-      t: res.locals.t,
     });
   },
 };
@@ -871,7 +869,6 @@ router.post(
 
       let createdCount = 0;
       let updatedCount = 0;
-      let autoRecalcResult = null;
       await knex.transaction(async (trx) => {
         for (const plan of rowPlans) {
           if (plan.duplicateIdsToDelete.length) {
@@ -908,14 +905,13 @@ router.post(
             createdCount += 1;
           }
         }
-        autoRecalcResult = await applyAutomaticBackdatedRecalc({
-          trx,
-          ruleChanges: rowPlans.map((plan) => plan.values),
-          allowedBranchIds: getAllowedBranchIds(req),
-          userId: req.user?.id || null,
-          source: "commission-rule-save",
-          t: res.locals.t,
-        });
+      });
+
+      const autoRecalcResult = scheduleAutomaticBackdatedRecalc({
+        ruleChanges: rowPlans.map((plan) => plan.values),
+        allowedBranchIds: getAllowedBranchIds(req),
+        userId: req.user?.id || null,
+        source: "commission-rule-save",
       });
 
       queueAuditLog(req, {
@@ -928,27 +924,10 @@ router.post(
           mode: "SKU_MULTI_UPSERT",
           created_count: createdCount,
           updated_count: updatedCount,
-          automatic_recalc_writes: autoRecalcResult?.writes || 0,
-          automatic_recalc_skipped_over_limit:
-            autoRecalcResult?.skippedOverLimit || 0,
+          automatic_recalc_queued: Boolean(autoRecalcResult?.queued),
+          automatic_recalc_attempted: autoRecalcResult?.attempted || 0,
         },
       });
-
-      if (autoRecalcResult?.skippedOverLimit && autoRecalcResult.inputs?.[0]) {
-        const fallback = autoRecalcResult.inputs[0];
-        setCookie(res, backdateCookie, JSON.stringify({
-          backdated: true,
-          from_date: fallback.from_date,
-          to_date: fallback.to_date,
-          employee_id: fallback.employee_id,
-          commission_type: fallback.commission_types?.[0] || null,
-          affected_vouchers: autoRecalcResult.results?.[0]?.writes || 0,
-        }), {
-          path: req.baseUrl,
-          maxAge: 120,
-          sameSite: "Lax",
-        });
-      }
 
       return res.redirect(req.baseUrl);
     } catch (err) {
@@ -1216,7 +1195,6 @@ router.post(
         groupId: skuSelectorMap.get(Number(row.skuId))?.groupId ?? null,
       }));
 
-      let autoRecalcResult = null;
       const result = await knex.transaction(async (trx) => {
         const applied = await applyBulkSkuRateUpsert({
           trx,
@@ -1235,22 +1213,20 @@ router.post(
           status: normalized.status,
           rows: enrichedRows,
         });
-        autoRecalcResult = await applyAutomaticBackdatedRecalc({
-          trx,
-          ruleChanges: [
-            {
-              employee_id: normalized.employeeId,
-              commission_type: normalized.commissionType,
-              effective_from: normalized.effectiveFrom,
-              effective_to: normalized.effectiveTo,
-            },
-          ],
-          allowedBranchIds: getAllowedBranchIds(req),
-          userId: req.user?.id || null,
-          source: "commission-bulk-rule-save",
-          t: res.locals.t,
-        });
         return applied;
+      });
+      const autoRecalcResult = scheduleAutomaticBackdatedRecalc({
+        ruleChanges: [
+          {
+            employee_id: normalized.employeeId,
+            commission_type: normalized.commissionType,
+            effective_from: normalized.effectiveFrom,
+            effective_to: normalized.effectiveTo,
+          },
+        ],
+        allowedBranchIds: getAllowedBranchIds(req),
+        userId: req.user?.id || null,
+        source: "commission-bulk-rule-save",
       });
 
       queueAuditLog(req, {
@@ -1264,38 +1240,17 @@ router.post(
           created: result.created,
           updated: result.updated,
           row_count: normalized.rows.length,
-          automatic_recalc_writes: autoRecalcResult?.writes || 0,
-          automatic_recalc_skipped_over_limit:
-            autoRecalcResult?.skippedOverLimit || 0,
+          automatic_recalc_queued: Boolean(autoRecalcResult?.queued),
+          automatic_recalc_attempted: autoRecalcResult?.attempted || 0,
         },
       });
-
-      const backdate =
-        autoRecalcResult?.skippedOverLimit && autoRecalcResult.inputs?.[0]
-          ? {
-              backdated: true,
-              from_date: autoRecalcResult.inputs[0].from_date,
-              to_date: autoRecalcResult.inputs[0].to_date,
-              employee_id: autoRecalcResult.inputs[0].employee_id,
-              commission_type:
-                autoRecalcResult.inputs[0].commission_types?.[0] || null,
-              affected_vouchers: autoRecalcResult.results?.[0]?.writes || 0,
-            }
-          : null;
-      if (backdate) {
-        setCookie(res, backdateCookie, JSON.stringify(backdate), {
-          path: req.baseUrl,
-          maxAge: 120,
-          sameSite: "Lax",
-        });
-      }
 
       return res.json({
         ok: true,
         created: result.created,
         updated: result.updated,
         automatic_recalc: autoRecalcResult,
-        backdate,
+        backdate: null,
         message:
           res.locals.t("success_bulk_commission_saved") ||
           res.locals.t("saved"),

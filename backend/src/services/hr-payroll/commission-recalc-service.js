@@ -273,6 +273,75 @@ const applyAutomaticBackdatedRecalc = async ({
   return summary;
 };
 
+const summarizeBackdatedRuleInputs = ({
+  ruleChanges = [],
+  allowedBranchIds = [],
+} = {}) => {
+  if (!Array.isArray(ruleChanges) || !ruleChanges.length) return [];
+  const inputByKey = new Map();
+  ruleChanges.forEach((change) => {
+    const input = buildBackdatedRuleRecalcInput({
+      effectiveFrom: change?.effective_from ?? change?.effectiveFrom,
+      effectiveTo: change?.effective_to ?? change?.effectiveTo,
+      employeeId: change?.employee_id ?? change?.employeeId,
+      commissionType: change?.commission_type ?? change?.commissionType,
+      allowedBranchIds,
+    });
+    if (!input) return;
+    inputByKey.set(backdatedRuleKey(input), input);
+  });
+  return [...inputByKey.values()];
+};
+
+const scheduleAutomaticBackdatedRecalc = ({
+  db = knex,
+  ruleChanges = [],
+  allowedBranchIds = [],
+  userId = null,
+  source = "commission-rule-save",
+  t = (key) => key,
+} = {}) => {
+  const inputs = summarizeBackdatedRuleInputs({ ruleChanges, allowedBranchIds });
+  const summary = {
+    queued: inputs.length > 0,
+    attempted: inputs.length,
+    inputs: inputs.map((input) => ({
+      from_date: input.fromDate,
+      to_date: input.toDate,
+      employee_id: input.employeeId,
+      commission_types: input.commissionTypes,
+    })),
+  };
+
+  if (!inputs.length) return summary;
+
+  const run = async () => {
+    try {
+      const result = await db.transaction((trx) =>
+        applyAutomaticBackdatedRecalc({
+          trx,
+          ruleChanges,
+          allowedBranchIds,
+          userId,
+          source,
+          t,
+        }),
+      );
+      console.log("[commission-recalc] automatic backdated recalculation completed:", result);
+    } catch (err) {
+      console.error("Error in CommissionRecalcService:", err);
+    }
+  };
+
+  if (typeof setImmediate === "function") {
+    setImmediate(run);
+  } else {
+    setTimeout(run, 0);
+  }
+
+  return summary;
+};
+
 const rowKey = (voucherId, employeeId, commissionType) =>
   `${Number(voucherId)}:${Number(employeeId)}:${commissionType}`;
 
@@ -678,6 +747,7 @@ module.exports = {
   MAX_RECALC_ROWS,
   normalizeRecalcInput,
   buildBackdatedRuleRecalcInput,
+  scheduleAutomaticBackdatedRecalc,
   buildRecalcPlan,
   applyRecalcPlan,
   applyAutomaticBackdatedRecalc,

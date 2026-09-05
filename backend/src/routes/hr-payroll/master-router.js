@@ -1230,18 +1230,6 @@ const createHrMasterRouter = (pageConfig) => {
               );
             }
           }
-          if (typeof pageConfig.afterWrite === "function") {
-            await pageConfig.afterWrite({
-              trx,
-              action: "create",
-              entityId,
-              values: rest,
-              rawValues: sanitizedValues,
-              req,
-              res,
-              knex,
-            });
-          }
           queueAuditLog(req, {
             entityType: pageConfig.entityType,
             entityId,
@@ -1252,6 +1240,17 @@ const createHrMasterRouter = (pageConfig) => {
             },
           });
         });
+        if (typeof pageConfig.afterCommit === "function") {
+          await pageConfig.afterCommit({
+            action: "create",
+            entityId: createdEntityId,
+            values: rest,
+            rawValues: sanitizedValues,
+            req,
+            res,
+            knex,
+          });
+        }
         logEmployeeDebug(pageConfig, req, "create:insert_success", {
           traceId,
           entityId: createdEntityId,
@@ -1588,20 +1587,20 @@ const createHrMasterRouter = (pageConfig) => {
               );
             }
           }
-          if (typeof pageConfig.afterWrite === "function") {
-            await pageConfig.afterWrite({
-              trx,
-              action: "edit",
-              entityId: id,
-              values: rest,
-              rawValues: sanitizedValues,
-              existing,
-              req,
-              res,
-              knex,
-            });
-          }
         });
+
+        if (typeof pageConfig.afterCommit === "function") {
+          await pageConfig.afterCommit({
+            action: "edit",
+            entityId: id,
+            values: rest,
+            rawValues: sanitizedValues,
+            existing,
+            req,
+            res,
+            knex,
+          });
+        }
 
         queueAuditLog(req, {
           entityType: pageConfig.entityType,
