@@ -263,10 +263,11 @@
     <% if (reportLoaded && selectedEntityId && selectedLedgerView === "summary" && categoryBreakdown) { %>
       <div class="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
         <div class="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t('breakdown_by_category') %></div>
-        <table class="min-w-[520px] w-full text-sm tabular-nums" data-report-table>
+        <table class="min-w-[640px] w-full text-sm tabular-nums" data-report-table>
           <thead class="bg-slate-100 text-slate-700">
             <tr>
               <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('description') %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('total_dozens') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('debit') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('credit') %></th>
             </tr>
@@ -275,23 +276,35 @@
             <tr class="bg-white">
               <td class="px-3 py-2 font-semibold"><%= t('opening_balance') %></td>
               <td class="px-3 py-2 text-right">-</td>
+              <td class="px-3 py-2 text-right">-</td>
               <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(categoryBreakdown.openingBalance, 2) %></td>
             </tr>
-            <% (categoryBreakdown.breakdown || []).forEach((entry) => { %>
+            <% (categoryBreakdown.breakdown || []).forEach((entry) => {
+                 const entryLevel = Number(entry.level || 0);
+                 const entryLabelClass = entryLevel === 1
+                   ? 'font-semibold text-slate-800'
+                   : entryLevel === 2
+                     ? 'pl-6 text-xs text-slate-600'
+                     : entryLevel === 3
+                       ? 'pl-10 text-xs text-slate-500'
+                       : 'text-slate-600';
+            %>
               <tr class="bg-white odd:bg-slate-50/30">
-                <td class="px-3 py-2 text-slate-600 <%= entry.isCommissionBreakdown ? 'pl-6 text-xs' : '' %>"><%= entry.labelText || t(entry.labelKey) %></td>
+                <td class="px-3 py-2 <%= entryLabelClass %>"><%= entry.labelText || t(entry.labelKey) %></td>
+                <td class="px-3 py-2 text-right"><%= entry.showDozen ? formatNumber(entry.totalDozen || 0, 3) : '-' %></td>
                 <td class="px-3 py-2 text-right"><%= formatNumber(entry.debit, 2) %></td>
                 <td class="px-3 py-2 text-right"><%= formatNumber(entry.credit, 2) %></td>
               </tr>
             <% }) %>
             <tr class="border-t border-slate-200 bg-slate-100">
               <td class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('total') %></td>
+              <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(categoryBreakdown.totalDozen || 0, 3) %></td>
               <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(categoryBreakdown.totalDebit, 2) %></td>
               <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(categoryBreakdown.totalCredit, 2) %></td>
             </tr>
             <tr class="bg-slate-200">
               <td class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('closing_balance') %></td>
-              <td class="px-3 py-2 text-right" colspan="2"><span class="font-semibold text-slate-900"><%= formatNumber(categoryBreakdown.closingBalance, 2) %></span></td>
+              <td class="px-3 py-2 text-right" colspan="3"><span class="font-semibold text-slate-900"><%= formatNumber(categoryBreakdown.closingBalance, 2) %></span></td>
             </tr>
           </tbody>
         </table>
