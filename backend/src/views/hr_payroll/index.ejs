@@ -3301,8 +3301,8 @@ const currentSeq = ++state.requestSeq;
 <%
   // Recalculate Commission — rewrites stored commission for a past date range.
   //
-  // Commission is denormalized at voucher time. Backdated rule saves run an
-  // automatic bounded recompute; this modal remains the manual audit/retry path.
+  // Commission is denormalized at voucher time. This modal is the explicit
+  // audit/apply path for rewriting already-posted voucher commission.
   // The date range is deliberately free-form: salary cycles here do not start
   // on the 1st.
   const recalcEmployeeField = (page.fields || []).find(function (field) { return field.name === "employee_id"; });
@@ -3315,9 +3315,8 @@ const currentSeq = ++state.requestSeq;
     { value: "PRODUCTION_SFG", labelKey: "commission_type_production_sfg" },
   ];
 %>
-<!-- Backdated rate fallback: automatic recalculation handles normal saves.
-     This band is only shown when the automatic pass needs manual review, such
-     as an over-limit range. -->
+<!-- Backdated rate fallback: shown only when a save path provides a prefilled
+     review prompt. -->
 <div class="mx-auto mb-4 hidden max-w-6xl rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900" data-backdate-band>
   <div class="font-semibold" data-backdate-title></div>
   <div class="mt-1 text-xs" data-backdate-body></div>
@@ -3374,7 +3373,7 @@ const currentSeq = ++state.requestSeq;
         <div class="flex flex-wrap gap-3">
           <% recalcTypes.forEach(function (type) { %>
             <label class="inline-flex items-center gap-2 text-xs text-slate-700">
-              <input type="checkbox" data-recalc-type value="<%= type.value %>" checked>
+              <input type="checkbox" data-recalc-type value="<%= type.value %>" <%= type.value === "SALESMAN_SALE" ? "checked" : "" %>>
               <span><%= t(type.labelKey) %></span>
             </label>
           <% }); %>
@@ -3475,6 +3474,7 @@ const currentSeq = ++state.requestSeq;
 
     let lastRows = [];
     let lastFilters = null;
+    let lastFilterKey = "";
 
     const typeValues = () =>
       Array.from(modal.querySelectorAll("[data-recalc-type]"))
@@ -3495,6 +3495,30 @@ const currentSeq = ++state.requestSeq;
     const setSuccess = (message) => {
       successBox.textContent = message || "";
       show(successBox, Boolean(message));
+    };
+
+    const currentFilterKey = () => JSON.stringify({
+      employee_id: employeeSel.value || "",
+      from_date: fromInput.value || "",
+      to_date: toInput.value || "",
+      commission_types: typeValues().sort(),
+      clear_orphans: Boolean(clearOrphansBox.checked),
+    });
+
+    const filtersReady = () =>
+      Boolean(fromInput.value && toInput.value && typeValues().length);
+
+    const updateApplyState = () => {
+      applyBtn.disabled = !filtersReady();
+    };
+
+    const markPreviewDirty = () => {
+      lastFilters = null;
+      lastRows = [];
+      lastFilterKey = "";
+      show(resultsBox, false);
+      setSuccess("");
+      updateApplyState();
     };
 
     const statusTint = {
@@ -3574,7 +3598,8 @@ const currentSeq = ++state.requestSeq;
       const types = typeValues();
       if (!fromInput.value || !toInput.value || !types.length) {
         setError(T.dateRequired);
-        return;
+        updateApplyState();
+        return false;
       }
       const params = new URLSearchParams();
       params.set("from_date", fromInput.value);
@@ -3590,10 +3615,12 @@ const currentSeq = ++state.requestSeq;
         const data = await res.json();
         if (!res.ok) {
           setError((data && data.message) || T.genericError);
-          return;
+          updateApplyState();
+          return false;
         }
         lastRows = data.rows || [];
         lastFilters = data.filters || null;
+        lastFilterKey = currentFilterKey();
         const counts = data.counts || {};
         const totals = data.totals || {};
 
@@ -3612,13 +3639,19 @@ const currentSeq = ++state.requestSeq;
         renderRows();
         applyBtn.disabled = !(counts.writes > 0) || Boolean(data.over_limit);
         if (data.over_limit) setError(T.overLimit);
+        return counts.writes > 0 && !data.over_limit;
       } catch (err) {
         setError(String((err && err.message) || err));
+        updateApplyState();
+        return false;
       }
     };
 
     const apply = async () => {
-      if (!lastFilters) return;
+      if (!lastFilters || lastFilterKey !== currentFilterKey()) {
+        const canApply = await runPreview();
+        if (!canApply || !lastFilters) return;
+      }
       if (clearOrphansBox.checked) {
         // Zeroing unmatched commission removes pay that may already have been
         // issued, so it always needs an explicit acknowledgement.
@@ -3674,7 +3707,7 @@ const currentSeq = ++state.requestSeq;
       setError("");
       setSuccess("");
       show(resultsBox, false);
-      applyBtn.disabled = true;
+      updateApplyState();
       loadRules();
     };
     const closeModal = () => {
@@ -3756,10 +3789,18 @@ const currentSeq = ++state.requestSeq;
     el("[data-recalc-preview]").addEventListener("click", runPreview);
     applyBtn.addEventListener("click", apply);
     changedOnlyBox.addEventListener("change", renderRows);
-    clearOrphansBox.addEventListener("change", runPreview);
-    employeeSel.addEventListener("change", loadRules);
+    clearOrphansBox.addEventListener("change", markPreviewDirty);
+    employeeSel.addEventListener("change", () => {
+      markPreviewDirty();
+      loadRules();
+    });
+    fromInput.addEventListener("change", markPreviewDirty);
+    toInput.addEventListener("change", markPreviewDirty);
     modal.querySelectorAll("[data-recalc-type]").forEach((box) =>
-      box.addEventListener("change", loadRules),
+      box.addEventListener("change", () => {
+        markPreviewDirty();
+        loadRules();
+      }),
     );
   })();
 </script>
