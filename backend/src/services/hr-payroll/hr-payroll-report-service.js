@@ -106,6 +106,162 @@ const toAmount = (value, precision = 2) => {
   return Number(num.toFixed(precision));
 };
 
+const parseJsonArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  if (typeof value === "object") return [];
+  try {
+    const parsed = JSON.parse(String(value));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.error("Error in HrPayrollReportService:", err);
+    return [];
+  }
+};
+
+const parseJsonObject = (value) => {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  } catch (err) {
+    console.error("Error in HrPayrollReportService:", err);
+    return {};
+  }
+};
+
+const normalizeCommissionEntries = (linesDetail) =>
+  parseJsonArray(linesDetail).flatMap((line) => {
+    const entries = Array.isArray(line?.entries) ? line.entries : [];
+    return entries
+      .map((entry) => ({
+        ruleId: toPositiveId(entry?.rule_id),
+        basis: String(entry?.basis || ""),
+        rate: Number(entry?.rate || 0),
+        amount: toAmount(entry?.computed_amount, 2),
+      }))
+      .filter((entry) => Math.abs(entry.amount) >= 0.005);
+  });
+
+const commissionTypeLabelKey = (type) =>
+  `commission_type_${String(type || "").toLowerCase()}`;
+
+const addCommissionBucketAmount = (bucket, amount) => {
+  const normalized = toAmount(amount, 2);
+  if (Math.abs(normalized) < 0.005) return;
+  if (normalized >= 0) {
+    bucket.credit = toAmount(Number(bucket.credit || 0) + normalized, 2);
+  } else {
+    bucket.debit = toAmount(Number(bucket.debit || 0) + Math.abs(normalized), 2);
+  }
+};
+
+const makeCommissionBucketKey = ({ type, ruleId, basis, rate }) =>
+  [
+    String(type || ""),
+    ruleId || "unmatched",
+    String(basis || ""),
+    Number.isFinite(Number(rate)) ? Number(rate) : "",
+  ].join("|");
+
+const collectCommissionBucket = (buckets, { type, ruleId, basis, rate, amount }) => {
+  const key = makeCommissionBucketKey({ type, ruleId, basis, rate });
+  const current = buckets.get(key) || {
+    type,
+    ruleId,
+    basis,
+    rate,
+    debit: 0,
+    credit: 0,
+  };
+  addCommissionBucketAmount(current, amount);
+  buckets.set(key, current);
+};
+
+const collectCommissionFallback = (buckets, { type, debit = 0, credit = 0 }) => {
+  const key = `${String(type || "")}|fallback`;
+  const current = buckets.get(key) || {
+    type,
+    ruleId: null,
+    basis: "",
+    rate: null,
+    debit: 0,
+    credit: 0,
+    fallback: true,
+  };
+  current.debit = toAmount(Number(current.debit || 0) + Number(debit || 0), 2);
+  current.credit = toAmount(Number(current.credit || 0) + Number(credit || 0), 2);
+  buckets.set(key, current);
+};
+
+const normalizeCommissionRuleRows = async ({ ruleIds, locale }) => {
+  const ids = [...new Set(ruleIds.map(toPositiveId).filter(Boolean))];
+  if (!ids.length) return new Map();
+  const localizedName = (alias) =>
+    locale === "ur"
+      ? `COALESCE(NULLIF(${alias}.name_ur, ''), ${alias}.name)`
+      : `${alias}.name`;
+
+  const rows = await knex("erp.employee_commission_rules as ecr")
+    .leftJoin("erp.skus as s", "s.id", "ecr.sku_id")
+    .leftJoin("erp.variants as v", "v.id", "s.variant_id")
+    .leftJoin("erp.items as i", "i.id", "v.item_id")
+    .leftJoin("erp.product_subgroups as sg", "sg.id", "ecr.subgroup_id")
+    .leftJoin("erp.product_groups as pg", "pg.id", "ecr.group_id")
+    .leftJoin("erp.branches as b", "b.id", "ecr.branch_id")
+    .whereIn("ecr.id", ids)
+    .select(
+      "ecr.id",
+      "ecr.apply_on",
+      "ecr.commission_basis",
+      "ecr.rate_type",
+      "ecr.value",
+      "s.sku_code",
+      knex.raw(`${localizedName("i")} as item_name`),
+      knex.raw(`${localizedName("sg")} as subgroup_name`),
+      knex.raw(`${localizedName("pg")} as group_name`),
+      knex.raw(`${localizedName("b")} as branch_name`),
+    );
+
+  return new Map(rows.map((row) => [Number(row.id), row]));
+};
+
+const formatCommissionBreakdownLabel = ({ bucket, rule, locale }) => {
+  const t = (key) => resolveTranslation(locale, key);
+  const typeLabel = t(commissionTypeLabelKey(bucket.type));
+  if (bucket.fallback) return typeLabel;
+  if (!rule) {
+    return `${typeLabel} - ${t("commission_rule")} #${bucket.ruleId || "-"}`;
+  }
+
+  const applyOn = String(rule.apply_on || "").toUpperCase();
+  const parts = [typeLabel];
+  if (applyOn === "SKU") {
+    const skuLabel = [rule.sku_code, rule.item_name].filter(Boolean).join(" - ");
+    parts.push(`${t("apply_on_sku")}: ${skuLabel || "-"}`);
+  } else if (applyOn === "SUBGROUP") {
+    parts.push(`${t("apply_on_subgroup")}: ${rule.subgroup_name || "-"}`);
+  } else if (applyOn === "GROUP") {
+    parts.push(`${t("apply_on_group")}: ${rule.group_name || "-"}`);
+  } else if (applyOn === "ALL") {
+    parts.push(t("apply_on_all"));
+  }
+  if (rule.branch_name) parts.push(`${t("branch")}: ${rule.branch_name}`);
+
+  const rateType = String(rule.rate_type || "").toLowerCase();
+  const rateLabel = rateType ? t(`rate_type_${rateType}`) : "";
+  const storedRate = Number(bucket.rate);
+  const rateValue = Number.isFinite(storedRate) ? storedRate : Number(rule.value);
+  if (rateLabel && Number.isFinite(rateValue)) {
+    parts.push(`${rateLabel} - ${toAmount(rateValue, 2).toFixed(2)}`);
+  }
+
+  return parts.join(" - ");
+};
+
 const toQty = (value, precision = 3) => {
   const num = Number(value || 0);
   if (!Number.isFinite(num)) return 0;
@@ -945,6 +1101,27 @@ const getLedgerRows = async ({
   });
 
   const rawRows = await detailsQuery;
+  let salesCommissionBreakdownRows = [];
+  if (kind === "employee") {
+    const salesCommissionVoucherIds = [
+      ...new Set(
+        rawRows
+          .filter((row) => row.is_sales_commission)
+          .map((row) => Number(row.voucher_id || 0))
+          .filter((id) => Number.isInteger(id) && id > 0),
+      ),
+    ];
+    if (salesCommissionVoucherIds.length) {
+      salesCommissionBreakdownRows = await knex("erp.voucher_line as sku_vl")
+        .join("erp.voucher_header as vh", "vh.id", "sku_vl.voucher_header_id")
+        .join("erp.sales_header as sh", "sh.voucher_id", "vh.id")
+        .whereIn("vh.id", salesCommissionVoucherIds)
+        .andWhere("vh.status", "APPROVED")
+        .andWhere("sku_vl.line_kind", "SKU")
+        .andWhere("sh.salesman_employee_id", filters.entityId)
+        .select("sku_vl.id", "sku_vl.meta");
+    }
+  }
   let openingBalance = toAmount(
     Number(openingRow?.opening_balance || 0) +
       staffOpeningBalance +
@@ -991,6 +1168,7 @@ const getLedgerRows = async ({
         "b3.name as branch_name",
         "cl.commission_type",
         "cl.total_amount",
+        "cl.lines_detail",
       );
   }
 
@@ -1228,12 +1406,33 @@ const getLedgerRows = async ({
   // balance as the per-voucher `totals` below (verified in report-service tests).
   let categoryBreakdown = null;
   if (kind === "employee" && filters.ledgerView === "summary") {
-    const commissionByType = new Map();
+    const commissionBuckets = new Map();
+    const commissionRuleIds = [];
     commissionDetailRows.forEach((row) => {
       const type = String(row.commission_type || "");
-      const current = commissionByType.get(type) || { credit: 0, debit: 0 };
-      current.credit = toAmount(current.credit + Number(row.total_amount || 0), 2);
-      commissionByType.set(type, current);
+      const entries = normalizeCommissionEntries(row.lines_detail);
+      let expandedTotal = 0;
+      entries.forEach((entry) => {
+        if (entry.ruleId) commissionRuleIds.push(entry.ruleId);
+        expandedTotal = toAmount(expandedTotal + entry.amount, 2);
+        collectCommissionBucket(commissionBuckets, {
+          type,
+          ruleId: entry.ruleId,
+          basis: entry.basis,
+          rate: entry.rate,
+          amount: entry.amount,
+        });
+      });
+
+      const ledgerTotal = toAmount(row.total_amount, 2);
+      const unexpandedTotal = toAmount(ledgerTotal - expandedTotal, 2);
+      if (Math.abs(unexpandedTotal) >= 0.005) {
+        collectCommissionFallback(commissionBuckets, {
+          type,
+          debit: unexpandedTotal < 0 ? Math.abs(unexpandedTotal) : 0,
+          credit: unexpandedTotal > 0 ? unexpandedTotal : 0,
+        });
+      }
     });
 
     let paymentsCredit = 0;
@@ -1252,18 +1451,63 @@ const getLedgerRows = async ({
         paymentsDebit = toAmount(paymentsDebit + debit, 2);
       }
     });
+
+    let expandedSalesCommission = 0;
+    salesCommissionBreakdownRows.forEach((row) => {
+      const meta = parseJsonObject(row.meta);
+      const commission = parseJsonObject(meta.commission);
+      const entries = normalizeCommissionEntries([
+        {
+          entries: Array.isArray(commission.entries)
+            ? commission.entries
+            : [],
+        },
+      ]);
+      entries.forEach((entry) => {
+        if (entry.ruleId) commissionRuleIds.push(entry.ruleId);
+        expandedSalesCommission = toAmount(
+          expandedSalesCommission + entry.amount,
+          2,
+        );
+        collectCommissionBucket(commissionBuckets, {
+          type: "SALESMAN_SALE",
+          ruleId: entry.ruleId,
+          basis: entry.basis,
+          rate: entry.rate,
+          amount: entry.amount,
+        });
+      });
+    });
+
     if (
       Math.abs(salesCommissionCredit) >= 0.005 ||
       Math.abs(salesCommissionDebit) >= 0.005
     ) {
-      const current = commissionByType.get("SALESMAN_SALE") || {
-        credit: 0,
-        debit: 0,
-      };
-      current.credit = toAmount(current.credit + salesCommissionCredit, 2);
-      current.debit = toAmount(current.debit + salesCommissionDebit, 2);
-      commissionByType.set("SALESMAN_SALE", current);
+      const ledgerSalesCommission = toAmount(
+        salesCommissionCredit - salesCommissionDebit,
+        2,
+      );
+      const unexpandedSalesCommission = toAmount(
+        ledgerSalesCommission - expandedSalesCommission,
+        2,
+      );
+      if (Math.abs(unexpandedSalesCommission) >= 0.005) {
+        collectCommissionFallback(commissionBuckets, {
+          type: "SALESMAN_SALE",
+          debit:
+            unexpandedSalesCommission < 0
+              ? Math.abs(unexpandedSalesCommission)
+              : 0,
+          credit:
+            unexpandedSalesCommission > 0 ? unexpandedSalesCommission : 0,
+        });
+      }
     }
+
+    const commissionRuleMap = await normalizeCommissionRuleRows({
+      ruleIds: commissionRuleIds,
+      locale,
+    });
 
     let staffCreditPurchaseCredit = 0;
     let staffCreditPurchaseDebit = 0;
@@ -1299,14 +1543,34 @@ const getLedgerRows = async ({
     }
 
     const breakdown = [];
-    commissionByType.forEach((value, type) => {
-      if (Math.abs(value.credit) < 0.005 && Math.abs(value.debit) < 0.005) return;
-      breakdown.push({
-        labelKey: `commission_type_${type.toLowerCase()}`,
-        debit: value.debit,
-        credit: value.credit,
+    [...commissionBuckets.values()]
+      .sort((a, b) => {
+        const typeCompare = String(a.type || "").localeCompare(
+          String(b.type || ""),
+        );
+        if (typeCompare) return typeCompare;
+        if (Boolean(a.fallback) !== Boolean(b.fallback)) {
+          return a.fallback ? 1 : -1;
+        }
+        return String(a.ruleId || "").localeCompare(String(b.ruleId || ""));
+      })
+      .forEach((value) => {
+        if (Math.abs(value.credit) < 0.005 && Math.abs(value.debit) < 0.005)
+          return;
+        breakdown.push({
+          labelKey: commissionTypeLabelKey(value.type),
+          labelText: formatCommissionBreakdownLabel({
+            bucket: value,
+            rule: value.ruleId
+              ? commissionRuleMap.get(Number(value.ruleId))
+              : null,
+            locale,
+          }),
+          isCommissionBreakdown: !value.fallback,
+          debit: value.debit,
+          credit: value.credit,
+        });
       });
-    });
     if (Math.abs(paymentsCredit) >= 0.005 || Math.abs(paymentsDebit) >= 0.005) {
       breakdown.push({
         labelKey: "employee_balance_payments_label",
