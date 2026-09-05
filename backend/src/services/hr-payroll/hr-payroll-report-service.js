@@ -248,11 +248,13 @@ const makeCommissionSummaryRow = ({
   sortKey,
   parentKey = null,
   hierarchyKey = null,
+  commissionType = "",
 }) => ({
   level,
   rowType,
   labelKey,
   labelText,
+  commissionType,
   totalDozen: 0,
   showDozen: true,
   debit: 0,
@@ -262,6 +264,7 @@ const makeCommissionSummaryRow = ({
   hierarchyKey,
   _quantityKeys: new Set(),
   _scopeLabels: new Set(),
+  rateLabel: "",
 });
 
 const addAmountToCommissionSummaryRow = (row, amount) => {
@@ -409,6 +412,7 @@ const buildCommissionHierarchyRows = async ({
           labelText: resolveTranslation(locale, commissionTypeLabelKey(type)),
           sortKey: `1:${key}`,
           hierarchyKey: key,
+          commissionType: key,
         }),
       );
     }
@@ -454,6 +458,7 @@ const buildCommissionHierarchyRows = async ({
           sortKey: `2:${type}:${scope.labelText}`,
           parentKey: type,
           hierarchyKey: scopeKey,
+          commissionType: type,
         }),
       );
     }
@@ -477,6 +482,7 @@ const buildCommissionHierarchyRows = async ({
       [...scopeRow._scopeLabels].filter(Boolean).join(", "),
       rateSuffix,
     ].filter(Boolean).join(" - ");
+    scopeRow.rateLabel = rateSuffix;
     addAmountToCommissionSummaryRow(scopeRow, fact.amount);
     addDozenToCommissionSummaryRow(scopeRow, fact);
 
@@ -492,6 +498,7 @@ const buildCommissionHierarchyRows = async ({
           sortKey: `3:${type}:${scope.labelText}:${sku?.sku_code || ""}`,
           parentKey: scopeKey,
           hierarchyKey: articleKey,
+          commissionType: type,
         }),
       );
     }
@@ -518,6 +525,7 @@ const buildCommissionHierarchyRows = async ({
           sortKey: `2:${type}:zz_unclassified`,
           parentKey: type,
           hierarchyKey: key,
+          commissionType: type,
         }),
       );
     }
@@ -547,6 +555,14 @@ const buildCommissionHierarchyRows = async ({
       .map((row) => row.parentKey)
       .filter(Boolean),
   );
+  const childCounts = new Map();
+  [...scopeRows.values(), ...articleRows.values()].forEach((row) => {
+    if (!row.parentKey) return;
+    childCounts.set(
+      row.parentKey,
+      Number(childCounts.get(row.parentKey) || 0) + 1,
+    );
+  });
 
   return result.map((row) => {
     const { _quantityKeys, _scopeLabels, sortKey, hierarchyKey, ...publicRow } = row;
@@ -554,6 +570,8 @@ const buildCommissionHierarchyRows = async ({
       ...publicRow,
       rowKey: hierarchyKey,
       hasChildren: parentKeys.has(hierarchyKey),
+      childCount: Number(childCounts.get(hierarchyKey) || 0),
+      scopeLabels: [..._scopeLabels],
     };
   });
 };
