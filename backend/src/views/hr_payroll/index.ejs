@@ -3569,6 +3569,31 @@ const currentSeq = ++state.requestSeq;
       });
     };
 
+    const renderPlan = (data) => {
+      lastRows = data.rows || [];
+      lastFilters = data.filters || null;
+      lastFilterKey = currentFilterKey();
+      const counts = data.counts || {};
+      const totals = data.totals || {};
+
+      summaryBox.textContent =
+        T.scanned + ": " + (counts.scanned_vouchers || 0) +
+        " - " + T.rows + ": " + (counts.writes || 0) + "/" + (counts.rows || 0) +
+        " - " + T.totalChange + ": " +
+        (Number(totals.delta || 0) > 0 ? "+" : "") + money(totals.delta);
+
+      show(orphanBand, Boolean(counts.cleared));
+      if (counts.cleared) {
+        orphanText.textContent = T.unmatchedHint + " (" + counts.cleared + ")";
+      }
+
+      show(resultsBox, true);
+      renderRows();
+      applyBtn.disabled = !filtersReady() || Boolean(data.over_limit);
+      if (data.over_limit) setError(T.overLimit);
+      return counts;
+    };
+
     const loadRules = async () => {
       const params = new URLSearchParams();
       if (employeeSel.value) params.set("employee_id", employeeSel.value);
@@ -3627,27 +3652,7 @@ const currentSeq = ++state.requestSeq;
           updateApplyState();
           return false;
         }
-        lastRows = data.rows || [];
-        lastFilters = data.filters || null;
-        lastFilterKey = currentFilterKey();
-        const counts = data.counts || {};
-        const totals = data.totals || {};
-
-        summaryBox.textContent =
-          T.scanned + ": " + (counts.scanned_vouchers || 0) +
-          " · " + T.rows + ": " + (counts.writes || 0) + "/" + (counts.rows || 0) +
-          " · " + T.totalChange + ": " +
-          (Number(totals.delta || 0) > 0 ? "+" : "") + money(totals.delta);
-
-        show(orphanBand, Boolean(counts.cleared));
-        if (counts.cleared) {
-          orphanText.textContent = T.unmatchedHint + " (" + counts.cleared + ")";
-        }
-
-        show(resultsBox, true);
-        renderRows();
-        applyBtn.disabled = !filtersReady() || Boolean(data.over_limit);
-        if (data.over_limit) setError(T.overLimit);
+        const counts = renderPlan(data);
         return counts.writes > 0 && !data.over_limit;
       } catch (err) {
         setError(String((err && err.message) || err));
@@ -3709,6 +3714,9 @@ const currentSeq = ++state.requestSeq;
         });
         const data = await res.json();
         if (!res.ok && res.status !== 202) {
+          if (data && data.requires_clear_orphans) {
+            renderPlan(data);
+          }
           setError((data && data.message) || T.genericError);
           applyBtn.disabled = false;
           return;

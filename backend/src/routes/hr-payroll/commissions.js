@@ -1432,6 +1432,37 @@ router.post(
         });
       }
       if (!writes.length) {
+        if (plan.counts?.cleared > 0) {
+          return res.status(409).json({
+            message: res.locals.t("commission_recalc_unmatched_hint"),
+            requires_clear_orphans: true,
+            filters: {
+              from_date: input.fromDate,
+              to_date: input.toDate,
+              commission_types: input.commissionTypes,
+              employee_id: input.employeeId,
+              clear_orphans: input.clearOrphans,
+            },
+            rows: plan.rows.map((row) => ({
+              voucher_id: row.voucher_id,
+              voucher_no: row.voucher_no,
+              voucher_type_code: row.voucher_type_code,
+              voucher_date: row.voucher_date,
+              branch_id: row.branch_id,
+              employee_id: row.employee_id,
+              employee_name: row.employee_name,
+              commission_type: row.commission_type,
+              previous_rate: row.previous_rate,
+              new_rate: row.new_rate,
+              status: row.status,
+              will_write: row.will_write,
+            })),
+            counts: plan.counts,
+            totals: plan.totals,
+            over_limit: plan.over_limit,
+            limit: plan.limit,
+          });
+        }
         return res
           .status(400)
           .json({ message: res.locals.t("error_recalc_nothing_to_write") });
