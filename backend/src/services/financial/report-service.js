@@ -7,6 +7,8 @@ const {
   resolveVoucherApprovalRequiredTx,
 } = require("../../utils/voucher-approval-policy");
 const {
+  localizedLineDescriptionSql,
+  localizedNameSql: localizedColumnNameSql,
   localizedNarrativeSql,
   supportsVoucherRemarksUr,
 } = require("../../utils/localized-name");
@@ -578,7 +580,11 @@ const getCashBook = async (filters) => {
             WHERE vl.voucher_header_id = sh.voucher_id AND vl.line_kind = 'SKU'
           ) as return_amount`),
           knex.raw(`(
-            SELECT STRING_AGG(DISTINCT rr.description, ', ')
+            SELECT STRING_AGG(DISTINCT ${localizedColumnNameSql(
+              "rr",
+              filters.locale,
+              "description",
+            )}, ', ')
             FROM erp.voucher_line vl
             JOIN erp.sales_line sl ON sl.voucher_line_id = vl.id
             JOIN erp.return_reasons rr ON rr.id = sl.return_reason_id
@@ -896,6 +902,7 @@ const updateBankVoucherLineStatus = async ({
 };
 
 const getVoucherRegister = async (filters) => {
+  const hasRemarksUr = await supportsVoucherRemarksUr();
   const voucherTypeCode =
     VOUCHER_TYPE_BY_FILTER[
       resolveVoucherTypeFilter(filters.voucherType, "cash")
@@ -919,7 +926,12 @@ const getVoucherRegister = async (filters) => {
         knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
         "vh.voucher_no",
         localizedNameSelect("b", "branch_name", filters.locale),
-        knex.raw("COALESCE(NULLIF(vh.remarks, ''), NULL) as note"),
+        knex.raw(
+          `${localizedNarrativeSql({
+            locale: filters.locale,
+            hasRemarksUr,
+          })} as note`,
+        ),
         localizedNameSelect("ah", "cash_account", filters.locale),
         knex.raw("COALESCE(NULLIF(u.name, ''), u.username) as created_by"),
         knex.raw(
@@ -940,6 +952,7 @@ const getVoucherRegister = async (filters) => {
         "b.name",
         "b.name_ur",
         "vh.remarks",
+        ...(hasRemarksUr ? ["vh.remarks_ur"] : []),
         "ah.name",
         "ah.name_ur",
         "u.name",
@@ -998,7 +1011,9 @@ const getVoucherRegister = async (filters) => {
           "against_account",
           filters.locale,
         ),
-        knex.raw("NULLIF(vl.meta->>'description','') as description"),
+        knex.raw(
+          `${localizedLineDescriptionSql(filters.locale, "vl")} as description`,
+        ),
         localizedNameSelect("d", "department", filters.locale),
         knex.raw("COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0) as dr"),
         knex.raw("COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0) as cr"),
@@ -1050,7 +1065,12 @@ const getVoucherRegister = async (filters) => {
         knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
         "vh.voucher_no",
         localizedNameSelect("b", "branch_name", filters.locale),
-        knex.raw("COALESCE(NULLIF(vh.remarks, ''), NULL) as note"),
+        knex.raw(
+          `${localizedNarrativeSql({
+            locale: filters.locale,
+            hasRemarksUr,
+          })} as note`,
+        ),
         knex.raw("COALESCE(NULLIF(u.name, ''), u.username) as created_by"),
         knex.raw(
           "COALESCE(SUM(COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0)), 0) as total_debit",
@@ -1068,6 +1088,7 @@ const getVoucherRegister = async (filters) => {
         "b.name",
         "b.name_ur",
         "vh.remarks",
+        ...(hasRemarksUr ? ["vh.remarks_ur"] : []),
         "u.name",
         "u.username",
       )
@@ -1122,7 +1143,9 @@ const getVoucherRegister = async (filters) => {
           "account_name",
           filters.locale,
         ),
-        knex.raw("NULLIF(vl.meta->>'description','') as description"),
+        knex.raw(
+          `${localizedLineDescriptionSql(filters.locale, "vl")} as description`,
+        ),
         localizedNameSelect("d", "department", filters.locale),
         knex.raw("COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0) as dr"),
         knex.raw("COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0) as cr"),
@@ -1283,7 +1306,9 @@ const getVoucherRegister = async (filters) => {
   }
   if (includeDescriptionInDetails) {
     detailQuery = detailQuery.select(
-      knex.raw("NULLIF(vl.meta->>'description','') as description"),
+      knex.raw(
+        `${localizedLineDescriptionSql(filters.locale, "vl")} as description`,
+      ),
     );
   }
   if (includeDepartmentInDetails) {
@@ -1887,7 +1912,9 @@ const getExpenseBreakdownRows = async (filters, fromDate, toDate) => {
       localizedNameSelect("a", "account_name", filters.locale),
       "ag.id as account_group_id",
       localizedNameSelect("ag", "account_group_name", filters.locale),
-      knex.raw("NULLIF(vl.meta->>'description', '') as narration"),
+      knex.raw(
+        `${localizedLineDescriptionSql(filters.locale, "vl")} as narration`,
+      ),
       knex.raw(`
         COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0) as dr
       `),
