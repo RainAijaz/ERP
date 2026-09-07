@@ -1,4 +1,8 @@
 const knex = require("../../db/knex");
+const {
+  getReportAllowedBranchIds,
+  reportCanFilterAllBranches,
+} = require("../../utils/report-branch-scope");
 
 const toDateSafe = (value) => {
   if (!value) return null;
@@ -8,9 +12,7 @@ const toDateSafe = (value) => {
 
 const getAllowedBranchIds = (req) => {
   if (req?.user?.isAdmin) return [];
-  return Array.isArray(req?.branchScope)
-    ? req.branchScope.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
-    : [];
+  return getReportAllowedBranchIds(req);
 };
 
 const getCommissionLedgerReportPageData = async ({ req, input = {} }) => {
@@ -22,7 +24,11 @@ const getCommissionLedgerReportPageData = async ({ req, input = {} }) => {
   const commissionType = input.commission_type || null;
   const reportLoaded = Boolean(input.load_report);
 
-  const allowedBranchIds = getAllowedBranchIds(req);
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "commission_ledger",
+  );
+  const allowedBranchIds = canFilterAllBranches ? [] : getAllowedBranchIds(req);
 
   // Employee options for filter dropdown
   const nameExpr = locale === "ur" ? "COALESCE(NULLIF(e.name_ur, ''), e.name)" : "e.name";
@@ -80,6 +86,7 @@ const getCommissionLedgerReportPageData = async ({ req, input = {} }) => {
       toDate,
       employeeId,
       commissionType,
+      canFilterAllBranches,
     },
     options: {
       employees: employeeOptions,

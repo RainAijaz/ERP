@@ -32,6 +32,7 @@
   const selectedStockItemIds = Array.isArray(filters?.stockItemIds)
     ? filters.stockItemIds
     : [];
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
 
   const branchAllSelected = !selectedBranchIds.length;
   const groupAllSelected = !selectedGroupIds.length;
@@ -362,9 +363,9 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? tt("branches", "Branches") : tt("branch", "Branch") %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? tt("branches", "Branches") : tt("branch", "Branch") %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
                 <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
                 <% (options?.branches || []).forEach((branch) => { %>

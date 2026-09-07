@@ -61,7 +61,7 @@
         <%/* Employee */%>
         <div class="flex flex-col gap-1">
           <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t("employees") %></label>
-          <select name="employee_id" class="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700">
+          <select name="employee_id" class="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified">
             <option value=""><%= t("all") %></option>
             <% employeeOptions.forEach(function(emp) { %>
               <option value="<%= emp.value %>" <%= Number(emp.value) === selectedEmpId ? "selected" : "" %>><%= emp.label %></option>
@@ -72,7 +72,7 @@
         <%/* Commission type */%>
         <div class="flex flex-col gap-1">
           <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t("commission_type") %></label>
-          <select name="commission_type" class="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700">
+          <select name="commission_type" class="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified">
             <option value=""><%= t("all") %></option>
             <% COMMISSION_TYPES.forEach(function(ct) { %>
               <option value="<%= ct.value %>" <%= ct.value === selectedType ? "selected" : "" %>><%= t(ct.labelKey) %></option>

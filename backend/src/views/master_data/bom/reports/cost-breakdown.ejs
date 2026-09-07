@@ -10,6 +10,7 @@
     ? filters.branchIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
     : [];
   const branchAllSelected = selectedBranchIds.length === 0;
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
 
   const resolveText = (key, fallback) => {
     const value = t(key);
@@ -28,7 +29,12 @@
     if (v === "EXPLODED") return "Exploded (Lowest Level)";
     return "Level 1 (Direct)";
   };
-  const labourAggLabel = (value) => (String(value || "").toUpperCase() === "MAX" ? "MAX" : "AVG");
+  const labourAggLabel = (value) => {
+    const v = String(value || "").toUpperCase();
+    if (v === "MAX") return "MAX (costliest labour only)";
+    if (v === "AVG") return "AVG (labours treated as alternatives)";
+    return "SUM (matches posted production cost)";
+  };
   const componentBadge = (value) => {
     const v = String(value || "").toUpperCase();
     if (v === "RM") return "border-blue-200 bg-blue-50 text-blue-700";
@@ -75,6 +81,8 @@
               <% const value = String(row.value || "ALL"); %>
               <option value="<%= value %>" <%= String(filters?.level || "ALL") === value ? "selected" : "" %>><%= value === "ALL" ? t("all") : (value === "FINISHED" ? t("finished") : t("semi_finished")) %></option>
             <% }) %>
+            <%/* "ALL" now really is offered - the service no longer coerces an
+                 unrecognised level to FINISHED, which used to hide every SFG BOM. */%>
           </select>
         </label>
 
@@ -99,11 +107,11 @@
         </label>
 
         <label class="flex flex-col gap-1.5">
-          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= resolveText("labour_aggregation", "Labour Aggregation") %></span>
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600" title="<%= resolveText('labour_aggregation_hint', 'How several labour rows in the same department are combined. SUM matches what a production voucher actually posts (one costed line per labour); AVG/MAX treat the rows as alternatives.') %>"><%= resolveText("labour_aggregation", "Labour Aggregation") %></span>
           <select name="labour_aggregation" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
             <% (options?.labourAggregations || []).forEach((row) => { %>
-              <% const value = String(row.value || "AVG"); %>
-              <option value="<%= value %>" <%= String(filters?.labourAggregation || "AVG") === value ? "selected" : "" %>><%= labourAggLabel(value) %></option>
+              <% const value = String(row.value || "SUM"); %>
+              <option value="<%= value %>" <%= String(filters?.labourAggregation || "SUM") === value ? "selected" : "" %>><%= labourAggLabel(value) %></option>
             <% }) %>
           </select>
         </label>
@@ -117,8 +125,8 @@
         </label>
 
         <label class="flex flex-col gap-1.5">
-          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= user?.isAdmin ? t("branches") : t("branch") %></span>
-          <% if (user?.isAdmin) { %>
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= canUseBranchFilter ? t("branches") : t("branch") %></span>
+          <% if (canUseBranchFilter) { %>
             <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
               <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
               <% (options?.branches || []).forEach((row) => { %>
@@ -127,7 +135,10 @@
             </select>
           <% } else { %>
             <input type="text" readonly value="<%= (options?.branches || []).map((row) => row.name).join(', ') || branchId %>" class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700">
-            <input type="hidden" name="branch_ids" value="<%= branchId || '' %>">
+            <%/* Post every branch the user may see, not just the active one --
+                 the readonly box above already lists them all, so sending only
+                 branchId made the WAC silently narrower than the label claimed. */%>
+            <input type="hidden" name="branch_ids" value="<%= (options?.branches || []).map((row) => row.id).join(',') || (branchId || '') %>">
           <% } %>
         </label>
       </div>
@@ -139,7 +150,11 @@
     </form>
   </section>
 
-  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" data-report-print-area>
+    <div class="flex items-center justify-end gap-2" data-report-controls>
+      <button type="button" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-slate-700 disabled:opacity-40" data-print-report <%= reportLoaded && summaryRows.length ? "" : "disabled" %>><%= t("print") %></button>
+      <button type="button" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm disabled:opacity-40" data-download-report <%= reportLoaded && summaryRows.length ? "" : "disabled" %>><%= t("download") %></button>
+    </div>
     <% if (filters?.missingRequiredItem) { %>
       <div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700"><%= resolveText("bom_report_article_required", "Please select at least one article to generate this ledger.") %></div>
     <% } %>
@@ -159,7 +174,7 @@
       </div>
 
       <div class="overflow-x-auto rounded-2xl border border-slate-200">
-        <table class="min-w-245 w-full text-sm">
+        <table class="min-w-245 w-full text-sm" data-report-table>
           <thead class="bg-slate-100 text-slate-700">
             <tr>
               <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]">#</th>
@@ -167,6 +182,7 @@
               <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("article_name") %></th>
               <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("bom_stage") %></th>
               <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("version") %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" title="<%= resolveText('bom_cost_basis_hint', 'Costs below are for one BOM lot of this many pairs.') %>"><%= resolveText("output_pairs", "Output (Pairs)") %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]">RM</th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]">Labour</th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]">SFG</th>
@@ -181,6 +197,7 @@
                 <td class="px-3 py-2"><%= row.item_name || "-" %></td>
                 <td class="px-3 py-2"><%= t(String(row.level || "").toLowerCase()) || row.level || "-" %></td>
                 <td class="px-3 py-2">V<%= row.version_no || "-" %></td>
+                <td class="px-3 py-2 text-right"><%= formatNumberDisplay(row.output_pairs || 0, { decimals: 3, fallback: "0" }) %></td>
                 <td class="px-3 py-2 text-right"><%= formatCost(row.rm_cost || 0) %></td>
                 <td class="px-3 py-2 text-right"><%= formatCost(row.labour_cost || 0) %></td>
                 <td class="px-3 py-2 text-right"><%= formatCost(row.sfg_cost || 0) %></td>
@@ -248,10 +265,12 @@
           </tbody>
         </table>
       </div>
-      <%- include("../../../base/partials/table-footer", { t, rowCount: reportData?.totals?.rowCount || 0 }) %>
+      <%- include("../../../base/partials/table-footer", { t, rowCount: reportData?.totals?.rowCount || 0, showPager: false }) %>
     <% } %>
   </section>
 </div>
+
+<%- include("../../../base/partials/report-utils") %>
 
 <script>
   (function () {

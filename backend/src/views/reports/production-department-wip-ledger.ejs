@@ -13,8 +13,9 @@
   const selectedDepartmentId = Number(filters?.departmentId || 0) || null;
   const selectedSkuId = Number(filters?.skuId || 0) || null;
   const missingRequiredFilters = Boolean(filters?.missingRequiredFilters);
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
   const branchAllSelected = !selectedBranchIds.length;
-  const includeBranchColumn = Boolean(user?.isAdmin) && selectedBranchIds.length !== 1;
+  const includeBranchColumn = canUseBranchFilter && selectedBranchIds.length !== 1;
   const reportTitle = (() => { const v = t("department_wip_ledger_report"); return v && v !== "department_wip_ledger_report" ? v : "Department WIP Ledger Report"; })();
   const articlesLabel = (() => { const v = t("articles"); return v && v !== "articles" ? v : "Articles"; })();
   const openingPairsLabel = (() => { const v = t("opening_pairs"); return v && v !== "opening_pairs" ? v : "Opening Pairs"; })();
@@ -155,9 +156,9 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? t("branches") : t("branch") %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
                 <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
                 <% (options?.branches || []).forEach((branch) => { %>

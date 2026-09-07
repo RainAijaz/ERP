@@ -14,6 +14,11 @@ const {
   toIdList,
   toBoolean,
 } = require("../../utils/report-filter-types");
+const {
+  getReportAllowedBranchIds,
+  normalizeReportBranchIds,
+  reportCanFilterAllBranches,
+} = require("../../utils/report-branch-scope");
 
 const PURCHASE_TYPE_FILTERS = Object.freeze({
   all: "all",
@@ -221,7 +226,8 @@ const getAssetColumnSupport = async () => {
   return assetColumnSupport;
 };
 
-const parseFilters = ({ req, input = {} }) => {
+const parseFilters = ({ req, input = {}, scopeKey = "purchase_report" }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(req, scopeKey);
   const now = new Date();
   const fromDate = new Date(now);
   fromDate.setDate(fromDate.getDate() - 30);
@@ -239,25 +245,11 @@ const parseFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  const selectedBranchIds = toIdListWithAll(input.branch_ids);
-  let branchIds;
-  if (req.user?.isAdmin) {
-    branchIds = selectedBranchIds;
-  } else {
-    const allowedBranchIds = (req.branchOptions || [])
-      .map((b) => Number(b.id || 0))
-      .filter((id) => id > 0);
-    const fallback = Number(req.branchId || 0);
-    const effectiveAllowed = allowedBranchIds.length
-      ? allowedBranchIds
-      : fallback > 0 ? [fallback] : [];
-    if (selectedBranchIds.length) {
-      branchIds = selectedBranchIds.filter((id) => effectiveAllowed.includes(id));
-      if (!branchIds.length) branchIds = effectiveAllowed;
-    } else {
-      branchIds = effectiveAllowed;
-    }
-  }
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   const orderBy = resolveReportOrderType(
     input.order_by,
@@ -289,6 +281,7 @@ const parseFilters = ({ req, input = {} }) => {
     from,
     to,
     branchIds,
+    canFilterAllBranches,
     orderBy,
     reportType,
     purchaseType,
@@ -330,7 +323,9 @@ const loadReportFilterOptions = async ({ req, filters }) => {
   const branchScope = filters.branchIds;
   const locale = String(req?.locale || "en").toLowerCase();
 
-  const branchesPromise = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const branchesPromise = canUseAllBranches
     ? knex("erp.branches")
         .select("id", localizedNameSelect("erp.branches", "name", locale))
         .where({ is_active: true })
@@ -1062,22 +1057,26 @@ const getPurchaseReportPageData = async ({ req, input = {} }) => {
 };
 
 const parseSupplierBalanceFilters = ({ req, input = {} }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "supplier_balances",
+  );
   const today = toLocalDateOnly(new Date());
   const parsedAsOn = parseDateFilter(input.as_on, today);
   let asOn = parsedAsOn.value;
 
   if (!asOn) asOn = today;
 
-  const branchIdsFromInput = toIdList(input.branch_ids);
-  const branchIds = req.user?.isAdmin
-    ? branchIdsFromInput
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   return {
     asOn,
     branchIds,
+    canFilterAllBranches,
     reportLoaded: toBoolean(input.load_report, false),
     invalidAsOnDate: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
     invalidFilterInput: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
@@ -1085,6 +1084,10 @@ const parseSupplierBalanceFilters = ({ req, input = {} }) => {
 };
 
 const parseSupplierLedgerFilters = ({ req, input = {} }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "supplier_ledger",
+  );
   const now = new Date();
   const fromDate = new Date(now);
   fromDate.setDate(fromDate.getDate() - 30);
@@ -1103,18 +1106,17 @@ const parseSupplierLedgerFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  const branchIdsFromInput = toIdListWithAll(input.branch_ids);
   const ledgerView =
     String(input.ledger_view || "summary")
       .trim()
       .toLowerCase() === "detail"
       ? "detail"
       : "summary";
-  const branchIds = req.user?.isAdmin
-    ? branchIdsFromInput
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   return {
     from,
@@ -1122,6 +1124,7 @@ const parseSupplierLedgerFilters = ({ req, input = {} }) => {
     partyId: toPositiveId(input.party_id),
     ledgerView,
     branchIds,
+    canFilterAllBranches,
     reportLoaded: toBoolean(input.load_report, false),
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
     invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
@@ -1136,13 +1139,13 @@ const parseSupplierLedgerFilters = ({ req, input = {} }) => {
 
 const loadSupplierLedgerOptions = async ({ req, filters }) => {
   const locale = String(req?.locale || "en").toLowerCase();
-  const scopedBranchIds = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
-  const branches = req.user?.isAdmin
+  const branches = canUseAllBranches
     ? await knex("erp.branches")
         .select("id", localizedNameSelect("branches", "name", locale))
         .where({ is_active: true })
@@ -1157,7 +1160,7 @@ const loadSupplierLedgerOptions = async ({ req, filters }) => {
     .where({ "p.is_active": true })
     .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')");
 
-  if (!req.user?.isAdmin || scopedBranchIds.length) {
+  if (!canUseAllBranches || scopedBranchIds.length) {
     suppliersQuery = applyPartyBranchScope(suppliersQuery, scopedBranchIds);
   }
 
@@ -1244,8 +1247,10 @@ const fetchSupplierLedgerDetailLines = async ({ voucherHeaderIds, locale }) => {
 
 const getSupplierLedgerRows = async ({ req, filters, options }) => {
   const locale = String(req?.locale || "en").toLowerCase();
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
   const includeBranchColumn = Boolean(
-    req.user?.isAdmin && filters.branchIds.length !== 1,
+    canUseAllBranches && filters.branchIds.length !== 1,
   );
 
   if (!filters.reportLoaded || !filters.partyId) {
@@ -1263,11 +1268,9 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
     };
   }
 
-  const scopedBranchIds = req.user?.isAdmin
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
   const selectedSupplier = (options.suppliers || []).find(
     (supplier) => Number(supplier.id) === Number(filters.partyId),
@@ -1456,9 +1459,11 @@ const getSupplierLedgerReportPageData = async ({ req, input = {} }) => {
   };
 };
 
-const loadSupplierBalanceOptions = async ({ req }) => {
+const loadSupplierBalanceOptions = async ({ req, filters }) => {
   const locale = String(req?.locale || "en").toLowerCase();
-  const branches = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const branches = canUseAllBranches
     ? await knex("erp.branches")
         .select("id", localizedNameSelect("branches", "name", locale))
         .where({ is_active: true })
@@ -1476,11 +1481,11 @@ const loadSupplierBalanceOptions = async ({ req }) => {
 const getSupplierBalanceRows = async ({ req, filters }) => {
   if (!filters.reportLoaded) return [];
 
-  const scopedBranchIds = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
   const balanceSubquery = knex("erp.gl_entry as ge")
     .select("ge.party_id")
@@ -1525,7 +1530,7 @@ const getSupplierBalanceRows = async ({ req, filters }) => {
 const getSupplierBalancesReportPageData = async ({ req, input = {} }) => {
   const filters = parseSupplierBalanceFilters({ req, input });
   const [options, rows] = await Promise.all([
-    loadSupplierBalanceOptions({ req }),
+    loadSupplierBalanceOptions({ req, filters }),
     getSupplierBalanceRows({ req, filters }),
   ]);
 
@@ -1543,6 +1548,7 @@ const getSupplierBalancesReportPageData = async ({ req, input = {} }) => {
 };
 
 const parsePendingGrnFilters = ({ req, input = {} }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(req, "pending_grn");
   const parsedFrom = parseDateFilter(input.from_date, "");
   const parsedTo = parseDateFilter(input.to_date, "");
   let from = parsedFrom.value;
@@ -1554,34 +1560,17 @@ const parsePendingGrnFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  const selectedBranchIds = toIdListWithAll(input.branch_ids);
-  let branchIds;
-  if (req.user?.isAdmin) {
-    branchIds = selectedBranchIds;
-  } else {
-    const allowedBranchIds = (req.branchOptions || [])
-      .map((b) => Number(b.id || 0))
-      .filter((id) => id > 0);
-    const fallback = Number(req.branchId || 0);
-    const effectiveAllowed = allowedBranchIds.length
-      ? allowedBranchIds
-      : fallback > 0
-        ? [fallback]
-        : [];
-    if (selectedBranchIds.length) {
-      branchIds = selectedBranchIds.filter((id) =>
-        effectiveAllowed.includes(id),
-      );
-      if (!branchIds.length) branchIds = effectiveAllowed;
-    } else {
-      branchIds = effectiveAllowed;
-    }
-  }
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   return {
     from,
     to,
     branchIds,
+    canFilterAllBranches,
     supplierIds: toIdListWithAll(input.party_ids),
     purchaseCategory: resolvePurchaseCategoryFilter(
       input.purchase_category,
@@ -1603,7 +1592,9 @@ const loadPendingGrnReportOptions = async ({ req, filters }) => {
   const locale = String(req?.locale || "en").toLowerCase();
   const branchScope = filters.branchIds;
 
-  const branchesPromise = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const branchesPromise = canUseAllBranches
     ? knex("erp.branches")
         .select("id", localizedNameSelect("branches", "name", locale))
         .where({ is_active: true })
@@ -1944,6 +1935,10 @@ const SUPPLIER_ANALYSIS_GROUP_BY = Object.freeze({
 const SUPPLIER_ANALYSIS_WAC_TOLERANCE_PERCENT = 2;
 
 const parseSupplierAnalysisFilters = ({ req, input = {} }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "supplier_analysis",
+  );
   const now = new Date();
   const fromDate = new Date(now);
   // Purchases are less frequent than sales; default to a 6-month window so a
@@ -1963,31 +1958,11 @@ const parseSupplierAnalysisFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  // Branch scoping mirrors parseFilters(): admins pick freely, others are
-  // constrained to their allowed branches.
-  const selectedBranchIds = toIdListWithAll(input.branch_ids);
-  let branchIds;
-  if (req.user?.isAdmin) {
-    branchIds = selectedBranchIds;
-  } else {
-    const allowedBranchIds = (req.branchOptions || [])
-      .map((b) => Number(b.id || 0))
-      .filter((id) => id > 0);
-    const fallback = Number(req.branchId || 0);
-    const effectiveAllowed = allowedBranchIds.length
-      ? allowedBranchIds
-      : fallback > 0
-        ? [fallback]
-        : [];
-    if (selectedBranchIds.length) {
-      branchIds = selectedBranchIds.filter((id) =>
-        effectiveAllowed.includes(id),
-      );
-      if (!branchIds.length) branchIds = effectiveAllowed;
-    } else {
-      branchIds = effectiveAllowed;
-    }
-  }
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   const groupBy =
     String(input.group_by || "").trim().toLowerCase() ===
@@ -2005,6 +1980,7 @@ const parseSupplierAnalysisFilters = ({ req, input = {} }) => {
     from,
     to,
     branchIds,
+    canFilterAllBranches,
     groupBy,
     minSpreadPct,
     onlyMultiSupplier: toBoolean(input.only_multi_supplier, false),

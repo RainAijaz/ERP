@@ -8,6 +8,11 @@ const {
   localizedNameSql,
   resolveLocale,
 } = require("../../utils/localized-name");
+const {
+  getReportAllowedBranchIds,
+  normalizeReportBranchIds,
+  reportCanFilterAllBranches,
+} = require("../../utils/report-branch-scope");
 // Shared with the voucher screen so the report filter can never list a party the
 // dispatch form refuses to accept.
 const { RETURNABLE_PARTY_TYPES_SQL } = require("./returnable-voucher-service");
@@ -111,11 +116,12 @@ const daysBetween = (fromDate, toDate) => {
   return Math.floor(diffMs / 86400000);
 };
 
-const resolveBranchScope = (req, branchIds) => {
-  if (req.user?.isAdmin) return branchIds;
-  const branchId = Number(req.branchId || 0);
-  return Number.isInteger(branchId) && branchId > 0 ? [branchId] : [];
-};
+const resolveBranchScope = (req, input) =>
+  normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: reportCanFilterAllBranches(req, "pending_returnables"),
+  });
 
 const parseCommonFilters = ({ req, input = {} }) => {
   const now = new Date();
@@ -136,7 +142,10 @@ const parseCommonFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  const selectedBranchIds = toIdListWithAll(input.branch_ids);
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "pending_returnables",
+  );
 
   return {
     from,
@@ -149,7 +158,8 @@ const parseCommonFilters = ({ req, input = {} }) => {
     overdueOnly: toBoolean(input.overdue_only, false),
     includeClosed: toBoolean(input.include_closed, true),
     overdueVendorsOnly: toBoolean(input.overdue_vendors_only, false),
-    branchIds: resolveBranchScope(req, selectedBranchIds),
+    branchIds: resolveBranchScope(req, input),
+    canFilterAllBranches,
     reportLoaded: toBoolean(input.load_report, false),
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
     invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
@@ -162,9 +172,11 @@ const parseCommonFilters = ({ req, input = {} }) => {
   };
 };
 
-const loadOptions = async ({ req, branchIds }) => {
+const loadOptions = async ({ req, branchIds, canFilterAllBranches = false }) => {
   const locale = resolveLocale(req?.locale);
-  const branchesPromise = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(canFilterAllBranches);
+  const branchesPromise = canUseAllBranches
     ? knex("erp.branches")
         .select("id", localizedNameSelect("branches", "name", locale))
         .where({ is_active: true })
@@ -182,10 +194,10 @@ const loadOptions = async ({ req, branchIds }) => {
     .whereRaw(RETURNABLE_PARTY_TYPES_SQL)
     .orderByRaw(`${localizedNameSql("p", locale)} asc`);
 
-  if (!req.user?.isAdmin || branchIds.length) {
+  if (!canUseAllBranches || branchIds.length) {
     const scopedBranchIds = branchIds.length
       ? branchIds
-      : [Number(req.branchId || 0)].filter(Boolean);
+      : getReportAllowedBranchIds(req);
     vendorQuery = vendorQuery.where(function scopedPartyBranch() {
       this.whereIn("p.branch_id", scopedBranchIds).orWhereExists(
         function branchMap() {
@@ -209,10 +221,10 @@ const loadOptions = async ({ req, branchIds }) => {
     .where("is_active", true)
     .orderBy("asset_code", "asc");
 
-  if (!req.user?.isAdmin || branchIds.length) {
+  if (!canUseAllBranches || branchIds.length) {
     const scopedBranchIds = branchIds.length
       ? branchIds
-      : [Number(req.branchId || 0)].filter(Boolean);
+      : getReportAllowedBranchIds(req);
     assetQuery = assetQuery.where(function scopedAssetBranch() {
       this.whereNull("home_branch_id").orWhereIn(
         "home_branch_id",
@@ -603,7 +615,11 @@ const buildVendorPerformance = ({ rows, conditionVarianceMap, filters }) => {
 
 const getReturnablesControlReportPageData = async ({ req, input = {} }) => {
   const filters = parseCommonFilters({ req, input });
-  const options = await loadOptions({ req, branchIds: filters.branchIds });
+  const options = await loadOptions({
+    req,
+    branchIds: filters.branchIds,
+    canFilterAllBranches: filters.canFilterAllBranches,
+  });
 
   if (!filters.reportLoaded) {
     return {
@@ -641,7 +657,11 @@ const getReturnablesControlReportPageData = async ({ req, input = {} }) => {
 
 const getReturnablesVendorPerformancePageData = async ({ req, input = {} }) => {
   const filters = parseCommonFilters({ req, input });
-  const options = await loadOptions({ req, branchIds: filters.branchIds });
+  const options = await loadOptions({
+    req,
+    branchIds: filters.branchIds,
+    canFilterAllBranches: filters.canFilterAllBranches,
+  });
 
   if (!filters.reportLoaded) {
     return {

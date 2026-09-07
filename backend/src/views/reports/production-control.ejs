@@ -12,6 +12,7 @@
   const hasData = selectedReportType === "summary" ? summaryRows.length > 0 : groups.length > 0;
   const allMultiOptionValue = "__ALL__";
   const selectedBranchIds = Array.isArray(filters?.branchIds) ? filters.branchIds : [];
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
   const selectedDepartmentIds = Array.isArray(filters?.departmentIds) ? filters.departmentIds : [];
   const selectedLabourIds = Array.isArray(filters?.labourIds) ? filters.labourIds : [];
   const selectedProductGroupIds = Array.isArray(filters?.productGroupIds) ? filters.productGroupIds : [];
@@ -41,7 +42,7 @@
   const showProductionTypeColumn = selectedOrderBy !== "sku";
   const showProductGroupColumn = selectedOrderBy !== "sku";
   const showSkuUnitColumn = true;
-  const includeBranchColumn = Boolean(user?.isAdmin) && selectedBranchIds.length !== 1;
+  const includeBranchColumn = canUseBranchFilter && selectedBranchIds.length !== 1;
   const detailTotalsLabelSpan = 1
     + (showVoucherColumn ? 1 : 0)
     + (showSkuColumn ? 1 : 0)
@@ -293,9 +294,9 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? t("branches") : t("branch") %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
                 <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
                 <% (options?.branches || []).forEach((branch) => { %>

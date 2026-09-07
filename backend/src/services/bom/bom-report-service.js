@@ -1,4 +1,9 @@
 const knex = require("../../db/knex");
+const {
+  getReportAllowedBranchIds,
+  normalizeReportBranchIds,
+  reportCanFilterAllBranches,
+} = require("../../utils/report-branch-scope");
 
 const BOM_LEVELS = ["FINISHED", "SEMI_FINISHED"];
 const BOM_STATUSES = ["DRAFT", "PENDING", "APPROVED", "REJECTED"];
@@ -15,13 +20,21 @@ const COST_VALUATION_MODES = [
   "WAC_ONLY",
   "PURCHASE_RATE",
 ];
-const LABOUR_AGGREGATION_MODES = ["AVG", "MAX"];
+// SUM is the default because it is what production actually books: a DCV emits
+// one costed labour line per labour row in the department (see buildLabourLines
+// in production-voucher-service.js), so AVG/MAX could never reconcile with the
+// posted cost. AVG/MAX stay available for BOMs whose extra rows are meant as
+// alternative labours rather than additional operations.
+const LABOUR_AGGREGATION_MODES = ["SUM", "AVG", "MAX"];
 const COST_EXPLOSION_MODES = ["DIRECT", "EXPLODED"];
+// Must stay in step with the sections bom-change-log.js actually writes,
+// otherwise a section is logged but cannot be filtered for.
 const CHANGE_LOG_SECTIONS = [
   "header",
   "rm_lines",
   "sfg_lines",
   "labour_lines",
+  "stage_routes",
   "variant_rules",
   "sku_overrides",
 ];
@@ -72,11 +85,14 @@ const toDateOnly = (value) => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+// "ALL" is a first-class value: every caller guards its level filter with
+// `level !== "ALL"`, so returning FINISHED for an unrecognised input silently
+// hid every SEMI_FINISHED BOM from reports that never offered an All option.
 const normalizeBomLevel = (value) => {
-  const normalized = String(value || "FINISHED")
+  const normalized = String(value || "ALL")
     .trim()
     .toUpperCase();
-  return BOM_LEVELS.includes(normalized) ? normalized : "FINISHED";
+  return BOM_LEVELS.includes(normalized) ? normalized : "ALL";
 };
 
 const normalizeBomStatus = (value) => {
@@ -141,10 +157,10 @@ const normalizeValuationMode = (value) => {
 };
 
 const normalizeLabourAggregation = (value) => {
-  const normalized = String(value || "AVG")
+  const normalized = String(value || "SUM")
     .trim()
     .toUpperCase();
-  return LABOUR_AGGREGATION_MODES.includes(normalized) ? normalized : "AVG";
+  return LABOUR_AGGREGATION_MODES.includes(normalized) ? normalized : "SUM";
 };
 
 const normalizeExplosionMode = (value) => {
@@ -189,6 +205,18 @@ const diffDaysInclusive = (fromDate, toDate) => {
   return Math.floor(diffMs / 86400000) + 1;
 };
 
+// Single source of truth for "how old is this request", shared by the SELECT
+// (which drives the displayed Bucket) and the bucket WHERE clause.
+const AGE_DAYS_SQL =
+  "GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (now() - ar.requested_at)) / 86400))::int";
+
+const AGING_BUCKET_RANGES = {
+  "0_2": { min: 0, max: 2 },
+  "3_7": { min: 3, max: 7 },
+  "8_15": { min: 8, max: 15 },
+  "15_PLUS": { min: 16, max: null },
+};
+
 const resolveAgingBucketByDays = (days) => {
   const n = Number(days || 0);
   if (!Number.isFinite(n) || n <= 2) return "0_2";
@@ -197,17 +225,88 @@ const resolveAgingBucketByDays = (days) => {
   return "15_PLUS";
 };
 
+// Reports render article names, so they have to follow the UI locale the same
+// way bom/service.js loadFormOptions does. Without this the register and every
+// report showed English names to Urdu users while the BOM form showed Urdu.
+// `table` and `alias` are always code literals here, never request input.
+const localizedNameColumn = (locale, alias = "item_name", table = "i") =>
+  String(locale || "").toLowerCase() === "ur"
+    ? knex.raw(`COALESCE(${table}.name_ur, ${table}.name) as ${alias}`)
+    : knex.raw(`${table}.name as ${alias}`);
+
+const localeOf = (req) => String(req?.locale || "en").toLowerCase();
+
 const hasBomLifecycleColumn = async () => {
   if (bomLifecycleColumnSupportPromise) return bomLifecycleColumnSupportPromise;
   bomLifecycleColumnSupportPromise = (async () => {
     try {
-      return knex.schema.withSchema("erp").hasColumn("bom_header", "is_active");
+      // `return await` matters: returning the promise unawaited puts the
+      // rejection outside this try, so one DB hiccup would cache a rejected
+      // promise and break every BOM report until the process restarted.
+      return await knex.schema
+        .withSchema("erp")
+        .hasColumn("bom_header", "is_active");
     } catch (err) {
       bomLifecycleColumnSupportPromise = null;
       return false;
     }
   })();
   return bomLifecycleColumnSupportPromise;
+};
+
+// Mirrors production-voucher-service.js: BOM quantities are stored in an
+// arbitrary UOM and only become comparable once converted to PAIR.
+const loadPairFactorByUomId = async () => {
+  const pair =
+    (await knex("erp.uom as u")
+      .select("u.id")
+      .whereRaw("upper(coalesce(u.code, '')) = 'PAIR'")
+      .andWhere("u.is_active", true)
+      .first()) ||
+    (await knex("erp.uom as u")
+      .select("u.id")
+      .whereRaw("upper(coalesce(u.name, '')) = 'PAIR'")
+      .andWhere("u.is_active", true)
+      .first());
+  const factors = new Map();
+  if (!pair) return factors;
+  const pairId = Number(pair.id);
+  factors.set(pairId, 1);
+
+  const [directRows, reverseRows] = await Promise.all([
+    knex("erp.uom_conversions as uc")
+      .join("erp.uom as from_u", "from_u.id", "uc.from_uom_id")
+      .select("from_u.id", "uc.factor")
+      .where({
+        "uc.to_uom_id": pairId,
+        "uc.is_active": true,
+        "from_u.is_active": true,
+      }),
+    knex("erp.uom_conversions as uc")
+      .join("erp.uom as to_u", "to_u.id", "uc.to_uom_id")
+      .select("to_u.id", "uc.factor")
+      .where({
+        "uc.from_uom_id": pairId,
+        "uc.is_active": true,
+        "to_u.is_active": true,
+      }),
+  ]);
+
+  directRows.forEach((row) => {
+    const id = toPositiveInt(row?.id);
+    const factor = Number(row?.factor || 0);
+    if (!id || factors.has(id) || !Number.isFinite(factor) || factor <= 0)
+      return;
+    factors.set(id, Number(factor.toFixed(6)));
+  });
+  reverseRows.forEach((row) => {
+    const id = toPositiveInt(row?.id);
+    const factor = Number(row?.factor || 0);
+    if (!id || factors.has(id) || !Number.isFinite(factor) || factor <= 0)
+      return;
+    factors.set(id, Number((1 / factor).toFixed(6)));
+  });
+  return factors;
 };
 
 const hasBomChangeLogTable = async () => {
@@ -253,48 +352,40 @@ const hasStockBalanceSkuTable = async () => {
 
 const getAllowedBranchIds = (req) => {
   if (req?.user?.isAdmin) return [];
-  return Array.isArray(req?.branchScope)
-    ? req.branchScope.map((id) => toPositiveInt(id)).filter(Boolean)
-    : [];
+  return getReportAllowedBranchIds(req);
 };
 
-const loadBranchOptions = async (req) => {
+const loadBranchOptions = async (req, canAllBranches = false) => {
+  const locale = localeOf(req);
   let query = knex("erp.branches")
-    .select("id", "name")
+    .select("id", localizedNameColumn(locale, "name", "branches"))
     .where({ is_active: true })
     .orderBy("name", "asc");
   const allowed = getAllowedBranchIds(req);
-  if (!req?.user?.isAdmin && allowed.length) {
+  if (!req?.user?.isAdmin && !canAllBranches && allowed.length) {
     query = query.whereIn("id", allowed);
   }
   return query;
 };
 
-const normalizeBranchFilter = ({ req, input }) => {
-  const parsed = [
-    ...new Set(
-      parseList(input?.branch_ids || input?.branchIds)
-        .map((entry) => toPositiveInt(entry))
-        .filter(Boolean),
-    ),
-  ];
-  if (req?.user?.isAdmin) return parsed;
-  const allowed = getAllowedBranchIds(req);
-  if (!allowed.length) return [];
-  if (!parsed.length) return allowed;
-  const allowSet = new Set(allowed);
-  return parsed.filter((id) => allowSet.has(id));
-};
+const normalizeBranchFilter = ({ req, input, scopeKey }) =>
+  normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: reportCanFilterAllBranches(req, scopeKey),
+  });
 
-const loadBomArticleOptions = async (level) => {
+const loadBomArticleOptions = async (level, locale = "en") => {
   const hasLevel =
     typeof level !== "undefined" &&
     level !== null &&
     String(level).trim() !== "";
-  const normalizedLevel = hasLevel ? normalizeBomLevel(level) : null;
+  const requested = hasLevel ? normalizeBomLevel(level) : "ALL";
+  // "ALL" must not narrow item_type, or the picker silently drops SFG articles.
+  const normalizedLevel = requested === "ALL" ? null : requested;
   const itemType = normalizedLevel === "SEMI_FINISHED" ? "SFG" : "FG";
   const query = knex("erp.items as i")
-    .select("i.id", "i.code", "i.name", "i.item_type")
+    .select("i.id", "i.code", localizedNameColumn(locale, "name"), "i.item_type")
     .whereExists(function whereItemHasBom() {
       this.select(1).from("erp.bom_header as bh").whereRaw("bh.item_id = i.id");
       if (normalizedLevel) this.andWhere("bh.level", normalizedLevel);
@@ -340,12 +431,13 @@ const getBomVersionHistoryReportPageData = async ({ req, input = {} }) => {
   let toDate = toDateOnly(rawToDate);
 
   if (!reportLoaded && !rawFromDate && !rawToDate) {
-    // Default: January 1, 2026 to today
-    fromDate = "2026-01-01";
+    // Default to the current calendar year, not a hardcoded date: the old
+    // literal "2026-01-01" would have kept widening the window every year.
     const today = new Date();
     const yyyy = String(today.getFullYear()).padStart(4, "0");
     const mm = String(today.getMonth() + 1).padStart(2, "0");
     const dd = String(today.getDate()).padStart(2, "0");
+    fromDate = `${yyyy}-01-01`;
     toDate = `${yyyy}-${mm}-${dd}`;
   }
 
@@ -370,7 +462,8 @@ const getBomVersionHistoryReportPageData = async ({ req, input = {} }) => {
 
   const missingRequiredItem = reportLoaded && selectedItemIds.length === 0;
   const lifecycleSupported = await hasBomLifecycleColumn();
-  const itemOptions = await loadBomArticleOptions(level);
+  const locale = localeOf(req);
+  const itemOptions = await loadBomArticleOptions(level, locale);
 
   const filters = {
     reportLoaded,
@@ -387,7 +480,7 @@ const getBomVersionHistoryReportPageData = async ({ req, input = {} }) => {
 
   const options = {
     items: itemOptions,
-    levels: BOM_LEVELS.map((value) => ({ value })),
+    levels: [{ value: "ALL" }, ...BOM_LEVELS.map((value) => ({ value }))],
     statuses: [{ value: "ALL" }, ...BOM_STATUSES.map((v) => ({ value: v }))],
     lifecycles: LIFECYCLE_OPTIONS.map((value) => ({ value })),
     orderBys: [
@@ -416,7 +509,7 @@ const getBomVersionHistoryReportPageData = async ({ req, input = {} }) => {
       "bh.created_at",
       "bh.approved_at",
       "i.code as item_code",
-      "i.name as item_name",
+      localizedNameColumn(locale),
       "cu.username as created_by_name",
       "au.username as approved_by_name",
       lifecycleSupported
@@ -499,7 +592,8 @@ const getBomLifecycleStatusReportPageData = async ({ req, input = {} }) => {
   });
 
   const lifecycleSupported = await hasBomLifecycleColumn();
-  const itemOptions = await loadBomArticleOptions(level);
+  const locale = localeOf(req);
+  const itemOptions = await loadBomArticleOptions(level, locale);
 
   const filters = {
     reportLoaded,
@@ -516,7 +610,7 @@ const getBomLifecycleStatusReportPageData = async ({ req, input = {} }) => {
 
   const options = {
     items: itemOptions,
-    levels: BOM_LEVELS.map((value) => ({ value })),
+    levels: [{ value: "ALL" }, ...BOM_LEVELS.map((value) => ({ value }))],
     statuses: [{ value: "ALL" }, ...BOM_STATUSES.map((v) => ({ value: v }))],
     lifecycles: LIFECYCLE_OPTIONS.map((value) => ({ value })),
     pendingFlags: [{ value: "ALL" }, { value: "YES" }, { value: "NO" }],
@@ -553,7 +647,7 @@ const getBomLifecycleStatusReportPageData = async ({ req, input = {} }) => {
       "bh.created_at",
       "bh.approved_at",
       "i.code as item_code",
-      "i.name as item_name",
+      localizedNameColumn(locale),
       lifecycleSupported
         ? knex.raw(
             "CASE WHEN bh.status = 'APPROVED' THEN bh.is_active ELSE NULL END as bom_is_active",
@@ -677,7 +771,8 @@ const getBomApprovalQueueAgingReportPageData = async ({ req, input = {} }) => {
     reportLoaded,
   });
 
-  const itemOptions = await loadBomArticleOptions();
+  const locale = localeOf(req);
+  const itemOptions = await loadBomArticleOptions("ALL", locale);
   const filters = {
     reportLoaded,
     fromDate: fromDate || "",
@@ -759,11 +854,9 @@ const getBomApprovalQueueAgingReportPageData = async ({ req, input = {} }) => {
       "bh.bom_no",
       "bh.version_no",
       "bh.level",
-      "i.name as item_name",
+      localizedNameColumn(locale),
       "i.code as item_code",
-      knex.raw(
-        "GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (now() - ar.requested_at)) / 86400))::int as age_days",
-      ),
+      knex.raw(`${AGE_DAYS_SQL} as age_days`),
     )
     .leftJoin("erp.users as ru", "ar.requested_by", "ru.id")
     .modify((builder) => {
@@ -772,8 +865,13 @@ const getBomApprovalQueueAgingReportPageData = async ({ req, input = {} }) => {
       }
     })
     .leftJoin("erp.bom_header as bh", function joinBomHeader() {
+      // CASE, not `regex AND cast`: Postgres does not guarantee AND operand
+      // order, so it may run the ::bigint cast on a non-numeric entity_id and
+      // abort the whole report with "invalid input syntax for type bigint".
       this.on(
-        knex.raw("ar.entity_id ~ '^[0-9]+$' AND bh.id = ar.entity_id::bigint"),
+        knex.raw(
+          "bh.id = (CASE WHEN ar.entity_id ~ '^[0-9]+$' THEN ar.entity_id::bigint ELSE NULL END)",
+        ),
       );
     })
     .leftJoin("erp.items as i", "bh.item_id", "i.id")
@@ -789,18 +887,16 @@ const getBomApprovalQueueAgingReportPageData = async ({ req, input = {} }) => {
   if (fromDate) query.andWhereRaw("ar.requested_at::date >= ?", [fromDate]);
   if (toDate) query.andWhereRaw("ar.requested_at::date <= ?", [toDate]);
 
-  if (agingBucket === "0_2") {
-    query.andWhereRaw("ar.requested_at >= now() - interval '2 days'");
-  } else if (agingBucket === "3_7") {
-    query
-      .andWhereRaw("ar.requested_at < now() - interval '2 days'")
-      .andWhereRaw("ar.requested_at >= now() - interval '7 days'");
-  } else if (agingBucket === "8_15") {
-    query
-      .andWhereRaw("ar.requested_at < now() - interval '7 days'")
-      .andWhereRaw("ar.requested_at >= now() - interval '15 days'");
-  } else if (agingBucket === "15_PLUS") {
-    query.andWhereRaw("ar.requested_at < now() - interval '15 days'");
+  // Filter on the same whole-day age the Bucket column is derived from. The
+  // old `now() - interval 'N days'` bounds disagreed with FLOOR(age): a
+  // request 2.5 days old displayed "0-2" but only showed up under the 3-7
+  // filter, and the bucket-count tiles could never be reconciled with the grid.
+  const bucketRange = AGING_BUCKET_RANGES[agingBucket];
+  if (bucketRange) {
+    query.andWhereRaw(`${AGE_DAYS_SQL} >= ?`, [bucketRange.min]);
+    if (bucketRange.max !== null) {
+      query.andWhereRaw(`${AGE_DAYS_SQL} <= ?`, [bucketRange.max]);
+    }
   }
 
   if (sortOrder === "newest_first") {
@@ -884,8 +980,9 @@ const getBomChangeLogReportPageData = async ({ req, input = {} }) => {
       ? (typeof t === "function" && t("bom_change_log_not_available")) ||
         "BOM change log is not available in this environment."
       : "";
+  const locale = localeOf(req);
   const [itemOptions, changedByOptions] = await Promise.all([
-    loadBomArticleOptions(),
+    loadBomArticleOptions("ALL", locale),
     hasChangeLogTable
       ? knex("erp.users as u")
           .distinct("u.id", "u.username")
@@ -982,7 +1079,7 @@ const getBomChangeLogReportPageData = async ({ req, input = {} }) => {
       "bh.bom_no",
       "bh.level",
       "bh.status as bom_status",
-      "i.name as item_name",
+      localizedNameColumn(locale),
       "i.code as item_code",
       "u.username as changed_by_name",
       knex.raw("COALESCE(ar.new_value ->> '_action', '') as request_action"),
@@ -1019,6 +1116,10 @@ const getBomChangeLogReportPageData = async ({ req, input = {} }) => {
 
 const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
   const t = req?.res?.locals?.t;
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "master_data.bom.reports.cost_breakdown",
+  );
   const selectedItemIds = normalizeIdList(input?.item_ids || input?.itemIds);
   const level = normalizeBomLevel(input?.level);
   const explosionMode = normalizeExplosionMode(
@@ -1032,7 +1133,11 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
   );
   const includeInactiveApproved =
     String(input?.include_inactive || input?.includeInactive || "0") === "1";
-  const selectedBranchIds = normalizeBranchFilter({ req, input });
+  const selectedBranchIds = normalizeBranchFilter({
+    req,
+    input,
+    scopeKey: "master_data.bom.reports.cost_breakdown",
+  });
   const sortOrder = normalizeSortOrder(
     input?.order_by || input?.orderBy,
     ["total_cost_desc", "total_cost_asc", "item_name"],
@@ -1042,15 +1147,18 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
     String(input?.load_report || input?.loadReport || "").trim() === "1";
   const missingRequiredItem = reportLoaded && selectedItemIds.length === 0;
 
+  const locale = localeOf(req);
   const [itemOptions, branchOptions] = await Promise.all([
-    loadBomArticleOptions(level),
-    loadBranchOptions(req),
+    loadBomArticleOptions(level, locale),
+    loadBranchOptions(req, canFilterAllBranches),
   ]);
   const lifecycleSupported = await hasBomLifecycleColumn();
-  const [hasRmStockBalanceTable, hasSkuStockBalanceTable] = await Promise.all([
-    hasStockBalanceRmTable(),
-    hasStockBalanceSkuTable(),
-  ]);
+  const [hasRmStockBalanceTable, hasSkuStockBalanceTable, pairFactorByUomId] =
+    await Promise.all([
+      hasStockBalanceRmTable(),
+      hasStockBalanceSkuTable(),
+      loadPairFactorByUomId(),
+    ]);
 
   const filters = {
     reportLoaded,
@@ -1061,6 +1169,7 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
     labourAggregation,
     includeInactive: includeInactiveApproved,
     branchIds: selectedBranchIds,
+    canFilterAllBranches,
     orderBy: sortOrder,
     missingRequiredItem,
   };
@@ -1068,7 +1177,7 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
   const options = {
     items: itemOptions,
     branches: branchOptions,
-    levels: BOM_LEVELS.map((value) => ({ value })),
+    levels: [{ value: "ALL" }, ...BOM_LEVELS.map((value) => ({ value }))],
     explosionModes: COST_EXPLOSION_MODES.map((value) => ({ value })),
     valuationModes: COST_VALUATION_MODES.map((value) => ({ value })),
     labourAggregations: LABOUR_AGGREGATION_MODES.map((value) => ({ value })),
@@ -1113,11 +1222,12 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
       "bh.status",
       "bh.version_no",
       "bh.output_qty",
+      "bh.output_uom_id",
       lifecycleSupported
         ? "bh.is_active"
         : knex.raw("COALESCE(i.is_active, true) as is_active"),
       "i.code as item_code",
-      "i.name as item_name",
+      localizedNameColumn(locale),
     )
     .join(latestApprovedSubQuery, function joinLatest() {
       this.on("latest.item_id", "=", "bh.item_id")
@@ -1207,7 +1317,7 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
           "rl.qty",
           "rl.normal_loss_pct",
           "i.code as item_code",
-          "i.name as item_name",
+          localizedNameColumn(locale),
         )
         .leftJoin("erp.items as i", "rl.rm_item_id", "i.id")
         .whereIn("rl.bom_id", ids),
@@ -1218,8 +1328,8 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
           "ll.labour_id",
           "ll.rate_type",
           "ll.rate_value",
-          "d.name as dept_name",
-          "l.name as labour_name",
+          localizedNameColumn(locale, "dept_name", "d"),
+          localizedNameColumn(locale, "labour_name", "l"),
         )
         .leftJoin("erp.departments as d", "ll.dept_id", "d.id")
         .leftJoin("erp.labours as l", "ll.labour_id", "l.id")
@@ -1229,13 +1339,19 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
           "sl.bom_id",
           "sl.sfg_sku_id",
           "sl.required_qty",
+          // fg_size_id and uom_id are what make an SFG line costable: the line
+          // applies to ONE finished size, and its qty is in its own UOM.
+          "sl.fg_size_id",
+          "sl.uom_id",
           "s.sku_code",
-          "i.name as item_name",
+          localizedNameColumn(locale),
           "v.item_id as sfg_item_id",
+          localizedNameColumn(locale, "fg_size_name", "sz"),
         )
         .leftJoin("erp.skus as s", "sl.sfg_sku_id", "s.id")
         .leftJoin("erp.variants as v", "s.variant_id", "v.id")
         .leftJoin("erp.items as i", "v.item_id", "i.id")
+        .leftJoin("erp.sizes as sz", "sl.fg_size_id", "sz.id")
         .whereIn("sl.bom_id", ids),
     ]);
     rmRows.forEach((row) =>
@@ -1291,11 +1407,12 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
           "bh.status",
           "bh.version_no",
           "bh.output_qty",
+          "bh.output_uom_id",
           lifecycleSupported
             ? "bh.is_active"
             : knex.raw("COALESCE(i.is_active, true) as is_active"),
           "i.code as item_code",
-          "i.name as item_name",
+          localizedNameColumn(locale),
         )
         .leftJoin("erp.items as i", "bh.item_id", "i.id")
         .whereIn("bh.item_id", batchItemIds)
@@ -1342,7 +1459,40 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
     ),
   ];
 
-  const rmWacByVariant = new Map();
+  // Rates are stored at whatever colour/size granularity the buyer maintained,
+  // so an exact (item,colour,size) lookup misses a colour-only or item-only
+  // row and silently costs the line at 0. Keep every candidate per item and
+  // resolve with the same most-specific-wins precedence the purchase entry
+  // screen uses (see RM_PURCHASE_RATE_LATERAL_SQL in purchase-report-service).
+  const rmRateCandidatesByItem = new Map();
+  const pushRateCandidate = (map, itemId, candidate) => {
+    if (!itemId || !(Number(candidate.rate) > 0)) return;
+    if (!map.has(itemId)) map.set(itemId, []);
+    map.get(itemId).push(candidate);
+  };
+  const resolveVariantRate = (candidates, colorId, sizeId) => {
+    const matches = (candidates || []).filter((row) => {
+      // A NULL dimension on the rate row means "applies to any"; a NULL on the
+      // BOM line means the line itself is dimensionless, so only equally
+      // dimensionless rate rows may apply.
+      const colorOk = colorId
+        ? !row.colorId || row.colorId === colorId
+        : !row.colorId;
+      const sizeOk = sizeId ? !row.sizeId || row.sizeId === sizeId : !row.sizeId;
+      return colorOk && sizeOk;
+    });
+    if (!matches.length) return 0;
+    matches.sort((a, b) => {
+      const specificity = (row) =>
+        (row.colorId ? 1 : 0) + (row.sizeId ? 1 : 0);
+      const bySpecificity = specificity(b) - specificity(a);
+      if (bySpecificity !== 0) return bySpecificity;
+      return Number(b.seq || 0) - Number(a.seq || 0);
+    });
+    return Number(matches[0].rate) || 0;
+  };
+
+  const rmWacCandidatesByItem = new Map();
   if (hasRmStockBalanceTable && rmItemIds.length) {
     const wacRows = await knex("erp.stock_balance_rm as sb")
       .select(
@@ -1360,18 +1510,22 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
       })
       .groupBy("sb.item_id", "sb.color_id", "sb.size_id");
     wacRows.forEach((row) => {
-      const key = `${toPositiveInt(row.item_id) || 0}:${toPositiveInt(row.color_id) || 0}:${toPositiveInt(row.size_id) || 0}`;
       const qty = Number(row.qty_sum || 0);
       const value = Number(row.value_sum || 0);
       const rate = qty > 0 ? value / qty : 0;
-      rmWacByVariant.set(key, Number.isFinite(rate) ? rate : 0);
+      pushRateCandidate(rmWacCandidatesByItem, toPositiveInt(row.item_id), {
+        colorId: toPositiveInt(row.color_id),
+        sizeId: toPositiveInt(row.size_id),
+        rate: Number.isFinite(rate) ? rate : 0,
+        seq: 0,
+      });
     });
   }
 
-  const rmPurchaseRateByVariant = new Map();
   if (rmItemIds.length) {
     const purchaseRows = await knex("erp.rm_purchase_rates as r")
       .select(
+        "r.id",
         "r.rm_item_id",
         "r.color_id",
         "r.size_id",
@@ -1381,9 +1535,13 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
       .whereIn("r.rm_item_id", rmItemIds)
       .andWhere("r.is_active", true);
     purchaseRows.forEach((row) => {
-      const key = `${toPositiveInt(row.rm_item_id) || 0}:${toPositiveInt(row.color_id) || 0}:${toPositiveInt(row.size_id) || 0}`;
       const rate = Number(row.avg_purchase_rate || row.purchase_rate || 0);
-      rmPurchaseRateByVariant.set(key, Number.isFinite(rate) ? rate : 0);
+      pushRateCandidate(rmRateCandidatesByItem, toPositiveInt(row.rm_item_id), {
+        colorId: toPositiveInt(row.color_id),
+        sizeId: toPositiveInt(row.size_id),
+        rate: Number.isFinite(rate) ? rate : 0,
+        seq: Number(row.id || 0),
+      });
     });
   }
 
@@ -1413,7 +1571,6 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
   }
 
   const summaryRows = [];
-  const detailRows = [];
   const treeRows = [];
   const treeChildCount = new Map();
   let treeNodeSeq = 0;
@@ -1438,17 +1595,17 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
 
   const resolveRmRate = (line) => {
     const itemId = toPositiveInt(line.rm_item_id) || 0;
-    const colorId = toPositiveInt(line.color_id) || 0;
-    const sizeId = toPositiveInt(line.size_id) || 0;
-    const variantKey = `${itemId}:${colorId}:${sizeId}`;
-    const fallbackKey = `${itemId}:0:0`;
-    const wacRate = Number(
-      rmWacByVariant.get(variantKey) ?? rmWacByVariant.get(fallbackKey) ?? 0,
+    const colorId = toPositiveInt(line.color_id);
+    const sizeId = toPositiveInt(line.size_id);
+    const wacRate = resolveVariantRate(
+      rmWacCandidatesByItem.get(itemId),
+      colorId,
+      sizeId,
     );
-    const purchaseRate = Number(
-      rmPurchaseRateByVariant.get(variantKey) ??
-        rmPurchaseRateByVariant.get(fallbackKey) ??
-        0,
+    const purchaseRate = resolveVariantRate(
+      rmRateCandidatesByItem.get(itemId),
+      colorId,
+      sizeId,
     );
     let effectiveRate = 0;
     let source = "NONE";
@@ -1478,6 +1635,49 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
     return outputQty > 0 ? outputQty : 1;
   };
 
+  const resolveUomFactorToPair = (uomId) => {
+    const id = toPositiveInt(uomId);
+    if (!id) return 1;
+    const factor = Number(pairFactorByUomId.get(id) || 0);
+    return Number.isFinite(factor) && factor > 0 ? factor : 1;
+  };
+
+  // A BOM lot is `output_qty` expressed in `output_uom_id`; everything priced
+  // per pair (labour rates, SFG stock WAC) has to be scaled by the pair count,
+  // not by the raw output_qty. Skipping this understated a Dozen-output BOM's
+  // labour and SFG cost by 12x -- see production-voucher-service.js, which
+  // derives outputQtyInPairs the same way.
+  const resolveBomOutputPairs = (bomRow) => {
+    const pairs = Number(
+      (
+        resolveBomOutputQty(bomRow) *
+        resolveUomFactorToPair(bomRow?.output_uom_id)
+      ).toFixed(6),
+    );
+    return pairs > 0 ? pairs : resolveBomOutputQty(bomRow);
+  };
+
+  // SFG lines are declared per finished size: producing one lot of size 8
+  // consumes only the lines whose fg_size_id is 8 (production filters on
+  // fg_size_id === the SKU's size). Summing every size therefore multiplied a
+  // BOM's SFG cost by its size count. Collapse the sizes onto one representative
+  // lot by weighting each size 1/sizeCount -- i.e. the average of the per-size
+  // subtotals, which is exact whenever the sizes consume alike (the normal case:
+  // one upper per pair, differing only in which size-specific SKU is used).
+  //
+  // This is deliberately NOT tied to the labour aggregation control: multiple
+  // labours in a department are additional operations that really do all get
+  // costed, whereas size variants are mutually exclusive for a given lot.
+  const resolveSfgSizeWeights = (sfgLines) => {
+    const weights = new Map();
+    const sizeIds = [
+      ...new Set((sfgLines || []).map((line) => Number(line.fg_size_id || 0))),
+    ];
+    const weight = sizeIds.length > 1 ? 1 / sizeIds.length : 1;
+    sizeIds.forEach((sizeId) => weights.set(sizeId, weight));
+    return weights;
+  };
+
   bomRows.forEach((bomRow) => {
     const bomId = Number(bomRow.id || 0);
     const outputQty = resolveBomOutputQty(bomRow);
@@ -1505,7 +1705,7 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
       if (!currentBomId || !Number.isFinite(factor) || factor <= 0) continue;
       const currentBom = bomById.get(currentBomId);
       if (!currentBom) continue;
-      const currentOutputQty = resolveBomOutputQty(currentBom);
+      const currentOutputPairs = resolveBomOutputPairs(currentBom);
       const currentNodeId = node.node_id || buildTreeNodeId();
       const currentParentNodeId = node.parent_node_id || null;
       const currentDepth = Number(node.depth || 0);
@@ -1545,31 +1745,17 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
           resolveRmRate(line);
         const baseQty = Number(line.qty || 0);
         const lossPct = Number(line.normal_loss_pct || 0);
-        const effectiveQty = Number(
-          (baseQty * (1 + lossPct / 100) * factor).toFixed(6),
-        );
-        const lineCost = Number((effectiveQty * effectiveRate).toFixed(6));
-        rmCost += lineCost;
-        nodeRow.rm_cost += lineCost;
+        // Accumulate at full precision and round only what is displayed --
+        // rounding each line first lets fractional weights drift the total.
+        const rawQty = baseQty * (1 + lossPct / 100) * factor;
+        const effectiveQty = Number(rawQty.toFixed(6));
+        const lineCost = Number((rawQty * effectiveRate).toFixed(6));
+        rmCost += rawQty * effectiveRate;
+        nodeRow.rm_cost += rawQty * effectiveRate;
         const variancePct =
           wacRate > 0
             ? Number((((purchaseRate - wacRate) / wacRate) * 100).toFixed(2))
             : 0;
-        detailRows.push({
-          bom_id: bomId,
-          bom_no: bomRow.bom_no,
-          item_name: bomRow.item_name,
-          component_type: "RM",
-          component_label: line.item_name || line.item_code || `RM#${itemId}`,
-          dept_name: null,
-          qty: effectiveQty,
-          unit_rate: effectiveRate,
-          line_cost: lineCost,
-          rate_source: source,
-          wac_rate: wacRate,
-          purchase_rate: purchaseRate,
-          variance_pct: variancePct,
-        });
         pushTreeRow({
           row_type: "COMPONENT",
           node_id: buildTreeNodeId(),
@@ -1599,10 +1785,13 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
         const deptId = toPositiveInt(line.dept_id) || 0;
         const rateValue = Number(line.rate_value || 0);
         const rateType = String(line.rate_type || "PER_PAIR").toUpperCase();
-        const normalizedCost =
-          rateType === "PER_DOZEN"
-            ? Number(((rateValue * currentOutputQty) / 12).toFixed(6))
-            : Number((rateValue * currentOutputQty).toFixed(6));
+        // Rates are per PAIR (or per dozen pairs), so the multiplier is the
+        // lot's pair count -- never the raw output_qty, which may be dozens.
+        const ratePerPair =
+          rateType === "PER_DOZEN" ? rateValue / 12 : rateValue;
+        const normalizedCost = Number(
+          (ratePerPair * currentOutputPairs).toFixed(6),
+        );
         if (!labourCostsByDept.has(deptId)) {
           labourCostsByDept.set(deptId, {
             dept_name: line.dept_name || `Dept#${deptId}`,
@@ -1614,28 +1803,16 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
       labourCostsByDept.forEach((entry) => {
         const values = entry.values.filter((v) => Number.isFinite(v));
         if (!values.length) return;
+        const total = values.reduce((sum, value) => sum + value, 0);
         const deptCostPerLot =
           labourAggregation === "MAX"
             ? Math.max(...values)
-            : values.reduce((sum, value) => sum + value, 0) / values.length;
+            : labourAggregation === "AVG"
+              ? total / values.length
+              : total;
         const scaledDeptCost = Number((deptCostPerLot * factor).toFixed(6));
-        labourCost += scaledDeptCost;
-        nodeRow.labour_cost += scaledDeptCost;
-        detailRows.push({
-          bom_id: bomId,
-          bom_no: bomRow.bom_no,
-          item_name: bomRow.item_name,
-          component_type: "LABOUR",
-          component_label: entry.dept_name || "-",
-          dept_name: entry.dept_name || "-",
-          qty: Number((currentOutputQty * factor).toFixed(6)),
-          unit_rate: Number(deptCostPerLot.toFixed(6)),
-          line_cost: scaledDeptCost,
-          rate_source: labourAggregation,
-          wac_rate: null,
-          purchase_rate: null,
-          variance_pct: null,
-        });
+        labourCost += deptCostPerLot * factor;
+        nodeRow.labour_cost += deptCostPerLot * factor;
         pushTreeRow({
           row_type: "COMPONENT",
           node_id: buildTreeNodeId(),
@@ -1649,7 +1826,7 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
           version_no: currentBom.version_no,
           component_type: "LABOUR",
           component_label: entry.dept_name || "-",
-          qty: Number((currentOutputQty * factor).toFixed(6)),
+          qty: Number((currentOutputPairs * factor).toFixed(6)),
           unit_rate: Number(deptCostPerLot.toFixed(6)),
           line_cost: scaledDeptCost,
           rate_source: labourAggregation,
@@ -1660,10 +1837,27 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
       });
 
       const sfgForBom = sfgLinesByBom.get(currentBomId) || [];
+      const sfgSizeWeights = resolveSfgSizeWeights(sfgForBom);
+      const sfgLabelOf = (line, skuId) => {
+        const base = line.item_name || line.sku_code || `SKU#${skuId}`;
+        return line.fg_size_name ? `${base} (${line.fg_size_name})` : base;
+      };
       sfgForBom.forEach((line) => {
         const skuId = toPositiveInt(line.sfg_sku_id) || 0;
-        const qty = Number(line.required_qty || 0);
-        const scaledQty = Number((qty * factor).toFixed(6));
+        const sizeWeight = Number(
+          sfgSizeWeights.get(Number(line.fg_size_id || 0)) ?? 1,
+        );
+        // MAX aggregation zeroes every size but the costliest; drop those lines
+        // outright rather than showing a row that contributes nothing.
+        if (!(sizeWeight > 0)) return;
+        // required_qty is stored in the line's own UOM while every SFG rate is
+        // per PAIR, so convert before costing (production does the same).
+        const qtyPairs =
+          Number(line.required_qty || 0) * resolveUomFactorToPair(line.uom_id);
+        // Keep the unrounded quantity for costing; sizeWeight is often 1/n.
+        const rawQty = qtyPairs * sizeWeight * factor;
+        const scaledQty = Number(rawQty.toFixed(6));
+        if (!(rawQty > 0)) return;
         if (explosionMode === "EXPLODED" && node.depth < maxDepth) {
           const childItemId = toPositiveInt(line.sfg_item_id);
           const childBom = childItemId
@@ -1675,8 +1869,9 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
             childBomId !== currentBomId &&
             !node.path.includes(childBomId)
           ) {
-            const childOutputQty = resolveBomOutputQty(childBom);
-            const childFactor = Number((scaledQty / childOutputQty).toFixed(8));
+            // Both sides are now in pairs, so the ratio is dimensionless.
+            const childOutputPairs = resolveBomOutputPairs(childBom);
+            const childFactor = rawQty / childOutputPairs;
             if (childFactor > 0) {
               const childNodeId = buildTreeNodeId();
               traversalStack.push({
@@ -1693,24 +1888,9 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
           }
         }
         const rate = Number(sfgWacBySku.get(skuId) || 0);
-        const lineCost = Number((scaledQty * rate).toFixed(6));
-        sfgCost += lineCost;
-        nodeRow.sfg_cost += lineCost;
-        detailRows.push({
-          bom_id: bomId,
-          bom_no: bomRow.bom_no,
-          item_name: bomRow.item_name,
-          component_type: "SFG",
-          component_label: line.item_name || line.sku_code || `SKU#${skuId}`,
-          dept_name: null,
-          qty: scaledQty,
-          unit_rate: Number(rate.toFixed(6)),
-          line_cost: lineCost,
-          rate_source: explosionMode === "EXPLODED" ? "WAC_FALLBACK" : "WAC",
-          wac_rate: Number(rate.toFixed(6)),
-          purchase_rate: null,
-          variance_pct: null,
-        });
+        const lineCost = Number((rawQty * rate).toFixed(6));
+        sfgCost += rawQty * rate;
+        nodeRow.sfg_cost += rawQty * rate;
         pushTreeRow({
           row_type: "COMPONENT",
           node_id: buildTreeNodeId(),
@@ -1723,7 +1903,7 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
           level: currentBom.level,
           version_no: currentBom.version_no,
           component_type: "SFG",
-          component_label: line.item_name || line.sku_code || `SKU#${skuId}`,
+          component_label: sfgLabelOf(line, skuId),
           qty: scaledQty,
           unit_rate: Number(rate.toFixed(6)),
           line_cost: lineCost,
@@ -1749,6 +1929,7 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
       level: bomRow.level,
       version_no: bomRow.version_no,
       output_qty: outputQty,
+      output_pairs: resolveBomOutputPairs(bomRow),
       explosion_mode: explosionMode,
       rm_cost: Number(rmCost.toFixed(6)),
       labour_cost: Number(labourCost.toFixed(6)),
@@ -1783,6 +1964,39 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
       (a, b) => Number(b.total_cost || 0) - Number(a.total_cost || 0),
     );
   }
+
+  // Roll descendant costs up into their parent BOM node. Without this an
+  // exploded parent showed only its own direct lines, so a collapsed parent
+  // read lower than the children hidden underneath it.
+  const treeRowByNodeId = new Map(treeRows.map((row) => [row.node_id, row]));
+  [...treeRows]
+    .sort((a, b) => Number(b.depth || 0) - Number(a.depth || 0))
+    .forEach((row) => {
+      const parent = row.parent_node_id
+        ? treeRowByNodeId.get(row.parent_node_id)
+        : null;
+      if (!parent || parent.row_type !== "BOM" || row.row_type !== "BOM")
+        return;
+      parent.rm_cost = Number(
+        (Number(parent.rm_cost || 0) + Number(row.rm_cost || 0)).toFixed(6),
+      );
+      parent.labour_cost = Number(
+        (
+          Number(parent.labour_cost || 0) + Number(row.labour_cost || 0)
+        ).toFixed(6),
+      );
+      parent.sfg_cost = Number(
+        (Number(parent.sfg_cost || 0) + Number(row.sfg_cost || 0)).toFixed(6),
+      );
+      parent.total_cost = Number(
+        (
+          Number(parent.rm_cost || 0) +
+          Number(parent.labour_cost || 0) +
+          Number(parent.sfg_cost || 0)
+        ).toFixed(6),
+      );
+      parent.line_cost = parent.total_cost;
+    });
 
   treeRows.forEach((row) => {
     row.has_children = (treeChildCount.get(row.node_id) || 0) > 0;

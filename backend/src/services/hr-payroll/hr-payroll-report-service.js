@@ -4,6 +4,11 @@ const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const { toBoolean, toIdList } = require("../../utils/report-filter-types");
 const {
+  getReportAllowedBranchIds,
+  normalizeReportBranchIds,
+  reportCanFilterAllBranches,
+} = require("../../utils/report-branch-scope");
+const {
   getUserEntityBlockedSet,
 } = require("../administration/entity-ledger-access-service");
 const {
@@ -93,6 +98,8 @@ const COMMISSION_TYPE_DESCRIPTIONS = {
   BRANCH_SALE: "Sales Commission (Branch Sale)",
   TRANSFER: "Sales Commission (Transfer)",
   PARTY: "Sales Commission (Party)",
+  PRODUCTION_FG: "Production Commission (Finished Goods)",
+  PRODUCTION_SFG: "Production Commission (Semi-Finished)",
 };
 
 const toPositiveId = (value) => {
@@ -970,18 +977,18 @@ const toIdListWithAll = (value) => {
   return toIdList(tokens);
 };
 
-const parseEntityBalanceFilters = ({ req, input = {} }) => {
+const parseEntityBalanceFilters = ({ req, input = {}, scopeKey }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(req, scopeKey);
   const today = toLocalDateOnly(new Date());
   const parsedAsOn = parseDateFilter(input.as_on, today);
   let asOn = parsedAsOn.value;
   if (!asOn) asOn = today;
 
-  const branchIdsFromInput = toIdList(input.branch_ids);
-  const branchIds = req.user?.isAdmin
-    ? branchIdsFromInput
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   const viewMode =
     String(input.view_mode || "summary")
@@ -993,6 +1000,7 @@ const parseEntityBalanceFilters = ({ req, input = {} }) => {
   return {
     asOn,
     branchIds,
+    canFilterAllBranches,
     viewMode,
     reportLoaded: toBoolean(input.load_report, false),
     invalidAsOnDate: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
@@ -1000,7 +1008,8 @@ const parseEntityBalanceFilters = ({ req, input = {} }) => {
   };
 };
 
-const parseEntityLedgerFilters = ({ req, input = {} }) => {
+const parseEntityLedgerFilters = ({ req, input = {}, scopeKey }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(req, scopeKey);
   const now = new Date();
   const fromDate = new Date(now);
   fromDate.setDate(fromDate.getDate() - 30);
@@ -1019,18 +1028,17 @@ const parseEntityLedgerFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  const branchIdsFromInput = toIdListWithAll(input.branch_ids);
   const ledgerView =
     String(input.ledger_view || "summary")
       .trim()
       .toLowerCase() === "detail"
       ? "detail"
       : "summary";
-  const branchIds = req.user?.isAdmin
-    ? branchIdsFromInput
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   return {
     from,
@@ -1038,6 +1046,7 @@ const parseEntityLedgerFilters = ({ req, input = {} }) => {
     entityId: toPositiveId(input.entity_id),
     ledgerView,
     branchIds,
+    canFilterAllBranches,
     reportLoaded: toBoolean(input.load_report, false),
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
     invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
@@ -1201,13 +1210,13 @@ const loadLedgerOptions = async ({ req, filters, kind, blockedEntityIds }) => {
     blockedEntityIds instanceof Set
       ? blockedEntityIds
       : await resolveBlockedEntityIds({ req, kind });
-  const scopedBranchIds = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
-  const branches = req.user?.isAdmin
+  const branches = canUseAllBranches
     ? await knex("erp.branches")
         .select("id", knex.raw(`${branchNameSql} as name`))
         .where({ is_active: true })
@@ -1269,8 +1278,10 @@ const getLedgerRows = async ({
   const creditSaleLabel = `'${String(resolveTranslation(locale, "credit_sale")).replace(/'/g, "''")} #'`;
   const cfg = getEntityConfig(kind);
   const voucherScopeContext = await resolveEntityVoucherScopeContext(cfg);
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
   const includeBranchColumn = Boolean(
-    req.user?.isAdmin && filters.branchIds.length !== 1,
+    canUseAllBranches && filters.branchIds.length !== 1,
   );
 
   const blocked =
@@ -1300,11 +1311,9 @@ const getLedgerRows = async ({
     };
   }
 
-  const scopedBranchIds = req.user?.isAdmin
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
   const selectedEntity = (options.entities || []).find(
     (row) => Number(row.id) === Number(filters.entityId),
@@ -2052,13 +2061,15 @@ const getLedgerRows = async ({
   };
 };
 
-const loadBalanceOptions = async ({ req }) => {
+const loadBalanceOptions = async ({ req, filters }) => {
   const locale = String(req?.locale || "en").toLowerCase();
   const branchNameSql =
     locale === "ur"
       ? "COALESCE(NULLIF(branches.name_ur, ''), branches.name)"
       : "branches.name";
-  const branches = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const branches = canUseAllBranches
     ? await knex("erp.branches")
         .select("id", knex.raw(`${branchNameSql} as name`))
         .where({ is_active: true })
@@ -2076,11 +2087,11 @@ const getBalanceRows = async ({ req, filters, kind }) => {
   if (!filters.reportLoaded) return [];
   const voucherScopeContext = await resolveEntityVoucherScopeContext(cfg);
 
-  const scopedBranchIds = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
   let balanceSubquery = knex("erp.voucher_line as vl")
     .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
@@ -2364,7 +2375,11 @@ const getBalanceRows = async ({ req, filters, kind }) => {
 };
 
 const getLabourLedgerReportPageData = async ({ req, input = {} }) => {
-  const filters = parseEntityLedgerFilters({ req, input });
+  const filters = parseEntityLedgerFilters({
+    req,
+    input,
+    scopeKey: "labour_ledger",
+  });
   const blockedEntityIds = await resolveBlockedEntityIds({ req, kind: "labour" });
   const options = await loadLedgerOptions({
     req,
@@ -2383,7 +2398,11 @@ const getLabourLedgerReportPageData = async ({ req, input = {} }) => {
 };
 
 const getEmployeeLedgerReportPageData = async ({ req, input = {} }) => {
-  const filters = parseEntityLedgerFilters({ req, input });
+  const filters = parseEntityLedgerFilters({
+    req,
+    input,
+    scopeKey: "employee_ledger",
+  });
   const blockedEntityIds = await resolveBlockedEntityIds({
     req,
     kind: "employee",
@@ -2405,9 +2424,13 @@ const getEmployeeLedgerReportPageData = async ({ req, input = {} }) => {
 };
 
 const getLabourBalancesReportPageData = async ({ req, input = {} }) => {
-  const filters = parseEntityBalanceFilters({ req, input });
+  const filters = parseEntityBalanceFilters({
+    req,
+    input,
+    scopeKey: "labour_balances",
+  });
   const [options, rows] = await Promise.all([
-    loadBalanceOptions({ req }),
+    loadBalanceOptions({ req, filters }),
     getBalanceRows({ req, filters, kind: "labour" }),
   ]);
 
@@ -2425,9 +2448,13 @@ const getLabourBalancesReportPageData = async ({ req, input = {} }) => {
 };
 
 const getEmployeeBalancesReportPageData = async ({ req, input = {} }) => {
-  const filters = parseEntityBalanceFilters({ req, input });
+  const filters = parseEntityBalanceFilters({
+    req,
+    input,
+    scopeKey: "employee_balances",
+  });
   const [options, rows] = await Promise.all([
-    loadBalanceOptions({ req }),
+    loadBalanceOptions({ req, filters }),
     getBalanceRows({ req, filters, kind: "employee" }),
   ]);
 

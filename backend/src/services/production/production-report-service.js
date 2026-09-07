@@ -9,6 +9,11 @@ const {
   localizedNameSql,
   resolveLocale,
 } = require("../../utils/localized-name");
+const {
+  getReportAllowedBranchIds,
+  normalizeReportBranchIds,
+  reportCanFilterAllBranches,
+} = require("../../utils/report-branch-scope");
 
 const toPositiveInt = (value) => {
   const n = Number(value);
@@ -46,43 +51,28 @@ const parseList = (value) => {
 
 const getAllowedBranchIds = (req) => {
   if (req?.user?.isAdmin) return [];
-  return Array.isArray(req?.branchScope)
-    ? req.branchScope
-        .map((id) => Number(id))
-        .filter((id) => Number.isInteger(id) && id > 0)
-    : [];
+  return getReportAllowedBranchIds(req);
 };
 
-const loadBranchOptions = async (req) => {
+const loadBranchOptions = async (req, canAllBranches = false) => {
   const allowed = getAllowedBranchIds(req);
   const locale = resolveLocale(req?.locale);
   let query = knex("erp.branches")
     .select("id", localizedNameSelect("branches", "name", locale))
     .where({ is_active: true })
     .orderByRaw(`${localizedNameSql("branches", locale)} asc`);
-  if (!req?.user?.isAdmin && allowed.length) {
+  if (!req?.user?.isAdmin && !canAllBranches && allowed.length) {
     query = query.whereIn("id", allowed);
   }
   return query;
 };
 
-const normalizeBranchFilter = ({ req, input }) => {
-  const parsed = [
-    ...new Set(
-      parseList(input?.branch_ids || input?.branchIds)
-        .map((entry) => Number(entry))
-        .filter((entry) => Number.isInteger(entry) && entry > 0),
-    ),
-  ];
-  if (req?.user?.isAdmin) {
-    return parsed;
-  }
-  const allowed = getAllowedBranchIds(req);
-  if (!allowed.length) return [];
-  if (!parsed.length) return allowed;
-  const allowedSet = new Set(allowed);
-  return parsed.filter((id) => allowedSet.has(id));
-};
+const normalizeBranchFilter = ({ req, input, scopeKey }) =>
+  normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: reportCanFilterAllBranches(req, scopeKey),
+  });
 
 const normalizePlanKind = (value) => {
   const kind = String(value || "ALL")
@@ -275,7 +265,11 @@ const hasTableColumn = async (tableName, columnName) => {
 
 const getProductionControlReportPageData = async ({ req, input = {} }) => {
   const locale = resolveLocale(req?.locale);
-  const branchOptionsPromise = loadBranchOptions(req);
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "production_report",
+  );
+  const branchOptionsPromise = loadBranchOptions(req, canFilterAllBranches);
   const departmentsPromise = knex("erp.departments")
     .select("id", localizedNameSelect("departments", "name", locale))
     .where({ is_active: true, is_production: true })
@@ -312,7 +306,11 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     })
     .orderBy("i.name", "asc");
 
-  const selectedBranchIds = normalizeBranchFilter({ req, input });
+  const selectedBranchIds = normalizeBranchFilter({
+    req,
+    input,
+    scopeKey: "production_report",
+  });
   const { fromDate, toDate } = normalizeDateRange(input);
   const selectedDeptIds = normalizeIdList(
     input?.department_ids || input?.departmentIds,
@@ -366,6 +364,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     fromDate: fromDate || "",
     toDate: toDate || "",
     branchIds: selectedBranchIds,
+    canFilterAllBranches,
     departmentIds: selectedDeptIds,
     labourIds: selectedLabourIds,
     productGroupIds: selectedProductGroupIds,
@@ -1097,7 +1096,11 @@ const getProductionDepartmentWipReportPageData = async ({
   input = {},
 }) => {
   const locale = resolveLocale(req?.locale);
-  const branchOptionsPromise = loadBranchOptions(req);
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "department_wip_report",
+  );
+  const branchOptionsPromise = loadBranchOptions(req, canFilterAllBranches);
   const productGroupsPromise = knex("erp.product_groups")
     .select("id", localizedNameSelect("product_groups", "name", locale))
     .where({ is_active: true })
@@ -1126,7 +1129,11 @@ const getProductionDepartmentWipReportPageData = async ({
     })
     .orderBy("i.name", "asc");
 
-  const selectedBranchIds = normalizeBranchFilter({ req, input });
+  const selectedBranchIds = normalizeBranchFilter({
+    req,
+    input,
+    scopeKey: "department_wip_report",
+  });
   const { asOfDate, invalidFilterInput } = normalizeAsOfDate(input);
   const selectedProductGroupIds = normalizeIdList(
     input?.product_group_ids || input?.productGroupIds,
@@ -1162,6 +1169,7 @@ const getProductionDepartmentWipReportPageData = async ({
     invalidFilterInput,
     asOfDate,
     branchIds: selectedBranchIds,
+    canFilterAllBranches,
     productGroupIds: selectedProductGroupIds,
     productSubgroupIds: selectedProductSubgroupIds,
     articleIds: selectedArticleIds,
@@ -1655,7 +1663,11 @@ const getProductionDepartmentWipBalancesReportPageData = async ({
   input = {},
 }) => {
   const locale = resolveLocale(req?.locale);
-  const branchOptionsPromise = loadBranchOptions(req);
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "department_wip_balances_report",
+  );
+  const branchOptionsPromise = loadBranchOptions(req, canFilterAllBranches);
   const departmentsPromise = knex("erp.departments")
     .select("id", localizedNameSelect("departments", "name", locale))
     .where({ is_active: true, is_production: true })
@@ -1668,7 +1680,11 @@ const getProductionDepartmentWipBalancesReportPageData = async ({
     .whereIn("i.item_type", ["FG", "SFG"])
     .orderBy("s.sku_code", "asc");
 
-  const selectedBranchIds = normalizeBranchFilter({ req, input });
+  const selectedBranchIds = normalizeBranchFilter({
+    req,
+    input,
+    scopeKey: "department_wip_balances_report",
+  });
   const { asOfDate, invalidFilterInput } = normalizeAsOfDate(input);
   const selectedDepartmentIds = normalizeIdList(
     input?.department_ids || input?.departmentIds,
@@ -1701,6 +1717,7 @@ const getProductionDepartmentWipBalancesReportPageData = async ({
     invalidFilterInput,
     asOfDate,
     branchIds: selectedBranchIds,
+    canFilterAllBranches,
     departmentIds: validDepartmentIds,
     skuIds: validSkuIds,
     orderBy,
@@ -2033,7 +2050,11 @@ const getProductionDepartmentWipLedgerReportPageData = async ({
   input = {},
 }) => {
   const locale = resolveLocale(req?.locale);
-  const branchOptionsPromise = loadBranchOptions(req);
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "department_wip_ledger_report",
+  );
+  const branchOptionsPromise = loadBranchOptions(req, canFilterAllBranches);
   const departmentsPromise = knex("erp.departments")
     .select("id", localizedNameSelect("departments", "name", locale))
     .where({ is_active: true, is_production: true })
@@ -2046,7 +2067,11 @@ const getProductionDepartmentWipLedgerReportPageData = async ({
     .whereIn("i.item_type", ["FG", "SFG"])
     .orderBy("s.sku_code", "asc");
 
-  const selectedBranchIds = normalizeBranchFilter({ req, input });
+  const selectedBranchIds = normalizeBranchFilter({
+    req,
+    input,
+    scopeKey: "department_wip_ledger_report",
+  });
   const rawFromDate = String(input?.from_date || input?.fromDate || "").trim();
   const rawToDate = String(input?.to_date || input?.toDate || "").trim();
   const fromDate = toDateOnly(rawFromDate);
@@ -2089,6 +2114,7 @@ const getProductionDepartmentWipLedgerReportPageData = async ({
     fromDate: fromDate || "",
     toDate: toDate || "",
     branchIds: selectedBranchIds,
+    canFilterAllBranches,
     departmentId: validDepartmentId,
     skuId: validSkuId,
     reportType,
@@ -2421,7 +2447,15 @@ const getProductionDepartmentWipLedgerReportPageData = async ({
 
 const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
   const locale = resolveLocale(req?.locale);
-  const selectedBranchIds = normalizeBranchFilter({ req, input });
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "consumption_report",
+  );
+  const selectedBranchIds = normalizeBranchFilter({
+    req,
+    input,
+    scopeKey: "consumption_report",
+  });
   const { fromDate, toDate } = normalizeDateRange(input);
   const selectedDepartmentIds = normalizeIdList(
     input?.department_ids || input?.departmentIds,
@@ -2447,7 +2481,7 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
 
   const stockItemTypes = consumptionType === "RAWMATERIAL" ? ["RM"] : ["SFG"];
 
-  const branchOptionsPromise = loadBranchOptions(req);
+  const branchOptionsPromise = loadBranchOptions(req, canFilterAllBranches);
   const departmentsPromise = knex("erp.departments")
     .select("id", localizedNameSelect("departments", "name", locale))
     .where({ is_active: true, is_production: true })
@@ -2489,6 +2523,7 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
     toDate: toDate || "",
     type: consumptionType,
     branchIds: selectedBranchIds,
+    canFilterAllBranches,
     departmentIds: selectedDepartmentIds,
     productGroupIds: selectedProductGroupIds,
     productSubgroupIds: selectedProductSubgroupIds,
@@ -2892,8 +2927,16 @@ const getProductionPlannedConsumptionReportPageData = async ({
   input = {},
 }) => {
   const locale = resolveLocale(req?.locale);
-  const branchOptions = await loadBranchOptions(req);
-  const selectedBranchIds = normalizeBranchFilter({ req, input });
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "planned_consumption_report",
+  );
+  const branchOptions = await loadBranchOptions(req, canFilterAllBranches);
+  const selectedBranchIds = normalizeBranchFilter({
+    req,
+    input,
+    scopeKey: "planned_consumption_report",
+  });
   const rawFromDate = String(input?.from_date || input?.fromDate || "").trim();
   const rawToDate = String(input?.to_date || input?.toDate || "").trim();
   const fromDate = toDateOnly(rawFromDate);
@@ -2909,6 +2952,7 @@ const getProductionPlannedConsumptionReportPageData = async ({
     fromDate: fromDate || "",
     toDate: toDate || "",
     branchIds: selectedBranchIds,
+    canFilterAllBranches,
     planKind,
   };
 

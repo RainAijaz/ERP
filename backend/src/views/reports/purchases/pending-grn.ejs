@@ -5,6 +5,7 @@
   const allMultiOptionValue = "__ALL__";
   const partyAllSelected = !Array.isArray(filters?.supplierIds) || filters.supplierIds.length === 0;
   const branchAllSelected = !Array.isArray(filters?.branchIds) || filters.branchIds.length === 0;
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
   const formatDate = (value) => formatDateDisplay(value, "-");
   const formatNumber = (value, digits = 3) => formatNumberDisplay(value, { decimals: digits, fallback: "0" });
   const resolveSupplierName = (row) => {
@@ -137,9 +138,9 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t('branches') : t('branch') %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? t('branches') : t('branch') %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
                 <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t('all') %></option>
                 <% (options?.branches || []).forEach((branch) => { %>

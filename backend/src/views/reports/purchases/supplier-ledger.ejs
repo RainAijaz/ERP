@@ -8,6 +8,7 @@
   const selectedTo = String(filters?.to || "");
   const selectedLedgerView = String(filters?.ledgerView || "summary").toLowerCase() === "detail" ? "detail" : "summary";
   const selectedLedgerViewLabel = selectedLedgerView === "detail" ? t("details") : t("summary");
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
   const showLedgerNarrativeCols = selectedLedgerView === "detail";
   const ledgerStaticCols = showLedgerNarrativeCols ? 6 : 4;
   const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
@@ -175,9 +176,9 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t('branches') : t('branch') %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? t('branches') : t('branch') %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <select
                 name="branch_ids"
                 multiple

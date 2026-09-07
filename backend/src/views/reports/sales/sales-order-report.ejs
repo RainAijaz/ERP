@@ -16,6 +16,7 @@
   const selectedDisplayType = ["details", "summary"].includes(String(filters?.displayType || "").toLowerCase())
     ? String(filters.displayType).toLowerCase()
     : "details";
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
 
   const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
   const groups = Array.isArray(reportData?.groups) ? reportData.groups : [];
@@ -197,9 +198,9 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t('branches') : t('branch') %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? t('branches') : t('branch') %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <div class="relative" data-multi-select data-name="branch_ids" data-placeholder="<%= `${t('all')} ${t('branches')}` %>" data-multi-all-value="__ALL__" data-multi-auto-all="1">
                 <button type="button" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 pr-10 text-left text-sm text-slate-700" data-multi-trigger></button>
                 <span class="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-slate-500">

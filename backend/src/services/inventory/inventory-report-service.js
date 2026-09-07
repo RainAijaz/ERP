@@ -5,17 +5,17 @@ const { toLocalDateOnly } = require("../../utils/date-only");
 const { normalizeConversionFactor } = require("../../utils/uom-conversion");
 const { toBoolean } = require("../../utils/report-filter-types");
 const {
-  canAccessScope,
-} = require("../../middleware/access/role-permissions");
+  getReportAllowedBranchIds,
+  normalizeReportBranchIds,
+  reportCanFilterAllBranches,
+} = require("../../utils/report-branch-scope");
 
 // A non-admin may filter a report across every branch (ignoring their own
 // branch assignment) only when granted the report's `filter_all_branches`
 // permission. Admins always can. Callers pass the REPORT scope key that governs
 // the report being rendered (e.g. "stock_amount", "stock_quantity").
 const userCanFilterAllBranches = (req, scopeKey) => {
-  if (req?.user?.isAdmin) return true;
-  if (!scopeKey) return false;
-  return Boolean(canAccessScope(req, "REPORT", scopeKey, "filter_all_branches"));
+  return reportCanFilterAllBranches(req, scopeKey);
 };
 
 // NULLIF matters: name_ur is frequently an empty string rather than NULL, and a
@@ -211,30 +211,20 @@ const toIdListWithAll = (value) => {
 
 const getAllowedBranchIds = (req, canAllBranches = false) => {
   if (req?.user?.isAdmin || canAllBranches) return [];
-  const scoped = Array.isArray(req?.branchScope)
-    ? req.branchScope
-        .map((entry) => Number(entry))
-        .filter((entry) => Number.isInteger(entry) && entry > 0)
-    : [];
-  if (scoped.length) return scoped;
-  const fallback = toPositiveInt(req?.branchId);
-  return fallback ? [Number(fallback)] : [];
+  return getReportAllowedBranchIds(req);
 };
 
-const normalizeBranchFilter = ({ req, input = {}, canAllBranches = false }) => {
-  const selected = toIdListWithAll(input.branch_ids || input.branchIds);
-  if (req?.user?.isAdmin || canAllBranches) return selected;
-
-  const allowed = getAllowedBranchIds(req);
-  if (!allowed.length) return [];
-  if (!selected.length) return allowed;
-  const allowedSet = new Set(allowed);
-  const filtered = selected.filter((entry) => allowedSet.has(Number(entry)));
-  // If a non-admin submits only out-of-scope branch ids, fall back to their
-  // allowed branches — never an empty list, which the report query would treat
-  // as "no branch filter" and leak every branch.
-  return filtered.length ? filtered : allowed;
-};
+const normalizeBranchFilter = ({
+  req,
+  input = {},
+  canAllBranches = false,
+  scopeKey = null,
+}) =>
+  normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canAllBranches || userCanFilterAllBranches(req, scopeKey),
+  });
 
 const normalizeStockType = (value) => {
   const normalized = String(value || STOCK_TYPES.finished)
@@ -387,6 +377,7 @@ const parseFilters = ({
     orderBy,
     unitId: toPositiveInt(input.unit_id || input.unitId),
     branchIds: normalizeBranchFilter({ req, input, canAllBranches }),
+    canFilterAllBranches: canAllBranches,
     productGroupIds: toIdListWithAll(
       input.product_group_ids || input.productGroupIds,
     ),
@@ -401,6 +392,7 @@ const parseFilters = ({
 };
 
 const parseDeadStockFilters = ({ req, input = {} }) => {
+  const canAllBranches = userCanFilterAllBranches(req, "dead_stock_report");
   const { today, defaultFrom } = getDefaultDeadStockDateRange();
   const parsedFrom = parseDateFilter(
     input.from_date || input.fromDate,
@@ -450,7 +442,8 @@ const parseDeadStockFilters = ({ req, input = {} }) => {
     minClosingQty,
     deadStockOnly,
     sortBy,
-    branchIds: normalizeBranchFilter({ req, input }),
+    branchIds: normalizeBranchFilter({ req, input, canAllBranches }),
+    canFilterAllBranches: canAllBranches,
     productGroupIds: toIdListWithAll(
       input.product_group_ids || input.productGroupIds,
     ),
@@ -1536,6 +1529,7 @@ const getMovementVoucherCodeBuckets = () => {
 };
 
 const parseStockMovementFilters = ({ req, input = {} }) => {
+  const canAllBranches = userCanFilterAllBranches(req, "stock_item_activity");
   const { today, defaultFrom } = getDefaultLedgerDateRange();
   const parsedFrom = parseDateFilter(
     input.from_date || input.fromDate,
@@ -1578,7 +1572,8 @@ const parseStockMovementFilters = ({ req, input = {} }) => {
     unitId: toPositiveInt(input.unit_id || input.unitId),
     viewType,
     orderBy,
-    branchIds: normalizeBranchFilter({ req, input }),
+    branchIds: normalizeBranchFilter({ req, input, canAllBranches }),
+    canFilterAllBranches: canAllBranches,
     productGroupIds: toIdListWithAll(
       input.product_group_ids || input.productGroupIds,
     ),
@@ -2753,10 +2748,11 @@ const loadDeadStockProductSubgroupOptions = async () => {
 };
 
 const getInventoryDeadStockReportPageData = async ({ req, input = {} }) => {
+  const canAllBranches = userCanFilterAllBranches(req, "dead_stock_report");
   const filters = parseDeadStockFilters({ req, input });
 
   const [branches, productGroups, productSubgroups] = await Promise.all([
-    loadBranchOptions(req),
+    loadBranchOptions(req, canAllBranches),
     loadDeadStockProductGroupOptions(),
     loadDeadStockProductSubgroupOptions(),
   ]);
@@ -2935,10 +2931,11 @@ const getInventoryDeadStockReportPageData = async ({ req, input = {} }) => {
 };
 
 const getInventoryStockMovementReportPageData = async ({ req, input = {} }) => {
+  const canAllBranches = userCanFilterAllBranches(req, "stock_item_activity");
   const filters = parseStockMovementFilters({ req, input });
   // Keep detail grid structure stable regardless of branch filter cardinality.
   // Selecting a single branch should not downgrade detail rendering semantics.
-  const includeBranchColumn = Boolean(req?.user?.isAdmin);
+  const includeBranchColumn = Boolean(req?.user?.isAdmin || canAllBranches);
   const showSkuGroupedDetail = filters.viewType === VIEW_TYPES.details;
 
   const [
@@ -2949,7 +2946,7 @@ const getInventoryStockMovementReportPageData = async ({ req, input = {} }) => {
     stockItemsByType,
     unitOptions,
   ] = await Promise.all([
-    loadBranchOptions(req),
+    loadBranchOptions(req, canAllBranches),
     loadProductGroupOptionsByType(),
     loadProductSubgroupOptionsByType(),
     loadStockMovementArticleOptionsByType(),
@@ -3290,16 +3287,12 @@ const normalizeTransferReportType = (value) =>
     ? VIEW_TYPES.summary
     : VIEW_TYPES.details;
 
-const normalizeScopedBranchFilter = ({ req, value }) => {
-  const selected = toIdListWithAll(value);
-  if (req?.user?.isAdmin) return selected;
-
-  const allowed = getAllowedBranchIds(req);
-  if (!allowed.length) return [];
-  if (!selected.length) return allowed;
-
-  const allowedSet = new Set(allowed.map((entry) => Number(entry)));
-  return selected.filter((entry) => allowedSet.has(Number(entry)));
+const normalizeScopedBranchFilter = ({ req, value, canAllBranches = false }) => {
+  return normalizeReportBranchIds({
+    req,
+    value,
+    canAllBranches,
+  });
 };
 
 const toTokenListWithAll = (value) => {
@@ -3328,6 +3321,10 @@ const toTokenListWithAll = (value) => {
 
 const parseStockTransferReportFilters = ({ req, input = {} }) => {
   const { today, defaultFrom } = getDefaultLedgerDateRange();
+  const canAllBranches = userCanFilterAllBranches(
+    req,
+    "stock_transfer_report",
+  );
   const parsedFrom = parseDateFilter(
     input.from_date || input.fromDate,
     defaultFrom,
@@ -3355,6 +3352,7 @@ const parseStockTransferReportFilters = ({ req, input = {} }) => {
         input.source_branch_ids ||
         input.sourceBranchIds ||
         input.source_branch_id,
+      canAllBranches,
     }),
     destinationBranchIds: normalizeScopedBranchFilter({
       req,
@@ -3362,7 +3360,9 @@ const parseStockTransferReportFilters = ({ req, input = {} }) => {
         input.destination_branch_ids ||
         input.destinationBranchIds ||
         input.destination_branch_id,
+      canAllBranches,
     }),
+    canFilterAllBranches: canAllBranches,
     stockType,
     stockStatus:
       stockType === STOCK_TYPES.finished
@@ -4528,6 +4528,10 @@ const buildDefaultStockTransferReportData = ({
 
 const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
   const filters = parseStockTransferReportFilters({ req, input });
+  const canAllBranches = userCanFilterAllBranches(
+    req,
+    "stock_transfer_report",
+  );
 
   const [
     hasTransferRefColumn,
@@ -4544,7 +4548,7 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
     hasInventoryColumn("stock_transfer_out_header", "transfer_reason"),
     hasInventoryColumn("stock_transfer_out_header", "bill_book_no"),
     hasInventoryColumn("stock_transfer_out_header", "is_wip_transfer"),
-    loadBranchOptions(req),
+    loadBranchOptions(req, canAllBranches),
     loadProductGroupOptionsByType(),
     loadProductSubgroupOptionsByType(),
     loadStockMovementArticleOptionsByType(),
@@ -4780,6 +4784,7 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
 };
 
 const parseLedgerFilters = ({ req, input = {} }) => {
+  const canAllBranches = userCanFilterAllBranches(req, "stock_ledger");
   const { today, defaultFrom } = getDefaultLedgerDateRange();
   const parsedFrom = parseDateFilter(
     input.from_date || input.fromDate,
@@ -4826,7 +4831,8 @@ const parseLedgerFilters = ({ req, input = {} }) => {
     stockStatus,
     unitId: toPositiveInt(input.unit_id || input.unitId),
     stockItemId,
-    branchIds: normalizeBranchFilter({ req, input }),
+    branchIds: normalizeBranchFilter({ req, input, canAllBranches }),
+    canFilterAllBranches: canAllBranches,
     missingDateRange,
     missingStockItem,
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
@@ -5557,10 +5563,11 @@ const loadLedgerSelectedBaseUomId = async ({ stockType, stockItemId }) => {
 };
 
 const getInventoryStockLedgerReportPageData = async ({ req, input = {} }) => {
+  const canAllBranches = userCanFilterAllBranches(req, "stock_ledger");
   const filters = parseLedgerFilters({ req, input });
 
   const [branches, stockItemsByType, unitOptions] = await Promise.all([
-    loadBranchOptions(req),
+    loadBranchOptions(req, canAllBranches),
     loadLedgerStockItemsByType(filters.locale),
     loadUnitOptions(filters.stockType),
   ]);
@@ -5781,6 +5788,10 @@ const categoryLabelKey = (category) => {
 };
 
 const parseStockCountAccuracyFilters = ({ req, input = {} }) => {
+  const canAllBranches = userCanFilterAllBranches(
+    req,
+    "stock_count_accuracy",
+  );
   const { today, defaultFrom } = getDefaultStockCountAccuracyDateRange();
   const parsedFrom = parseDateFilter(
     input.from_date || input.fromDate,
@@ -5811,7 +5822,8 @@ const parseStockCountAccuracyFilters = ({ req, input = {} }) => {
     valueBasis: normalizeStockCountAccuracyBasis(
       input.value_basis || input.valueBasis,
     ),
-    branchIds: normalizeBranchFilter({ req, input }),
+    branchIds: normalizeBranchFilter({ req, input, canAllBranches }),
+    canFilterAllBranches: canAllBranches,
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
     invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
     invalidDateRange,
@@ -5835,8 +5847,12 @@ const getInventoryStockCountAccuracyReportPageData = async ({
   req,
   input = {},
 }) => {
+  const canAllBranches = userCanFilterAllBranches(
+    req,
+    "stock_count_accuracy",
+  );
   const filters = parseStockCountAccuracyFilters({ req, input });
-  const branches = await loadBranchOptions(req);
+  const branches = await loadBranchOptions(req, canAllBranches);
 
   const options = {
     branches,
@@ -6081,4 +6097,8 @@ module.exports = {
   getInventoryStockTransferReportPageData,
   getInventoryDeadStockReportPageData,
   getInventoryStockCountAccuracyReportPageData,
+  __test: {
+    parseStockTransferReportFilters,
+    userCanFilterAllBranches,
+  },
 };

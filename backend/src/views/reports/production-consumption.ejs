@@ -17,11 +17,12 @@
   const selectedProductSubgroupIds = Array.isArray(filters?.productSubgroupIds) ? filters.productSubgroupIds : [];
   const selectedFromDate = String(filters?.fromDate || "");
   const selectedToDate = String(filters?.toDate || "");
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
   const branchAllSelected = !selectedBranchIds.length;
   const departmentAllSelected = !selectedDepartmentIds.length;
   const groupAllSelected = !selectedProductGroupIds.length;
   const subgroupAllSelected = !selectedProductSubgroupIds.length;
-  const includeBranchColumn = Boolean(user?.isAdmin) && selectedBranchIds.length !== 1;
+  const includeBranchColumn = canUseBranchFilter && selectedBranchIds.length !== 1;
   const orderByModes = Array.isArray(options?.orderByModes) ? options.orderByModes : [];
   const reportTitle = (() => {
     const v = t("consumption_report");
@@ -191,9 +192,9 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? t("branches") : t("branch") %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
                 <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
                 <% (options?.branches || []).forEach((branch) => { %>

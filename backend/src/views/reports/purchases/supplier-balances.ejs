@@ -5,6 +5,7 @@
     ? filters.branchIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
     : [];
   const selectedAsOn = String(filters?.asOn || "");
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
   const formatNumber = (value, digits = 2) => {
     return formatNumberDisplay(value, { decimals: digits, fallback: "0" });
   };
@@ -39,8 +40,8 @@
         <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('as_on') %></label>
         <input type="date" name="as_on" value="<%= selectedAsOn %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700">
 
-        <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('branch') %></label>
-        <% if (user?.isAdmin) { %>
+        <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= canUseBranchFilter ? t('branches') : t('branch') %></label>
+        <% if (canUseBranchFilter) { %>
           <div
             class="relative"
             data-multi-select

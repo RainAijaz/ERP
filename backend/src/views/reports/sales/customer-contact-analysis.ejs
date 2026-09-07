@@ -17,6 +17,7 @@ const totals = reportData?.totals || {
   highestBill: 0,
 };
 const branches = Array.isArray(options?.branches) ? options.branches : [];
+const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
 const hasData = rows.length > 0;
 const downloadName = "customer-analysis.csv";
 const dateRangeLabel = (() => {
@@ -141,7 +142,7 @@ const reportPurposeTooltip = (() => {
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
           <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("analyze_by") %></label>
           <div class="sm:col-span-9">
-            <select name="group_by" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <select name="group_by" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
               <option value="phone" <%= selectedGroupBy === "phone" ? "selected" : "" %>><%= t("by_phone") %></option>
               <option value="name" <%= selectedGroupBy === "name" ? "selected" : "" %>><%= t("by_name") %></option>
             </select>
@@ -149,9 +150,9 @@ const reportPurposeTooltip = (() => {
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? t("branches") : t("branch") %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <select name="filter_branch_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
                 <option value=""><%= allLabel %></option>
                 <% branches.forEach((branch) => { %>
@@ -160,6 +161,7 @@ const reportPurposeTooltip = (() => {
               </select>
             <% } else { %>
               <input type="text" readonly class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700" value="<%= branches[0]?.name || branchId || '-' %>">
+              <input type="hidden" name="filter_branch_id" value="<%= branchId || '' %>">
             <% } %>
           </div>
         </div>

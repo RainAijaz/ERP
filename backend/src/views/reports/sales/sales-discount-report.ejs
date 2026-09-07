@@ -4,6 +4,7 @@ const selectedFrom = String(filters?.from || "");
 const selectedTo = String(filters?.to || "");
 const selectedBranchIds = Array.isArray(filters?.branchIds) ? filters.branchIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0) : [];
 const selectedBranchToken = selectedBranchIds.length === 1 ? String(selectedBranchIds[0]) : "__ALL__";
+const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
 const selectedSalesmanId = Number(filters?.salesmanId || 0) || null;
 const selectedPartyId = Number(filters?.partyId || 0) || null;
 const selectedProductGroupId = Number(filters?.productGroupId || 0) || null;
@@ -150,9 +151,9 @@ const reportPurposeTooltip = (() => {
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? t("branches") : t("branch") %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <select name="branch_ids" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
                 <option value="__ALL__" <%= selectedBranchToken === "__ALL__" ? "selected" : "" %>><%= `${allLabel} ${t("branches")}` %></option>
                 <% branchOptions.forEach((branch) => { %>
