@@ -363,7 +363,7 @@ const loadEmployeeNameMap = async ({ db, employeeIds, locale }) => {
   return new Map(rows.map((row) => [Number(row.id), row.name || `#${row.id}`]));
 };
 
-const resolveStatus = ({ previous, next }) => {
+const resolveStatus = ({ previous, next, producedByRule = false }) => {
   const hasPrevious = previous !== null && previous !== undefined;
   const previousAmount = toNumber(previous, 0);
   const nextAmount = toNumber(next, 0);
@@ -373,7 +373,7 @@ const resolveStatus = ({ previous, next }) => {
   if (Math.abs(previousAmount - nextAmount) < UNCHANGED_EPSILON) return "unchanged";
   // Recompute yielded nothing where something is stored — usually because the rule
   // was deleted. Destructive to write, so it is opt-in.
-  if (Math.abs(nextAmount) < UNCHANGED_EPSILON) return "cleared";
+  if (Math.abs(nextAmount) < UNCHANGED_EPSILON && !producedByRule) return "cleared";
   return "changed";
 };
 
@@ -453,7 +453,7 @@ const buildLedgerPlanRows = async ({ db, input, commissionType }) => {
         commission_type: commissionType,
         previous_rate: previous,
         new_rate: next,
-        status: resolveStatus({ previous, next }),
+        status: resolveStatus({ previous, next, producedByRule: true }),
         write: {
           storage: "LEDGER",
           voucher_id: Number(voucher.id),
@@ -523,7 +523,11 @@ const buildSalesmanPlanRows = async ({ db, input, t }) => {
 
     const previous = planned.previous_amount;
     const next = roundMoney(planned.new_amount);
-    const status = resolveStatus({ previous, next });
+    const status = resolveStatus({
+      previous,
+      next,
+      producedByRule: Number(planned.matched_rule_count || 0) > 0,
+    });
     if (status === "unchanged" && previous === null) continue;
 
     rows.push({

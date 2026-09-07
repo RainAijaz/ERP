@@ -167,7 +167,9 @@ const buildRuleMatchIndex = async (
     .whereRaw(
       `COALESCE((to_jsonb(ecr)->>'effective_to')::date, ?::date) >= ?::date`,
       [effectiveDate, effectiveDate],
-    );
+    )
+    .orderByRaw(`COALESCE((to_jsonb(ecr)->>'effective_from')::date, '1900-01-01'::date) DESC`)
+    .orderBy("ecr.id", "desc");
 
   // A NULL branch_id means "every branch this employee is mapped to". That is
   // exact rather than merely permissive: validateSalesmanTx already rejects a
@@ -317,13 +319,13 @@ const applyInvoiceLevelCommissions = ({ lineBreakdowns, matchedRulesByLine, sale
 // Lines must have sku_id, qty, uom_id, and meta with is_packed/sale_qty/return_qty/total_amount/gross_margin_amount.
 // Returns { totalCommission, lineBreakdowns } — lineBreakdowns is indexed by the original lines array position.
 const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, branchId = null, t }) => {
-  if (!rules.length) return { totalCommission: 0, lineBreakdowns: [] };
+  if (!rules.length) return { totalCommission: 0, lineBreakdowns: [], matchedRuleCount: 0 };
 
   const skuLines = lines
     .map((line, idx) => ({ line, idx }))
     .filter(({ line }) => String(line.line_kind || "").toUpperCase() === "SKU" && Number(line.sku_id) > 0);
 
-  if (!skuLines.length) return { totalCommission: 0, lineBreakdowns: [] };
+  if (!skuLines.length) return { totalCommission: 0, lineBreakdowns: [], matchedRuleCount: 0 };
 
   const skuIds = [...new Set(skuLines.map(({ line }) => Number(line.sku_id)))];
   const itemContextMap = await buildItemContext(trx, skuIds);
@@ -391,13 +393,15 @@ const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, branchId = 
   });
 
   let totalCommission = 0;
+  let matchedRuleCount = 0;
   lines.forEach((_, idx) => {
     const bd = lineBreakdowns[idx];
     if (!bd) return;
     totalCommission = roundMoney(totalCommission + bd.lineTotal);
+    matchedRuleCount += Array.isArray(bd.entries) ? bd.entries.length : 0;
   });
 
-  return { totalCommission, lineBreakdowns };
+  return { totalCommission, lineBreakdowns, matchedRuleCount };
 };
 
 const enrichSalesVoucherLines = async ({
@@ -413,14 +417,14 @@ const enrichSalesVoucherLines = async ({
     .filter(({ line }) => String(line.line_kind || "").toUpperCase() === "SKU" && Number(line.sku_id) > 0);
 
   if (!salesmanEmployeeId || !skuLines.length) {
-    return { lines, totalCommission: 0 };
+    return { lines, totalCommission: 0, matchedRuleCount: 0 };
   }
 
   const rules = await buildRuleMatchIndex(trx, salesmanEmployeeId, "SALESMAN_SALE", {
     branchId,
     onDate: voucherDate,
   });
-  const { totalCommission, lineBreakdowns } = await computeEmployeeCommissionOnLines({ trx, rules, lines, branchId, t });
+  const { totalCommission, lineBreakdowns, matchedRuleCount } = await computeEmployeeCommissionOnLines({ trx, rules, lines, branchId, t });
 
   const enriched = lines.map((line, idx) => {
     const breakdown = lineBreakdowns[idx];
@@ -438,7 +442,7 @@ const enrichSalesVoucherLines = async ({
     };
   });
 
-  return { lines: enriched, totalCommission };
+  return { lines: enriched, totalCommission, matchedRuleCount };
 };
 
 // Normalizes stock-transfer lines so they look like packed sales lines for commission calculation.
@@ -523,8 +527,8 @@ const computeLedgerEntriesForBranch = async ({
     });
     if (!rules.length) continue;
 
-    const { totalCommission, lineBreakdowns } = await computeEmployeeCommissionOnLines({ trx, rules, lines, branchId, t });
-    if (totalCommission === 0) continue;
+    const { totalCommission, lineBreakdowns, matchedRuleCount } = await computeEmployeeCommissionOnLines({ trx, rules, lines, branchId, t });
+    if (totalCommission === 0 && !matchedRuleCount) continue;
 
     const linesDetail = lines
       .map((line, idx) => {
@@ -668,7 +672,7 @@ const planSalesmanCommissionRecomputeTx = async ({ db, voucherId, t }) => {
 
   // Resolved against the voucher's OWN date and branch, so recalculating a past
   // range applies the rate that was actually in force then rather than today's.
-  const { lines: enrichedLines, totalCommission } = await enrichSalesVoucherLines({
+  const { lines: enrichedLines, totalCommission, matchedRuleCount } = await enrichSalesVoucherLines({
     trx: db,
     lines: skuLines,
     salesmanEmployeeId,
@@ -712,6 +716,7 @@ const planSalesmanCommissionRecomputeTx = async ({ db, voucherId, t }) => {
     employee_id: salesmanEmployeeId,
     previous_amount: previousAmount,
     new_amount: roundMoney(toNumber(totalCommission, 0)),
+    matched_rule_count: Number(matchedRuleCount || 0),
     write: {
       voucher_id: normalizedVoucherId,
       salesman_employee_id: salesmanEmployeeId,
