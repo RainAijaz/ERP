@@ -153,6 +153,8 @@ const canDo = (req, scopeType, scopeKey, action) => {
 const canApproveVoucherAction = (req, scopeKey) =>
   req?.user?.isAdmin === true || canDo(req, "VOUCHER", scopeKey, "approve");
 
+const canForceStockRollback = (req) => req?.user?.isAdmin === true;
+
 const requiresApprovalForAction = async (trx, voucherTypeCode, action) => {
   return resolveVoucherApprovalRequiredTx({
     trx,
@@ -510,6 +512,15 @@ const wacFromQtyValue = (qty, value) => {
   return Number.isFinite(ratio) ? roundUnitCost6(ratio) : 0;
 };
 
+const computeNonNegativeWac = (qty, value) => {
+  const numericQty = Number(qty || 0);
+  const numericValue = Number(value || 0);
+  if (!Number.isFinite(numericQty) || Math.abs(numericQty) <= 0.0005) return 0;
+  if (!Number.isFinite(numericValue)) return 0;
+  const ratio = Math.abs(numericValue) / Math.abs(numericQty);
+  return Number.isFinite(ratio) ? roundUnitCost6(ratio) : 0;
+};
+
 // item_type for the given item ids, so posting can branch RM vs SFG.
 const loadItemTypeMapTx = async ({ trx, itemIds = [] }) => {
   const normalized = [
@@ -771,7 +782,7 @@ const addBackSfgSkuStockFromLedgerTx = async ({ trx, row }) => {
 };
 
 // Rollback removal for a reversed SFG IN ledger row.
-const removeSfgSkuStockFromLedgerTx = async ({ trx, row }) => {
+const removeSfgSkuStockFromLedgerTx = async ({ trx, row, allowNegative = false }) => {
   const branchId = toPositiveInt(row?.branch_id);
   const skuId = toPositiveInt(row?.sku_id);
   const qtyPairs = Math.round(Number(row?.qty_pairs || 0));
@@ -793,7 +804,9 @@ const removeSfgSkuStockFromLedgerTx = async ({ trx, row }) => {
 
   // SFG SKU balances may legitimately be negative (controlled negative
   // inventory), so reverse exactly — do NOT clamp — to restore the prior value.
-  const nextQtyPairs = Number(target.qty_pairs || 0) - qtyPairs;
+  const nextQtyPairs = allowNegative
+    ? Number(target.qty_pairs || 0) - qtyPairs
+    : Math.max(Number(target.qty_pairs || 0) - qtyPairs, 0);
   const nextValueRaw = roundCost2(Number(target.value || 0) - value);
   const nextValue = nextQtyPairs === 0 ? 0 : nextValueRaw;
   const nextWac = wacFromQtyValue(nextQtyPairs, nextValue);
@@ -812,6 +825,143 @@ const removeSfgSkuStockFromLedgerTx = async ({ trx, row }) => {
       wac: nextWac,
       last_txn_at: trx.fn.now(),
     });
+};
+
+const rebuildPurchaseStockBalancesFromLedgerTx = async ({
+  trx,
+  rmIdentities = [],
+  skuIdentities = [],
+}) => {
+  const supportsRmVariants = await hasStockBalanceRmVariantDimensionsTx(trx);
+  const supportsLedgerVariants = await hasStockLedgerVariantDimensionsTx(trx);
+
+  for (const identity of rmIdentities) {
+    if (!identity?.branchId || !identity?.itemId) continue;
+    await ensureRmBalanceSeedTx({
+      trx,
+      identity,
+      supportsVariantDimensions: supportsRmVariants,
+    });
+
+    const query = trx("erp.stock_ledger as sl")
+      .select(
+        trx.raw(
+          "COALESCE(SUM(CASE WHEN sl.direction = 1 THEN COALESCE(sl.qty, 0) ELSE -COALESCE(sl.qty, 0) END), 0) as qty",
+        ),
+        trx.raw("COALESCE(SUM(COALESCE(sl.value, 0)), 0) as value"),
+      )
+      .where({
+        branch_id: Number(identity.branchId),
+        stock_state: String(identity.stockState || "ON_HAND")
+          .trim()
+          .toUpperCase() || "ON_HAND",
+        category: "RM",
+        item_id: Number(identity.itemId),
+      });
+
+    if (supportsLedgerVariants && (identity.colorId || identity.sizeId)) {
+      query.whereRaw("COALESCE(sl.color_id, 0) = ?", [
+        Number(identity.colorId || 0),
+      ]);
+      query.whereRaw("COALESCE(sl.size_id, 0) = ?", [
+        Number(identity.sizeId || 0),
+      ]);
+    } else if (supportsLedgerVariants) {
+      query.whereNull("sl.color_id").whereNull("sl.size_id");
+    }
+
+    const row = await query.first();
+    const nextQty = roundQty3(Number(row?.qty || 0));
+    const nextValue = roundCost2(Number(row?.value || 0));
+    const nextWac = computeNonNegativeWac(nextQty, nextValue);
+
+    await trx("erp.stock_balance_rm")
+      .where({
+        branch_id: Number(identity.branchId),
+        stock_state: String(identity.stockState || "ON_HAND")
+          .trim()
+          .toUpperCase() || "ON_HAND",
+        item_id: Number(identity.itemId),
+      })
+      .modify((builder) => {
+        if (supportsRmVariants) {
+          builder.whereRaw("COALESCE(color_id, 0) = ?", [
+            Number(identity.colorId || 0),
+          ]);
+          builder.whereRaw("COALESCE(size_id, 0) = ?", [
+            Number(identity.sizeId || 0),
+          ]);
+        }
+      })
+      .update({
+        qty: nextQty,
+        value: nextValue,
+        wac: nextWac,
+        last_txn_at: trx.fn.now(),
+      });
+  }
+
+  for (const identity of skuIdentities) {
+    if (!identity?.branchId || !identity?.skuId) continue;
+    const category = String(identity.category || "SFG")
+      .trim()
+      .toUpperCase();
+
+    await trx("erp.stock_balance_sku")
+      .insert({
+        branch_id: Number(identity.branchId),
+        stock_state: String(identity.stockState || "ON_HAND")
+          .trim()
+          .toUpperCase() || "ON_HAND",
+        category,
+        is_packed: false,
+        sku_id: Number(identity.skuId),
+        qty_pairs: 0,
+        value: 0,
+        wac: 0,
+        last_txn_at: trx.fn.now(),
+      })
+      .onConflict(["branch_id", "stock_state", "category", "is_packed", "sku_id"])
+      .ignore();
+
+    const row = await trx("erp.stock_ledger as sl")
+      .select(
+        trx.raw(
+          "COALESCE(SUM(CASE WHEN sl.direction = 1 THEN COALESCE(sl.qty_pairs, 0) ELSE -COALESCE(sl.qty_pairs, 0) END), 0) as qty_pairs",
+        ),
+        trx.raw("COALESCE(SUM(COALESCE(sl.value, 0)), 0) as value"),
+      )
+      .where({
+        branch_id: Number(identity.branchId),
+        stock_state: String(identity.stockState || "ON_HAND")
+          .trim()
+          .toUpperCase() || "ON_HAND",
+        category,
+        sku_id: Number(identity.skuId),
+      })
+      .first();
+
+    const nextQtyPairs = Math.round(Number(row?.qty_pairs || 0));
+    const nextValue = roundCost2(Number(row?.value || 0));
+    const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
+
+    await trx("erp.stock_balance_sku")
+      .where({
+        branch_id: Number(identity.branchId),
+        stock_state: String(identity.stockState || "ON_HAND")
+          .trim()
+          .toUpperCase() || "ON_HAND",
+        category,
+        is_packed: false,
+        sku_id: Number(identity.skuId),
+      })
+      .update({
+        qty_pairs: nextQtyPairs,
+        value: nextValue,
+        wac: nextWac,
+        last_txn_at: trx.fn.now(),
+      });
+  }
 };
 
 const loadPurchaseVoucherStockLinesTx = async ({ trx, voucherId }) =>
@@ -959,7 +1109,7 @@ const addBackRmStockFromLedgerTx = async ({ trx, row }) => {
   const existing = await existingQuery.first();
   const nextQty = roundQty3(Number(existing?.qty || 0) + qty);
   const nextValue = roundCost2(Number(existing?.value || 0) + value);
-  const nextWac = nextQty > 0 ? roundUnitCost6(nextValue / nextQty) : 0;
+  const nextWac = computeNonNegativeWac(nextQty, nextValue);
 
   const updateQuery = trx("erp.stock_balance_rm").update({
     qty: nextQty,
@@ -976,7 +1126,7 @@ const addBackRmStockFromLedgerTx = async ({ trx, row }) => {
 };
 
 // Rollback helper for prior IN rows: remove qty/value from balance.
-const removeRmStockFromLedgerTx = async ({ trx, row }) => {
+const removeRmStockFromLedgerTx = async ({ trx, row, allowNegative = false }) => {
   const branchId = toPositiveInt(row?.branch_id);
   const itemId = toPositiveInt(row?.item_id);
   const colorId = normalizeRmDimensionId(row?.color_id);
@@ -1009,7 +1159,7 @@ const removeRmStockFromLedgerTx = async ({ trx, row }) => {
   const existing = await existingQuery.first();
   const availableQty = Number(existing?.qty || 0);
   const availableValue = Number(existing?.value || 0);
-  if (availableQty < qty || availableValue < value - 0.05) {
+  if (!allowNegative && (availableQty < qty || availableValue < value - 0.05)) {
     const rmItem = await trx("erp.items")
       .select("code", "name")
       .where({ id: itemId })
@@ -1033,9 +1183,14 @@ const removeRmStockFromLedgerTx = async ({ trx, row }) => {
     });
     throw new HttpError(400, message);
   }
-  const nextQty = Math.max(roundQty3(availableQty - qty), 0);
-  const nextValue =
-    nextQty > 0 ? Math.max(roundCost2(availableValue - value), 0) : 0;
+  const nextQtyRaw = roundQty3(availableQty - qty);
+  const nextQty = allowNegative ? nextQtyRaw : Math.max(nextQtyRaw, 0);
+  const nextValueRaw = roundCost2(availableValue - value);
+  const nextValue = allowNegative
+    ? nextValueRaw
+    : nextQty > 0
+      ? Math.max(nextValueRaw, 0)
+      : 0;
   const nextWac = nextQty > 0 ? roundUnitCost6(nextValue / nextQty) : 0;
 
   const updateQuery = trx("erp.stock_balance_rm").update({
@@ -1053,7 +1208,12 @@ const removeRmStockFromLedgerTx = async ({ trx, row }) => {
 };
 
 // Idempotency strategy: before reposting a voucher, reverse all its previous RM ledger impact.
-const rollbackPurchaseStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
+const rollbackPurchaseStockLedgerByVoucherTx = async ({
+  trx,
+  voucherId,
+  allowNegative = false,
+  rebuildBalances = false,
+}) => {
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) return;
   if (!(await hasStockLedgerTableTx(trx))) return;
@@ -1079,6 +1239,41 @@ const rollbackPurchaseStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
     .where({ voucher_header_id: normalizedVoucherId })
     .orderBy("id", "desc");
 
+  const rmIdentities = new Map();
+  const skuIdentities = new Map();
+
+  const rememberRmIdentity = (row) => {
+    const branchId = toPositiveInt(row?.branch_id);
+    const itemId = toPositiveInt(row?.item_id);
+    if (!branchId || !itemId) return;
+    const colorId = hasVariantDimensions ? normalizeRmDimensionId(row?.color_id) : null;
+    const sizeId = hasVariantDimensions ? normalizeRmDimensionId(row?.size_id) : null;
+    const key = `${branchId}:${itemId}:${colorId || 0}:${sizeId || 0}`;
+    if (rmIdentities.has(key)) return;
+    rmIdentities.set(key, {
+      branchId,
+      stockState: String(row?.stock_state || "ON_HAND").trim().toUpperCase() || "ON_HAND",
+      itemId,
+      colorId,
+      sizeId,
+    });
+  };
+
+  const rememberSkuIdentity = (row) => {
+    const branchId = toPositiveInt(row?.branch_id);
+    const skuId = toPositiveInt(row?.sku_id);
+    if (!branchId || !skuId) return;
+    const category = String(row?.category || "").trim().toUpperCase();
+    const key = `${branchId}:${category}:${skuId}`;
+    if (skuIdentities.has(key)) return;
+    skuIdentities.set(key, {
+      branchId,
+      stockState: String(row?.stock_state || "ON_HAND").trim().toUpperCase() || "ON_HAND",
+      category,
+      skuId,
+    });
+  };
+
   for (const row of rows) {
     const category = String(row?.category || "")
       .trim()
@@ -1086,13 +1281,14 @@ const rollbackPurchaseStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
     const direction = Number(row?.direction || 0);
 
     if (category === "SFG" || category === "FG") {
+      rememberSkuIdentity(row);
       // Reverse the SKU-level impact (SFG purchases / returns).
       if (direction === -1) {
         await addBackSfgSkuStockFromLedgerTx({ trx, row });
         continue;
       }
       if (direction === 1) {
-        await removeSfgSkuStockFromLedgerTx({ trx, row });
+        await removeSfgSkuStockFromLedgerTx({ trx, row, allowNegative });
         continue;
       }
       throw new HttpError(
@@ -1102,12 +1298,13 @@ const rollbackPurchaseStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
     }
 
     if (category !== "RM") continue;
+    rememberRmIdentity(row);
     if (direction === -1) {
       await addBackRmStockFromLedgerTx({ trx, row });
       continue;
     }
     if (direction === 1) {
-      await removeRmStockFromLedgerTx({ trx, row });
+      await removeRmStockFromLedgerTx({ trx, row, allowNegative });
       continue;
     }
     throw new HttpError(
@@ -1120,6 +1317,14 @@ const rollbackPurchaseStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
     await trx("erp.stock_ledger")
       .where({ voucher_header_id: normalizedVoucherId })
       .del();
+  }
+
+  if (rebuildBalances && (rmIdentities.size || skuIdentities.size)) {
+    await rebuildPurchaseStockBalancesFromLedgerTx({
+      trx,
+      rmIdentities: [...rmIdentities.values()],
+      skuIdentities: [...skuIdentities.values()],
+    });
   }
 };
 
@@ -1722,6 +1927,7 @@ const syncPurchaseVoucherStockTx = async ({
   trx,
   voucherId,
   voucherTypeCode,
+  allowNegativeRollback = false,
 }) => {
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) return;
@@ -1854,6 +2060,8 @@ const syncPurchaseVoucherStockTx = async ({
   await rollbackPurchaseStockLedgerByVoucherTx({
     trx,
     voucherId: normalizedVoucherId,
+    allowNegative: allowNegativeRollback === true,
+    rebuildBalances: allowNegativeRollback === true,
   });
   if (String(header.status || "").toUpperCase() !== "APPROVED") {
     await syncRmWeightedAverageRatesTx({
@@ -3823,6 +4031,7 @@ const applyPurchaseVoucherDeletePayloadTx = async ({
   voucherId,
   voucherTypeCode,
   approverId,
+  allowNegativeRollback = false,
 }) => {
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) throw new HttpError(400, "Invalid voucher id");
@@ -3845,6 +4054,7 @@ const applyPurchaseVoucherDeletePayloadTx = async ({
     trx,
     voucherId: normalizedVoucherId,
     voucherTypeCode,
+    allowNegativeRollback,
   });
 };
 
@@ -3938,6 +4148,7 @@ const deletePurchaseVoucher = async ({
       voucherId: existing.id,
       voucherTypeCode,
       approverId: req.user.id,
+      allowNegativeRollback: canForceStockRollback(req),
     });
 
     // Deleted directly: resolve any lingering PENDING approval to REJECTED so it

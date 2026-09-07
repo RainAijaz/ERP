@@ -14,6 +14,9 @@ const {
 } = require("../../utils/voucher-approval-sync");
 const { syncVoucherGlPostingTx } = require("../financial/gl-posting-service");
 const {
+  resolveNegativeStockRoutingTx,
+} = require("../inventory/negative-stock-approval");
+const {
   buildStockShortfallMessageTx,
 } = require("../../utils/stock-rollback-diagnostics");
 const {
@@ -650,6 +653,8 @@ const canDo = (req, scopeType, scopeKey, action) => {
 
 const canApproveVoucherAction = (req, scopeKey) =>
   req?.user?.isAdmin === true || canDo(req, "VOUCHER", scopeKey, "approve");
+
+const canForceStockRollback = (req) => req?.user?.isAdmin === true;
 
 const requiresApprovalForAction = async (trx, voucherTypeCode, action) => {
   return resolveVoucherApprovalRequiredTx({
@@ -1460,6 +1465,12 @@ const validateDepartmentForLabourTx = async ({
   return deptId;
 };
 
+// A DCV may complete several departments at once, each worked by a different labour.
+// Accepts the raw {dept_id, labour_id} pairs from the form and returns them validated
+// and sorted into BOM routing order, which is the order they must be posted in.
+//
+// The user picks departments in whatever order they think of them; ordering is resolved
+// here rather than asked for, because the routing already knows it.
 const validateDcvStagePairsTx = async ({
   trx,
   req,
@@ -1554,7 +1565,6 @@ const validateDcvStagePairsTx = async ({
 // Lowest routing sequence each stage holds across the approved BOMs of the SKUs being
 // posted. Articles on one voucher normally share a routing; taking the minimum keeps the
 // order stable and sensible when they do not.
-
 const loadBomStageSequenceForSkusTx = async ({
   trx,
   skuIds = [],
@@ -1714,6 +1724,12 @@ const validateProductionOrPlanLinesTx = async ({
   });
 };
 
+// Fold already-expanded lines back to one row per article.
+//
+// An approval request stores the EXPANDED lines, and approving it replays that payload
+// through the same validation. Without this the replay would expand what is already
+// expanded and multiply the voucher by the department count. Lines carry the entry row
+// they came from; a fresh form post has no such marker and passes through untouched.
 const collapseDcvEntryRows = (rawLines = []) => {
   const lines = Array.isArray(rawLines) ? rawLines : [];
   const seenEntryRows = new Set();
@@ -1736,7 +1752,6 @@ const collapseDcvEntryRows = (rawLines = []) => {
 // (article x department), each priced at its own department's labour rate. Keeping the
 // expansion on real voucher lines means every downstream total, WIP cost fold and
 // rollback keeps working per department with no special-casing.
-
 const validateDcvLinesTx = async ({
   trx,
   req,
@@ -1936,11 +1951,15 @@ const validateDcvStageFlowTx = async ({
   }
 
   const linePairsBySku = new Map();
+  // A SKU may appear on several lines; predecessor WIP is consumed by their
+  // SUM, so keep the line count to explain the shortfall when it fails.
+  const lineCountBySku = new Map();
   for (const line of lines) {
     const skuId = toPositiveInt(line?.sku_id);
     const pairs = Number(line?.total_pairs || line?.qty || 0);
     if (!skuId || !Number.isInteger(pairs) || pairs <= 0) continue;
     linePairsBySku.set(skuId, Number(linePairsBySku.get(skuId) || 0) + pairs);
+    lineCountBySku.set(skuId, Number(lineCountBySku.get(skuId) || 0) + 1);
   }
   if (!linePairsBySku.size) return;
 
@@ -2065,9 +2084,12 @@ const validateDcvStageFlowTx = async ({
         availablePairs + conversionCoverPairs,
       );
       if (effectiveAvailablePairs < requiredPairs) {
+        const lineCount = Number(lineCountBySku.get(skuId) || 1);
+        const acrossLines =
+          lineCount > 1 ? ` across ${lineCount} lines of this voucher` : "";
         throw new HttpError(
           400,
-          `Stage flow blocked for SKU ${skuLabel}: previous stage WIP is insufficient`,
+          `Stage flow blocked for SKU ${skuLabel}: previous stage WIP is insufficient - needs ${requiredPairs} pairs${acrossLines}, only ${effectiveAvailablePairs} pairs available at the previous stage`,
         );
       }
     }
@@ -3851,7 +3873,7 @@ const addBackSkuStockFromLedgerTx = async ({ trx, row }) => {
     });
 };
 
-const removeRmStockFromLedgerTx = async ({ trx, row }) => {
+const removeRmStockFromLedgerTx = async ({ trx, row, allowNegative = false }) => {
   const branchId = toPositiveInt(row?.branch_id);
   const itemId = toPositiveInt(row?.item_id);
   const colorId = normalizeRmDimensionId(row?.color_id);
@@ -3884,7 +3906,7 @@ const removeRmStockFromLedgerTx = async ({ trx, row }) => {
   const existing = await existingQuery.first();
   const availableQty = Number(existing?.qty || 0);
   const availableValue = Number(existing?.value || 0);
-  if (availableQty < qty || availableValue < value - 0.05) {
+  if (!allowNegative && (availableQty < qty || availableValue < value - 0.05)) {
     const rmItem = await trx("erp.items")
       .select("code", "name")
       .where({ id: itemId })
@@ -3908,10 +3930,16 @@ const removeRmStockFromLedgerTx = async ({ trx, row }) => {
     });
     throw new HttpError(400, message);
   }
-  const nextQty = Math.max(roundQty3(availableQty - qty), 0);
-  const nextValue =
-    nextQty > 0 ? Math.max(roundCost2(availableValue - value), 0) : 0;
-  const nextWac = nextQty > 0 ? roundUnitCost6(nextValue / nextQty) : 0;
+  const nextQtyRaw = roundQty3(availableQty - qty);
+  const nextQty = allowNegative ? nextQtyRaw : Math.max(nextQtyRaw, 0);
+  const nextValueRaw = roundCost2(availableValue - value);
+  const nextValue = allowNegative
+    ? nextValueRaw
+    : nextQty > 0
+      ? Math.max(nextValueRaw, 0)
+      : 0;
+  const nextWac =
+    nextQty !== 0 ? roundUnitCost6(Math.abs(nextValue) / Math.abs(nextQty)) : 0;
 
   const updateQuery = trx("erp.stock_balance_rm").update({
     qty: nextQty,
@@ -3927,7 +3955,7 @@ const removeRmStockFromLedgerTx = async ({ trx, row }) => {
   await updateQuery;
 };
 
-const removeSkuStockFromLedgerTx = async ({ trx, row }) => {
+const removeSkuStockFromLedgerTx = async ({ trx, row, allowNegative = false }) => {
   const branchId = toPositiveInt(row?.branch_id);
   const skuId = toPositiveInt(row?.sku_id);
   const stockState =
@@ -3956,7 +3984,7 @@ const removeSkuStockFromLedgerTx = async ({ trx, row }) => {
     .forUpdate();
   const availableQtyPairs = Number(target?.qty_pairs || 0);
   const availableValue = Number(target?.value || 0);
-  if (availableQtyPairs < qtyPairs || availableValue < value - 0.05) {
+  if (!allowNegative && (availableQtyPairs < qtyPairs || availableValue < value - 0.05)) {
     const skuRow = await trx("erp.skus")
       .select("sku_code")
       .where({ id: skuId })
@@ -3980,11 +4008,20 @@ const removeSkuStockFromLedgerTx = async ({ trx, row }) => {
     throw new HttpError(400, message);
   }
 
-  const nextQtyPairs = Math.max(availableQtyPairs - qtyPairs, 0);
-  const nextValue =
-    nextQtyPairs > 0 ? Math.max(roundCost2(availableValue - value), 0) : 0;
+  const nextQtyPairsRaw = availableQtyPairs - qtyPairs;
+  const nextQtyPairs = allowNegative
+    ? nextQtyPairsRaw
+    : Math.max(nextQtyPairsRaw, 0);
+  const nextValueRaw = roundCost2(availableValue - value);
+  const nextValue = allowNegative
+    ? nextValueRaw
+    : nextQtyPairs > 0
+      ? Math.max(nextValueRaw, 0)
+      : 0;
   const nextWac =
-    nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+    nextQtyPairs !== 0
+      ? roundUnitCost6(Math.abs(nextValue) / Math.abs(nextQtyPairs))
+      : 0;
 
   await trx("erp.stock_balance_sku")
     .where({
@@ -4002,7 +4039,11 @@ const removeSkuStockFromLedgerTx = async ({ trx, row }) => {
     });
 };
 
-const rollbackStockLedgerBySourceVoucherTx = async ({ trx, voucherId }) => {
+const rollbackStockLedgerBySourceVoucherTx = async ({
+  trx,
+  voucherId,
+  allowNegative = false,
+}) => {
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) return;
   if (!(await hasStockLedgerTableTx(trx))) return;
@@ -4046,11 +4087,11 @@ const rollbackStockLedgerBySourceVoucherTx = async ({ trx, voucherId }) => {
     }
     if (direction === 1) {
       if (category === "RM") {
-        await removeRmStockFromLedgerTx({ trx, row });
+        await removeRmStockFromLedgerTx({ trx, row, allowNegative });
         continue;
       }
       if (category === "SFG" || category === "FG") {
-        await removeSkuStockFromLedgerTx({ trx, row });
+        await removeSkuStockFromLedgerTx({ trx, row, allowNegative });
       }
       continue;
     }
@@ -4067,7 +4108,149 @@ const rollbackStockLedgerBySourceVoucherTx = async ({ trx, voucherId }) => {
   }
 };
 
-const deleteGeneratedChildVouchersTx = async ({ trx, productionVoucherId }) => {
+const collectProductionStockReversalShortfallsTx = async ({ trx, voucherId }) => {
+  const normalizedVoucherId = toPositiveInt(voucherId);
+  if (!normalizedVoucherId || !(await hasStockLedgerTableTx(trx))) return [];
+
+  const hasVariantDimensions = await hasStockLedgerVariantDimensionsTx(trx);
+  const selectColumns = [
+    "branch_id",
+    "category",
+    "stock_state",
+    "item_id",
+    "sku_id",
+    "qty",
+    "qty_pairs",
+  ];
+  if (hasVariantDimensions) {
+    selectColumns.push("color_id", "size_id");
+  }
+
+  const rows = await trx("erp.stock_ledger")
+    .select(selectColumns)
+    .where({ voucher_header_id: normalizedVoucherId, direction: 1 });
+  if (!rows.length) return [];
+
+  const rmItemIds = [
+    ...new Set(
+      rows
+        .filter((row) => String(row?.category || "").trim().toUpperCase() === "RM")
+        .map((row) => toPositiveInt(row?.item_id))
+        .filter(Boolean),
+    ),
+  ];
+  const skuIds = [
+    ...new Set(rows.map((row) => toPositiveInt(row?.sku_id)).filter(Boolean)),
+  ];
+  const [rmItemRows, skuRows] = await Promise.all([
+    rmItemIds.length
+      ? trx("erp.items").select("id", "name", "code").whereIn("id", rmItemIds)
+      : [],
+    skuIds.length
+      ? trx("erp.skus").select("id", "sku_code").whereIn("id", skuIds)
+      : [],
+  ]);
+  const rmItemById = new Map(rmItemRows.map((row) => [Number(row.id), row]));
+  const skuCodeById = new Map(
+    skuRows.map((row) => [Number(row.id), row.sku_code]),
+  );
+
+  const buckets = new Map();
+  for (const row of rows) {
+    const category = String(row?.category || "").trim().toUpperCase();
+    const stockState =
+      String(row?.stock_state || "ON_HAND").trim().toUpperCase() || "ON_HAND";
+    if (category === "RM") {
+      const itemId = toPositiveInt(row?.item_id);
+      if (!itemId) continue;
+      const colorId = normalizeRmDimensionId(row?.color_id);
+      const sizeId = normalizeRmDimensionId(row?.size_id);
+      const key = [
+        "RM",
+        row.branch_id,
+        stockState,
+        itemId,
+        colorId || 0,
+        sizeId || 0,
+      ].join(":");
+      const item = rmItemById.get(itemId);
+      const entry = buckets.get(key) || {
+        kind: "RM",
+        row,
+        stockState,
+        itemName: item ? `${item.name} (${item.code})` : `RM item #${itemId}`,
+        total: 0,
+      };
+      entry.total = roundQty3(entry.total + Number(row?.qty || 0));
+      buckets.set(key, entry);
+      continue;
+    }
+    if (category !== "SFG" && category !== "FG") continue;
+    const skuId = toPositiveInt(row?.sku_id);
+    if (!skuId) continue;
+    const key = ["SKU", row.branch_id, stockState, category, skuId].join(":");
+    const entry = buckets.get(key) || {
+      kind: "SKU",
+      row,
+      stockState,
+      category,
+      itemName: skuCodeById.get(skuId) || `SKU #${skuId}`,
+      total: 0,
+    };
+    entry.total += Number(row?.qty_pairs || 0);
+    buckets.set(key, entry);
+  }
+
+  const supportsRmVariants = await hasStockBalanceRmVariantDimensionsTx(trx);
+  const shortfalls = [];
+  for (const entry of buckets.values()) {
+    if (!(entry.total > 0)) continue;
+    let available = 0;
+    if (entry.kind === "RM") {
+      const identity = buildRmStockIdentity({
+        branchId: entry.row.branch_id,
+        stockState: entry.stockState,
+        itemId: entry.row.item_id,
+        colorId: entry.row.color_id,
+        sizeId: entry.row.size_id,
+      });
+      const query = trx("erp.stock_balance_rm").select("qty");
+      applyRmStockIdentityWhere({
+        query,
+        identity,
+        supportsVariantDimensions: supportsRmVariants,
+      });
+      const balance = await query.first();
+      available = Number(balance?.qty || 0);
+    } else {
+      const balance = await trx("erp.stock_balance_sku")
+        .select("qty_pairs")
+        .where({
+          branch_id: Number(entry.row.branch_id),
+          stock_state: entry.stockState,
+          category: entry.category,
+          is_packed: false,
+          sku_id: Number(entry.row.sku_id),
+        })
+        .first();
+      available = Number(balance?.qty_pairs || 0);
+    }
+    if (available + 0.0005 >= entry.total) continue;
+    shortfalls.push({
+      line_no: null,
+      item_name: entry.itemName,
+      short_qty: Number((entry.total - available).toFixed(3)),
+      available_qty: Number(available.toFixed(3)),
+    });
+  }
+  return shortfalls;
+};
+
+const deleteGeneratedChildVouchersTx = async ({
+  trx,
+  productionVoucherId,
+  allowNegativeRollback = false,
+}) => {
   const normalizedProductionVoucherId = toPositiveInt(productionVoucherId);
   if (!normalizedProductionVoucherId) return;
   const row = await trx("erp.production_generated_links")
@@ -4090,6 +4273,7 @@ const deleteGeneratedChildVouchersTx = async ({ trx, productionVoucherId }) => {
       await rollbackStockLedgerBySourceVoucherTx({
         trx,
         voucherId: childVoucherId,
+        allowNegative: allowNegativeRollback === true,
       });
     }
     await trx("erp.voucher_header").whereIn("id", childVoucherIds).del();
@@ -4735,6 +4919,9 @@ const writeProductionCommissionTx = async ({
   }
 };
 
+// DCV article lines with the department/labour that did the work. Vouchers saved before
+// erp.dcv_line existed (and any row the backfill skipped) fall back to dcv_header, which
+// is also where a single-department voucher's pair still lives.
 const loadDcvLinesWithDepartmentsTx = async ({ trx, voucherId, header }) => {
   const supportsDcvLine = await hasDcvLineTableTx(trx);
   const query = trx("erp.voucher_line as vl")
@@ -4772,7 +4959,6 @@ const loadDcvLinesWithDepartmentsTx = async ({ trx, voucherId, header }) => {
 // One entry per department on the voucher, ordered the way the BOM routes them.
 // Order is the whole point: department N's WIP draw only succeeds once department N-1
 // has posted its credit, and both happen inside one transaction.
-
 const buildDcvDepartmentGroupsTx = async ({ trx, lines = [] }) => {
   const groupsByDept = new Map();
   for (const line of lines) {
@@ -4821,6 +5007,9 @@ const applyDcvToWipTx = async ({
   voucherId,
   branchId,
   voucherDate,
+  // Consumed by the stage-linked SFG draw below. Without it that block throws a
+  // ReferenceError on any BOM that pins SFG to a stage.
+  allowNegativeRm = false,
 }) => {
   const header = await trx("erp.dcv_header")
     .select("dept_id", "stage_id")
@@ -4932,9 +5121,9 @@ const applyDcvToWipTx = async ({
       : [];
     if (stageFlow.hasStageRouting && flowPredecessors.length) {
       // Step 1: consume predecessor WIP for this SKU, nearest stage first. Walking the
-      // chain rather than one department is what keeps a 'Follow Sequence' = off stage
-      // from becoming a pure producer -- it credits its own pool either way, so if it
-      // never debits anyone its pairs sit there forever and no later stage claims them.
+      // whole chain rather than one department is what keeps a 'Follow Sequence' = off
+      // stage from becoming a pure producer -- it credits its own pool either way, so if
+      // it never debits anyone its pairs sit there forever and no later stage claims them.
       let totalConsumedPairs = 0;
       let totalConsumedCost = 0;
       for (const predecessor of flowPredecessors) {
@@ -4971,9 +5160,7 @@ const applyDcvToWipTx = async ({
           conversionMeta = {
             conversion_applied: true,
             conversion_mode: "IN_STAGE_GRADE_CONVERSION",
-            conversion_from_stage_id: toPositiveInt(
-              nearestPredecessor.stage_id,
-            ),
+            conversion_from_stage_id: toPositiveInt(nearestPredecessor.stage_id),
             conversion_from_dept_id: toPositiveInt(nearestPredecessor.dept_id),
             conversion_sources: converted.sources,
           };
@@ -5010,6 +5197,7 @@ const applyDcvToWipTx = async ({
         voucherLineId: toPositiveInt(line.id),
         voucherDate,
         writeLedger: true,
+        allowNegativeStock: allowNegativeRm === true,
         shortagePrefix: lineNo ? `Line ${lineNo}:` : "",
         // This is a BOM component consumption, not a loss: name the finished
         // article and stage that pulled it so the message is actionable.
@@ -5855,6 +6043,7 @@ const ensureProductionVoucherDerivedDataTx = async ({
     await rollbackStockLedgerBySourceVoucherTx({
       trx,
       voucherId: normalizedVoucherId,
+      allowNegative: allowNegativeRm === true,
     });
   }
 
@@ -5866,6 +6055,7 @@ const ensureProductionVoucherDerivedDataTx = async ({
     await deleteGeneratedChildVouchersTx({
       trx,
       productionVoucherId: normalizedVoucherId,
+      allowNegativeRollback: allowNegativeRm === true,
     });
     await applyProductionToGeneratedVouchersTx({
       trx,
@@ -5885,12 +6075,14 @@ const ensureProductionVoucherDerivedDataTx = async ({
     await deleteGeneratedChildVouchersTx({
       trx,
       productionVoucherId: normalizedVoucherId,
+      allowNegativeRollback: allowNegativeRm === true,
     });
     await applyDcvToWipTx({
       trx,
       voucherId: normalizedVoucherId,
       branchId: Number(header.branch_id),
       voucherDate: toDateOnly(header.voucher_date),
+      allowNegativeRm,
     });
     await applyDcvToGeneratedVouchersTx({
       trx,
@@ -6276,6 +6468,7 @@ const applyProductionVoucherDeletePayloadTx = async ({
   voucherId,
   voucherTypeCode,
   approverId,
+  allowNegativeRollback = false,
 }) => {
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) throw new HttpError(400, "Invalid voucher id");
@@ -6295,6 +6488,7 @@ const applyProductionVoucherDeletePayloadTx = async ({
     await deleteGeneratedChildVouchersTx({
       trx,
       productionVoucherId: normalizedVoucherId,
+      allowNegativeRollback,
     });
   }
 
@@ -6318,6 +6512,7 @@ const applyProductionVoucherDeletePayloadTx = async ({
     await rollbackStockLedgerBySourceVoucherTx({
       trx,
       voucherId: normalizedVoucherId,
+      allowNegative: allowNegativeRollback === true,
     });
   }
 
@@ -6367,8 +6562,20 @@ const deleteProductionVoucher = async ({
       voucherTypeCode,
       "delete",
     );
+    const negativeStockRouting = await resolveNegativeStockRoutingTx({
+      trx,
+      voucherTypeCode,
+      canApproveVoucherAction: canApprove,
+      detectRisk: () =>
+        collectProductionStockReversalShortfallsTx({
+          trx,
+          voucherId: existing.id,
+        }),
+    });
     const queuedForApproval =
-      !canDelete || (policyRequiresApproval && !canApprove);
+      !canDelete ||
+      (policyRequiresApproval && !canApprove) ||
+      negativeStockRouting.queueForApproval;
 
     if (queuedForApproval) {
       const approvalRequestId = await createApprovalRequestTx({
@@ -6384,6 +6591,9 @@ const deleteProductionVoucher = async ({
           voucher_no: existing.voucher_no,
           voucher_type_code: voucherTypeCode,
           permission_reroute: !canDelete,
+          negative_stock_approval_reroute:
+            negativeStockRouting.negativeStockApprovalReroute,
+          approval_reason: negativeStockRouting.approvalReason,
         },
       });
       return {
@@ -6393,6 +6603,9 @@ const deleteProductionVoucher = async ({
         queuedForApproval: true,
         approvalRequestId,
         permissionReroute: !canDelete,
+        negativeStockApprovalReroute:
+          negativeStockRouting.negativeStockApprovalReroute,
+        approvalReason: negativeStockRouting.approvalReason,
       };
     }
 
@@ -6401,6 +6614,7 @@ const deleteProductionVoucher = async ({
       voucherId: existing.id,
       voucherTypeCode,
       approverId: req.user.id,
+      allowNegativeRollback: canForceStockRollback(req),
     });
     // Deleted directly: resolve any lingering PENDING approval to REJECTED so it
     // leaves the Pending Approvals page.
@@ -7650,6 +7864,7 @@ const resolveDcvAvailabilityForLine = async ({
   unitCode,
   voucherDate = null,
   voucherId = null,
+  siblingPairs = 0,
 }) =>
   knex.transaction(async (trx) => {
     const normalizedLabourId = toPositiveInt(labourId);
@@ -7704,6 +7919,16 @@ const resolveDcvAvailabilityForLine = async ({
     if (!Number.isInteger(producedPairs)) {
       throw new HttpError(400, "Quantity must convert to whole pairs");
     }
+    // The save path consumes predecessor WIP and SFG stock by the SUM of every
+    // line carrying this SKU, so a per-row check that ignores its siblings
+    // reports OK on rows the save will reject. The caller passes the pairs the
+    // other rows already claim for the same SKU.
+    const rawSiblingPairs = Number(siblingPairs || 0);
+    const normalizedSiblingPairs =
+      Number.isFinite(rawSiblingPairs) && rawSiblingPairs > 0
+        ? Math.round(rawSiblingPairs)
+        : 0;
+    const requirementPairs = Number(producedPairs + normalizedSiblingPairs);
 
     const resolvedStageId = toPositiveInt(stageId)
       ? await validateStageTx({
@@ -7798,7 +8023,7 @@ const resolveDcvAvailabilityForLine = async ({
             Number(wipAddBackBySku.get(Number(normalizedSkuId)) || 0),
         );
       }
-      const requiredPairs = Number(producedPairs);
+      const requiredPairs = Number(requirementPairs);
       const directDeficitPairs = Math.max(0, requiredPairs - availablePairs);
       let convertiblePairs = 0;
       let conversionSources = [];
@@ -7853,7 +8078,7 @@ const resolveDcvAvailabilityForLine = async ({
     const sfgRequirements = buildSfgRequirementsForStage({
       bomProfile,
       stageId: resolvedStageId,
-      producedPairs,
+      producedPairs: requirementPairs,
       lineNo: null,
       skuLabel,
     });
@@ -7942,6 +8167,8 @@ const resolveDcvAvailabilityForLine = async ({
       dept_id: Number(normalizedDeptId),
       stage_id: Number(resolvedStageId),
       produced_pairs: Number(producedPairs),
+      sibling_pairs: Number(normalizedSiblingPairs),
+      required_pairs: Number(requirementPairs),
       unit_code: String(selectedUnit.code || "")
         .trim()
         .toUpperCase(),

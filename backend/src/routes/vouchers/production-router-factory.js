@@ -325,6 +325,7 @@ const createProductionVoucherRouter = ({
           unitCode: req.query?.unit,
           voucherDate: req.query?.voucher_date,
           voucherId: req.query?.voucher_id,
+          siblingPairs: req.query?.sibling_pairs,
         });
         return res.json(result || { status: "OK" });
       } catch (err) {
@@ -431,9 +432,7 @@ const createProductionVoucherRouter = ({
 
   router.post("/delete", async (req, res, next) => {
     try {
-      const allowDeleteNow =
-        allowDelete === true && canVoucherAction(res, scopeKey, "hard_delete");
-      if (!allowDeleteNow) {
+      if (allowDelete !== true) {
         setNotice(res, actionDeniedMessage(res), true);
         return res.redirect(req.baseUrl);
       }
@@ -452,9 +451,18 @@ const createProductionVoucherRouter = ({
       });
 
       if (saved.queuedForApproval) {
-        const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent")
-          : res.locals.t("approval_submitted");
+        let msg;
+        if (saved.negativeStockApprovalReroute === true) {
+          msg = res.locals.t("approval_sent_negative_stock");
+          const approvalReason = String(saved.approvalReason || "").trim();
+          if (approvalReason) {
+            msg = `${msg} ${res.locals.t("reason")}: ${approvalReason}`;
+          }
+        } else {
+          msg = saved.permissionReroute
+            ? res.locals.t("approval_sent")
+            : res.locals.t("approval_submitted");
+        }
         setNotice(res, msg, true);
       } else {
         setNotice(res, res.locals.t("deleted_successfully"));

@@ -364,6 +364,8 @@ const canDo = (req, scopeType, scopeKey, action) => {
 const canApproveVoucherAction = (req, scopeKey) =>
   req?.user?.isAdmin === true || canDo(req, "VOUCHER", scopeKey, "approve");
 
+const canForceStockRollback = (req) => req?.user?.isAdmin === true;
+
 const requiresApprovalForAction = async (trx, voucherTypeCode, action) => {
   return resolveVoucherApprovalRequiredTx({
     trx,
@@ -796,7 +798,7 @@ const addBackRmStockFromLedgerTx = async ({ trx, row }) => {
   await updateQuery;
 };
 
-const removeRmStockFromLedgerTx = async ({ trx, row }) => {
+const removeRmStockFromLedgerTx = async ({ trx, row, allowNegative = false }) => {
   const branchId = toPositiveInt(row?.branch_id);
   const itemId = toPositiveInt(row?.item_id);
   const colorId = normalizeRmDimensionId(row?.color_id);
@@ -832,9 +834,13 @@ const removeRmStockFromLedgerTx = async ({ trx, row }) => {
   const availableQty = Number(existing?.qty || 0);
   const availableValue = Number(existing?.value || 0);
   const nextQtyRaw = roundQty3(availableQty - qty);
-  const nextQty = Math.abs(nextQtyRaw) <= 0.0005 ? 0 : nextQtyRaw;
+  const nextQty = allowNegative
+    ? nextQtyRaw
+    : Math.abs(nextQtyRaw) <= 0.0005
+      ? 0
+      : nextQtyRaw;
   const nextValueRaw = roundCost2(availableValue - value);
-  const nextValue = nextQty === 0 ? 0 : nextValueRaw;
+  const nextValue = allowNegative ? nextValueRaw : nextQty === 0 ? 0 : nextValueRaw;
   const nextWac = computeNonNegativeWac(nextQty, nextValue);
 
   const updateQuery = trx("erp.stock_balance_rm").update({
@@ -917,7 +923,7 @@ const addBackSkuStockFromLedgerTx = async ({ trx, row }) => {
     });
 };
 
-const removeSkuStockFromLedgerTx = async ({ trx, row }) => {
+const removeSkuStockFromLedgerTx = async ({ trx, row, allowNegative = false }) => {
   const branchId = toPositiveInt(row?.branch_id);
   const skuId = toPositiveInt(row?.sku_id);
   const stockState =
@@ -948,7 +954,8 @@ const removeSkuStockFromLedgerTx = async ({ trx, row }) => {
 
   const availableQtyPairs = Number(target?.qty_pairs || 0);
   const availableValue = Number(target?.value || 0);
-  const nextQtyPairs = Number(availableQtyPairs || 0) - Number(qtyPairs || 0);
+  const nextQtyPairsRaw = Number(availableQtyPairs || 0) - Number(qtyPairs || 0);
+  const nextQtyPairs = allowNegative ? nextQtyPairsRaw : nextQtyPairsRaw;
   const nextValueRaw = roundCost2(availableValue - value);
   const nextValue = nextQtyPairs === 0 ? 0 : nextValueRaw;
   const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
@@ -1076,7 +1083,11 @@ const collectInventoryReversalShortfallsTx = async ({ trx, voucherId }) => {
   return shortfalls;
 };
 
-const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
+const rollbackInventoryStockLedgerByVoucherTx = async ({
+  trx,
+  voucherId,
+  allowNegative = false,
+}) => {
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) return;
   if (!(await hasStockLedgerTableTx(trx))) return;
@@ -1120,9 +1131,9 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
 
     if (direction === 1) {
       if (category === "RM") {
-        await removeRmStockFromLedgerTx({ trx, row });
+        await removeRmStockFromLedgerTx({ trx, row, allowNegative });
       } else if (category === "SFG" || category === "FG") {
-        await removeSkuStockFromLedgerTx({ trx, row });
+        await removeSkuStockFromLedgerTx({ trx, row, allowNegative });
       }
       continue;
     }
@@ -1169,7 +1180,11 @@ const ensureInventoryStockInfraTx = async ({ trx, needsRm, needsSku }) => {
 };
 
 // Rebuild opening stock derived data: rollback prior ledger impact and replay approved lines.
-const syncOpeningStockVoucherTx = async ({ trx, voucherId }) => {
+const syncOpeningStockVoucherTx = async ({
+  trx,
+  voucherId,
+  allowNegativeRollback = false,
+}) => {
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) return;
 
@@ -1217,6 +1232,7 @@ const syncOpeningStockVoucherTx = async ({ trx, voucherId }) => {
   await rollbackInventoryStockLedgerByVoucherTx({
     trx,
     voucherId: normalizedVoucherId,
+    allowNegative: allowNegativeRollback === true,
   });
 
   if (String(header.status || "").toUpperCase() !== "APPROVED") return;
@@ -2196,6 +2212,7 @@ const applyInventoryVoucherDeletePayloadTx = async ({
   voucherId,
   voucherTypeCode,
   approverId,
+  allowNegativeRollback = false,
 }) => {
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) throw new HttpError(400, "Invalid voucher id");
@@ -2214,10 +2231,10 @@ const applyInventoryVoucherDeletePayloadTx = async ({
   });
 
   await syncVoucherGlPostingTx({ trx, voucherId: normalizedVoucherId });
-  await ensureInventoryVoucherDerivedDataTx({
+  await rollbackInventoryStockLedgerByVoucherTx({
     trx,
     voucherId: normalizedVoucherId,
-    voucherTypeCode,
+    allowNegative: allowNegativeRollback === true,
   });
 };
 
@@ -2318,6 +2335,7 @@ const deleteOpeningStockVoucher = async ({
       voucherId: existing.id,
       voucherTypeCode,
       approverId: req.user.id,
+      allowNegativeRollback: canForceStockRollback(req),
     });
 
     return {
@@ -3567,7 +3585,11 @@ const upsertStockCountAdjustmentExtensionsTx = async ({
   }
 };
 
-const syncStockCountAdjustmentVoucherTx = async ({ trx, voucherId }) => {
+const syncStockCountAdjustmentVoucherTx = async ({
+  trx,
+  voucherId,
+  allowNegativeRollback = false,
+}) => {
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) return;
 
@@ -3621,6 +3643,7 @@ const syncStockCountAdjustmentVoucherTx = async ({ trx, voucherId }) => {
   await rollbackInventoryStockLedgerByVoucherTx({
     trx,
     voucherId: normalizedVoucherId,
+    allowNegative: allowNegativeRollback === true,
   });
 
   if (String(header.status || "").toUpperCase() !== "APPROVED") return;
@@ -4330,11 +4353,19 @@ const deleteStockCountAdjustmentVoucher = async ({
       trx,
       existing.reason_code_id,
     );
+    const negativeStockRouting = await resolveNegativeStockRoutingTx({
+      trx,
+      voucherTypeCode,
+      canApproveVoucherAction: canApprove,
+      detectRisk: () =>
+        collectInventoryReversalShortfallsTx({ trx, voucherId: existing.id }),
+    });
     const queuedForApproval =
       !canDelete ||
       (isPhysicalCount
         ? policyRequiresApproval
-        : policyRequiresApproval && !canApprove);
+        : policyRequiresApproval && !canApprove) ||
+      negativeStockRouting.queueForApproval;
 
     if (queuedForApproval) {
       const approvalRequestId = await createApprovalRequest({
@@ -4350,6 +4381,9 @@ const deleteStockCountAdjustmentVoucher = async ({
           voucher_no: existing.voucher_no,
           voucher_type_code: voucherTypeCode,
           permission_reroute: !canDelete,
+          negative_stock_approval_reroute:
+            negativeStockRouting.negativeStockApprovalReroute,
+          approval_reason: negativeStockRouting.approvalReason,
         },
       });
 
@@ -4360,6 +4394,9 @@ const deleteStockCountAdjustmentVoucher = async ({
         approvalRequestId,
         queuedForApproval: true,
         permissionReroute: !canDelete,
+        negativeStockApprovalReroute:
+          negativeStockRouting.negativeStockApprovalReroute,
+        approvalReason: negativeStockRouting.approvalReason,
         deleted: false,
       };
     }
@@ -4378,6 +4415,7 @@ const deleteStockCountAdjustmentVoucher = async ({
       voucherId: existing.id,
       voucherTypeCode,
       approverId: req.user.id,
+      allowNegativeRollback: canForceStockRollback(req),
     });
 
     return {
@@ -4942,19 +4980,28 @@ const ensureInventoryVoucherDerivedDataTx = async ({
   trx,
   voucherId,
   voucherTypeCode,
+  allowNegativeRollback = false,
 }) => {
   const normalizedVoucherTypeCode = String(voucherTypeCode || "")
     .trim()
     .toUpperCase();
   if (normalizedVoucherTypeCode === INVENTORY_VOUCHER_TYPES.openingStock) {
-    await syncOpeningStockVoucherTx({ trx, voucherId });
+    await syncOpeningStockVoucherTx({
+      trx,
+      voucherId,
+      allowNegativeRollback,
+    });
     return;
   }
 
   if (
     normalizedVoucherTypeCode === INVENTORY_VOUCHER_TYPES.stockCountAdjustment
   ) {
-    await syncStockCountAdjustmentVoucherTx({ trx, voucherId });
+    await syncStockCountAdjustmentVoucherTx({
+      trx,
+      voucherId,
+      allowNegativeRollback,
+    });
   }
 };
 
@@ -4963,6 +5010,7 @@ const applyInventoryVoucherUpdatePayloadTx = async ({
   voucherId,
   voucherTypeCode,
   payload = {},
+  allowNegativeRollback = false,
 }) => {
   const normalizedVoucherTypeCode = String(voucherTypeCode || "")
     .trim()
@@ -5006,6 +5054,7 @@ const applyInventoryVoucherUpdatePayloadTx = async ({
     trx,
     voucherId,
     voucherTypeCode,
+    allowNegativeRollback,
   });
 };
 

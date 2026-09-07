@@ -272,11 +272,6 @@ const createReturnableVoucherRouter = ({
 
   router.post("/delete", async (req, res, next) => {
     try {
-      if (!canVoucherAction(res, scopeKey, "hard_delete")) {
-        setNotice(res, actionDeniedMessage(res), true);
-        return res.redirect(req.baseUrl);
-      }
-
       const voucherId = Number(req.body?.voucher_id || 0);
       if (!Number.isInteger(voucherId) || voucherId <= 0) {
         setNotice(res, res.locals.t("error_invalid_id"), true);

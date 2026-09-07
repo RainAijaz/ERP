@@ -254,9 +254,18 @@ router.post("/delete", async (req, res, next) => {
     });
 
     if (saved.queuedForApproval) {
-      const msg = saved.permissionReroute
-        ? res.locals.t("approval_sent") 
-        : res.locals.t("approval_submitted");
+      let msg;
+      if (saved.negativeStockApprovalReroute === true) {
+        msg = res.locals.t("approval_sent_negative_stock");
+        const approvalReason = String(saved.approvalReason || "").trim();
+        if (approvalReason) {
+          msg = `${msg} ${res.locals.t("reason")}: ${approvalReason}`;
+        }
+      } else {
+        msg = saved.permissionReroute
+          ? res.locals.t("approval_sent")
+          : res.locals.t("approval_submitted");
+      }
       setNotice(res, msg, true);
     } else {
       setNotice(

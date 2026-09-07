@@ -485,6 +485,8 @@ const canDo = (req, scopeType, scopeKey, action) => {
 const canApproveVoucherAction = (req, scopeKey) =>
   req?.user?.isAdmin === true || canDo(req, "VOUCHER", scopeKey, "approve");
 
+const canForceStockRollback = (req) => req?.user?.isAdmin === true;
+
 // Detect if any sale lines in the validated payload would take stock below zero.
 // For EDIT mode, pass currentVoucherId so its existing committed pairs are added back
 // before comparing against the new quantities.
@@ -3080,7 +3082,11 @@ const removeSalesSkuFromLedgerTx = async ({ trx, row }) => {
     });
 };
 
-const rollbackSalesStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
+const rollbackSalesStockLedgerByVoucherTx = async ({
+  trx,
+  voucherId,
+  allowNegative = false,
+}) => {
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) return;
   if (!(await hasStockLedgerTableTx(trx))) return;
@@ -3107,7 +3113,7 @@ const rollbackSalesStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
       continue;
     }
     if (direction === 1) {
-      await removeSalesSkuFromLedgerTx({ trx, row });
+      await removeSalesSkuFromLedgerTx({ trx, row, allowNegative });
       continue;
     }
     throw new HttpError(
@@ -3123,7 +3129,12 @@ const rollbackSalesStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
   }
 };
 
-const syncSalesVoucherStockTx = async ({ trx, voucherId, voucherTypeCode }) => {
+const syncSalesVoucherStockTx = async ({
+  trx,
+  voucherId,
+  voucherTypeCode,
+  allowNegativeRollback = false,
+}) => {
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) return;
   const normalizedVoucherTypeCode = String(voucherTypeCode || "")
@@ -3141,6 +3152,7 @@ const syncSalesVoucherStockTx = async ({ trx, voucherId, voucherTypeCode }) => {
   await rollbackSalesStockLedgerByVoucherTx({
     trx,
     voucherId: normalizedVoucherId,
+    allowNegative: allowNegativeRollback === true,
   });
   if (String(header.status || "").toUpperCase() !== "APPROVED") return;
 
@@ -3222,6 +3234,7 @@ const ensureSalesVoucherDerivedDataTx = async ({
   trx,
   voucherId,
   voucherTypeCode,
+  allowNegativeRollback = false,
 }) => {
   const normalizedVoucherTypeCode = String(voucherTypeCode || "")
     .trim()
@@ -3233,6 +3246,7 @@ const ensureSalesVoucherDerivedDataTx = async ({
     trx,
     voucherId,
     voucherTypeCode: normalizedVoucherTypeCode,
+    allowNegativeRollback,
   });
   await writeBranchSaleCommissionTx({ trx, voucherId });
 };
@@ -3760,6 +3774,7 @@ const deleteSalesVoucher = async ({
         trx,
         voucherId: existing.id,
         voucherTypeCode,
+        allowNegativeRollback: canForceStockRollback(req),
       });
       // Deleted directly: resolve any lingering PENDING approval to REJECTED so it
       // leaves the Pending Approvals page.
@@ -3828,6 +3843,7 @@ const applySalesVoucherDeletePayloadTx = async ({
   voucherId,
   voucherTypeCode,
   approverId,
+  allowNegativeRollback = false,
 }) => {
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) throw new HttpError(400, "Invalid voucher id");
@@ -3850,6 +3866,7 @@ const applySalesVoucherDeletePayloadTx = async ({
     trx,
     voucherId: normalizedVoucherId,
     voucherTypeCode,
+    allowNegativeRollback,
   });
 };
 
@@ -4550,6 +4567,7 @@ const applySalesVoucherUpdatePayloadTx = async ({
   voucherTypeCode,
   payload,
   req,
+  allowNegativeRollback = false,
 }) => {
   const validated = await validateSalesPayloadTx({
     trx,
@@ -4606,6 +4624,7 @@ const applySalesVoucherUpdatePayloadTx = async ({
     trx,
     voucherId,
     voucherTypeCode,
+    allowNegativeRollback,
   });
 };
 

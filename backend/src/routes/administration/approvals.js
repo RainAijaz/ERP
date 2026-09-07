@@ -223,6 +223,7 @@ const applyVoucherApprovalChangeTx = async ({
         voucherId,
         voucherTypeCode: existingVoucherTypeCode,
         approverId,
+        allowNegativeRollback: approvalReq?.user?.isAdmin === true,
       });
       return;
     }
@@ -236,6 +237,7 @@ const applyVoucherApprovalChangeTx = async ({
         voucherId,
         voucherTypeCode: existingVoucherTypeCode,
         approverId,
+        allowNegativeRollback: approvalReq?.user?.isAdmin === true,
       });
       return;
     }
@@ -248,6 +250,7 @@ const applyVoucherApprovalChangeTx = async ({
         voucherId,
         voucherTypeCode: existingVoucherTypeCode,
         approverId,
+        allowNegativeRollback: approvalReq?.user?.isAdmin === true,
       });
       return;
     }
@@ -258,6 +261,7 @@ const applyVoucherApprovalChangeTx = async ({
         voucherId,
         voucherTypeCode: existingVoucherTypeCode,
         approverId,
+        allowNegativeRollback: approvalReq?.user?.isAdmin === true,
       });
       return;
     }
@@ -352,6 +356,7 @@ const applyVoucherApprovalChangeTx = async ({
         trx,
         voucherId,
         voucherTypeCode,
+        allowNegativeRollback: approvalReq?.user?.isAdmin === true,
       });
     }
     if (isInventoryVoucherTypeCode(voucherTypeCode)) {
@@ -360,6 +365,7 @@ const applyVoucherApprovalChangeTx = async ({
         trx,
         voucherId,
         voucherTypeCode,
+        allowNegativeRollback: approvalReq?.user?.isAdmin === true,
       });
     }
     if (
@@ -511,6 +517,7 @@ const applyVoucherApprovalChangeTx = async ({
       voucherTypeCode,
       payload,
       req: approvalReq,
+      allowNegativeRollback: approvalReq?.user?.isAdmin === true,
     });
   }
 
@@ -521,6 +528,7 @@ const applyVoucherApprovalChangeTx = async ({
       voucherId,
       voucherTypeCode,
       payload,
+      allowNegativeRollback: approvalReq?.user?.isAdmin === true,
     });
   }
   if (

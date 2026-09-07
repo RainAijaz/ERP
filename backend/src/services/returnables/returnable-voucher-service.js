@@ -1416,6 +1416,64 @@ const reverseReturnableRmPostingTx = async ({
   });
 };
 
+const collectReturnableReceiptDeleteShortfallsTx = async ({
+  trx,
+  branchId,
+  voucherId,
+}) => {
+  const normalizedBranchId = toPositiveInt(branchId);
+  const normalizedVoucherId = toPositiveInt(voucherId);
+  if (!normalizedBranchId || !normalizedVoucherId) return [];
+
+  const lines = await loadPostedReceiptRmLinesTx(trx, normalizedVoucherId);
+  if (!lines.length) return [];
+
+  const supportsVariantDimensions = await stockBalanceRmHasDimensionsTx(trx);
+  const claimed = new Map();
+  const shortfalls = [];
+
+  for (const line of lines) {
+    const itemId = toPositiveInt(line.item_id);
+    if (!itemId) continue;
+    const colorId = normalizeDimensionId(line.color_id);
+    const sizeId = normalizeDimensionId(line.size_id);
+    const key = `${itemId}:${colorId || 0}:${sizeId || 0}`;
+    const identity = buildRmStockIdentity({
+      branchId: normalizedBranchId,
+      stockState: "ON_HAND",
+      itemId,
+      colorId,
+      sizeId,
+    });
+    const query = trx("erp.stock_balance_rm")
+      .select("qty")
+      .where({
+        branch_id: identity.branchId,
+        stock_state: identity.stockState,
+        item_id: identity.itemId,
+      });
+    if (supportsVariantDimensions) {
+      query
+        .whereRaw("COALESCE(color_id, 0) = ?", [Number(colorId || 0)])
+        .whereRaw("COALESCE(size_id, 0) = ?", [Number(sizeId || 0)]);
+    }
+    const balance = await query.first();
+    const available = roundBalanceQty(balance?.qty);
+    const qty = roundBalanceQty(line.qty);
+    const totalClaimed = roundBalanceQty(Number(claimed.get(key) || 0) + qty);
+    claimed.set(key, totalClaimed);
+    if (available + 0.0005 >= totalClaimed) continue;
+    shortfalls.push({
+      line_no: null,
+      item_name: line.item_name || `RM item #${itemId}`,
+      short_qty: roundBalanceQty(totalClaimed - available),
+      available_qty: available,
+    });
+  }
+
+  return shortfalls;
+};
+
 const buildOutwardLineRow = (line, lineIdMap) => ({
   voucher_line_id: lineIdMap.get(Number(line.line_no)),
   asset_id: line.asset_id,
@@ -2406,8 +2464,28 @@ const deleteReturnableVoucher = async ({
       voucherTypeCode,
       "delete",
     );
+    const negativeStockRouting =
+      voucherTypeCode === RETURNABLE_VOUCHER_TYPES.receipt
+        ? await resolveNegativeStockRoutingTx({
+            trx,
+            voucherTypeCode,
+            canApproveVoucherAction: canApprove,
+            detectRisk: () =>
+              collectReturnableReceiptDeleteShortfallsTx({
+                trx,
+                branchId: req.branchId,
+                voucherId: existing.id,
+              }),
+          })
+        : {
+            queueForApproval: false,
+            negativeStockApprovalReroute: false,
+            approvalReason: null,
+          };
     const queuedForApproval =
-      !canDelete || (policyRequiresApproval && !canApprove);
+      !canDelete ||
+      (policyRequiresApproval && !canApprove) ||
+      negativeStockRouting.queueForApproval;
 
     if (queuedForApproval) {
       const approvalRequestId = await createApprovalRequestTx({
@@ -2422,6 +2500,9 @@ const deleteReturnableVoucher = async ({
           voucher_id: existing.id,
           voucher_type_code: voucherTypeCode,
           permission_reroute: !canDelete,
+          negative_stock_approval_reroute:
+            negativeStockRouting.negativeStockApprovalReroute,
+          approval_reason: negativeStockRouting.approvalReason,
         },
       });
 
@@ -2432,6 +2513,9 @@ const deleteReturnableVoucher = async ({
         approvalRequestId,
         queuedForApproval: true,
         permissionReroute: !canDelete,
+        negativeStockApprovalReroute:
+          negativeStockRouting.negativeStockApprovalReroute,
+        approvalReason: negativeStockRouting.approvalReason,
         deleted: false,
       };
     }

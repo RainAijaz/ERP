@@ -3655,6 +3655,164 @@ const collectTransferShortfalls = (voucherTypeCode, validated) =>
     ? collectTransferOutShortfalls(validated)
     : collectTransferInShortfalls(validated);
 
+const resolveLedgerSkuPackedBucketTx = async ({ trx, row }) => {
+  const category = String(row?.category || "").trim().toUpperCase();
+  if (category !== "FG") return false;
+  if (row?.is_packed !== null && row?.is_packed !== undefined) {
+    return row.is_packed === true;
+  }
+  const voucherLineId = toPositiveInt(row?.voucher_line_id);
+  const line = voucherLineId
+    ? await trx("erp.voucher_line").select("meta").where({ id: voucherLineId }).first()
+    : null;
+  const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
+  return normalizeRowStatus(meta.row_status) === "PACKED";
+};
+
+const collectStockTransferReversalShortfallsTx = async ({ trx, voucherId }) => {
+  const normalizedVoucherId = toPositiveInt(voucherId);
+  if (!normalizedVoucherId || !(await hasStockLedgerTableTx(trx))) return [];
+
+  const hasVariantDimensions = await hasStockLedgerVariantDimensionsTx(trx);
+  const selectColumns = [
+    "id",
+    "branch_id",
+    "category",
+    "stock_state",
+    "item_id",
+    "sku_id",
+    "voucher_line_id",
+    "qty",
+    "qty_pairs",
+    "is_packed",
+  ];
+  if (hasVariantDimensions) {
+    selectColumns.splice(selectColumns.length - 1, 0, "color_id", "size_id");
+  }
+
+  const rows = await trx("erp.stock_ledger")
+    .select(selectColumns)
+    .where({ voucher_header_id: normalizedVoucherId, direction: 1 });
+  if (!rows.length) return [];
+
+  const supportsRmVariants = await hasStockBalanceRmVariantDimensionsTx(trx);
+  const rmItemIds = [
+    ...new Set(
+      rows
+        .filter((row) => String(row?.category || "").trim().toUpperCase() === "RM")
+        .map((row) => toPositiveInt(row?.item_id))
+        .filter(Boolean),
+    ),
+  ];
+  const skuIds = [
+    ...new Set(rows.map((row) => toPositiveInt(row?.sku_id)).filter(Boolean)),
+  ];
+  const [rmItemRows, skuRows] = await Promise.all([
+    rmItemIds.length
+      ? trx("erp.items").select("id", "name", "code").whereIn("id", rmItemIds)
+      : [],
+    skuIds.length
+      ? trx("erp.skus").select("id", "sku_code").whereIn("id", skuIds)
+      : [],
+  ]);
+  const rmItemById = new Map(rmItemRows.map((row) => [Number(row.id), row]));
+  const skuCodeById = new Map(
+    skuRows.map((row) => [Number(row.id), row.sku_code]),
+  );
+
+  const buckets = new Map();
+  for (const row of rows) {
+    const category = String(row?.category || "").trim().toUpperCase();
+    const stockState =
+      String(row?.stock_state || "ON_HAND").trim().toUpperCase() || "ON_HAND";
+    if (category === "RM") {
+      const itemId = toPositiveInt(row?.item_id);
+      if (!itemId) continue;
+      const colorId = normalizeRmDimensionId(row?.color_id);
+      const sizeId = normalizeRmDimensionId(row?.size_id);
+      const key = [
+        "RM",
+        row.branch_id,
+        stockState,
+        itemId,
+        colorId || 0,
+        sizeId || 0,
+      ].join(":");
+      const item = rmItemById.get(itemId);
+      const entry = buckets.get(key) || {
+        kind: "RM",
+        row,
+        stockState,
+        itemName: item ? `${item.name} (${item.code})` : `RM item #${itemId}`,
+        total: 0,
+      };
+      entry.total = roundQty3(entry.total + Number(row?.qty || 0));
+      buckets.set(key, entry);
+      continue;
+    }
+
+    if (category !== "FG" && category !== "SFG") continue;
+    const skuId = toPositiveInt(row?.sku_id);
+    if (!skuId) continue;
+    const isPacked = await resolveLedgerSkuPackedBucketTx({ trx, row });
+    const key = ["SKU", row.branch_id, stockState, category, isPacked ? 1 : 0, skuId].join(":");
+    const entry = buckets.get(key) || {
+      kind: "SKU",
+      row,
+      stockState,
+      category,
+      isPacked,
+      itemName: skuCodeById.get(skuId) || `SKU #${skuId}`,
+      total: 0,
+    };
+    entry.total += Number(row?.qty_pairs || 0);
+    buckets.set(key, entry);
+  }
+
+  const shortfalls = [];
+  for (const entry of buckets.values()) {
+    if (!(entry.total > 0)) continue;
+    let available = 0;
+    if (entry.kind === "RM") {
+      const identity = buildRmStockIdentity({
+        branchId: entry.row.branch_id,
+        stockState: entry.stockState,
+        itemId: entry.row.item_id,
+        colorId: entry.row.color_id,
+        sizeId: entry.row.size_id,
+      });
+      const query = trx("erp.stock_balance_rm").select("qty");
+      applyRmStockIdentityWhere({
+        query,
+        identity,
+        supportsVariantDimensions: supportsRmVariants,
+      });
+      const balance = await query.first();
+      available = Number(balance?.qty || 0);
+    } else {
+      const balance = await trx("erp.stock_balance_sku")
+        .select("qty_pairs")
+        .where({
+          branch_id: Number(entry.row.branch_id),
+          stock_state: entry.stockState,
+          category: entry.category,
+          is_packed: entry.isPacked,
+          sku_id: Number(entry.row.sku_id),
+        })
+        .first();
+      available = Number(balance?.qty_pairs || 0);
+    }
+    if (available + 0.0005 >= entry.total) continue;
+    shortfalls.push({
+      line_no: null,
+      item_name: entry.itemName,
+      short_qty: Number((entry.total - available).toFixed(3)),
+      available_qty: Number(available.toFixed(3)),
+    });
+  }
+  return shortfalls;
+};
+
 const toApprovalPayload = ({
   action,
   voucherTypeCode,
@@ -4215,8 +4373,20 @@ const deleteStockTransferVoucher = async ({
       normalizedVoucherTypeCode,
       "delete",
     );
+    const negativeStockRouting = await resolveNegativeStockRoutingTx({
+      trx,
+      voucherTypeCode: normalizedVoucherTypeCode,
+      canApproveVoucherAction: canApprove,
+      detectRisk: () =>
+        collectStockTransferReversalShortfallsTx({
+          trx,
+          voucherId: existing.id,
+        }),
+    });
     const queuedForApproval =
-      !canDelete || (policyRequiresApproval && !canApprove);
+      !canDelete ||
+      (policyRequiresApproval && !canApprove) ||
+      negativeStockRouting.queueForApproval;
 
     if (queuedForApproval) {
       const approvalRequestId = await createApprovalRequestTx({
@@ -4232,6 +4402,9 @@ const deleteStockTransferVoucher = async ({
           voucher_no: existing.voucher_no,
           voucher_type_code: normalizedVoucherTypeCode,
           permission_reroute: !canDelete,
+          negative_stock_approval_reroute:
+            negativeStockRouting.negativeStockApprovalReroute,
+          approval_reason: negativeStockRouting.approvalReason,
         },
       });
       return {
@@ -4241,6 +4414,9 @@ const deleteStockTransferVoucher = async ({
         approvalRequestId,
         queuedForApproval: true,
         permissionReroute: !canDelete,
+        negativeStockApprovalReroute:
+          negativeStockRouting.negativeStockApprovalReroute,
+        approvalReason: negativeStockRouting.approvalReason,
         deleted: false,
       };
     }
