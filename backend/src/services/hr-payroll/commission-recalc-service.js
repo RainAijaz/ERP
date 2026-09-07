@@ -516,6 +516,7 @@ const buildSalesmanPlanRows = async ({ db, input, t }) => {
     const planned = await planSalesmanCommissionRecomputeTx({
       db,
       voucherId: Number(voucher.id),
+      employeeId: input.employeeId,
       t,
     });
     if (!planned) continue;

@@ -633,9 +633,10 @@ const isAutoSalesCommissionLine = (line) => {
 // Self-loading — everything enrichSalesVoucherLines needs is already persisted in
 // voucher_line.meta, and the salesman is on erp.sales_header. That is what makes a
 // retroactive recompute possible without the original request payload.
-const planSalesmanCommissionRecomputeTx = async ({ db, voucherId, t }) => {
+const planSalesmanCommissionRecomputeTx = async ({ db, voucherId, employeeId = null, t }) => {
   const normalizedVoucherId = Number(voucherId);
   if (!Number.isInteger(normalizedVoucherId) || normalizedVoucherId <= 0) return null;
+  const requestedEmployeeId = Number(employeeId || 0);
 
   const header = await db("erp.voucher_header")
     .select(
@@ -655,8 +656,7 @@ const planSalesmanCommissionRecomputeTx = async ({ db, voucherId, t }) => {
     .select("salesman_employee_id")
     .where({ voucher_id: normalizedVoucherId })
     .first();
-  const salesmanEmployeeId = Number(salesHeader?.salesman_employee_id || 0);
-  if (!(salesmanEmployeeId > 0)) return null;
+  const headerSalesmanEmployeeId = Number(salesHeader?.salesman_employee_id || 0);
 
   const allLines = await db("erp.voucher_line")
     .select("id", "line_no", "line_kind", "sku_id", "employee_id", "uom_id", "qty", "rate", "amount", "meta")
@@ -668,7 +668,26 @@ const planSalesmanCommissionRecomputeTx = async ({ db, voucherId, t }) => {
   );
   if (!skuLines.length) return null;
 
-  const employeeLine = allLines.find(isAutoSalesCommissionLine) || null;
+  const autoEmployeeLines = allLines.filter(isAutoSalesCommissionLine);
+  const employeeLine = requestedEmployeeId > 0
+    ? autoEmployeeLines.find((line) => Number(line.employee_id || 0) === requestedEmployeeId) || null
+    : autoEmployeeLines.find((line) => Number(line.employee_id || 0) === headerSalesmanEmployeeId)
+      || autoEmployeeLines[0]
+      || null;
+  const storedSalesmanEmployeeId = Number(employeeLine?.employee_id || 0);
+
+  if (
+    requestedEmployeeId > 0 &&
+    headerSalesmanEmployeeId !== requestedEmployeeId &&
+    !employeeLine
+  ) {
+    return null;
+  }
+
+  const salesmanEmployeeId = requestedEmployeeId > 0
+    ? requestedEmployeeId
+    : headerSalesmanEmployeeId || storedSalesmanEmployeeId;
+  if (!(salesmanEmployeeId > 0)) return null;
 
   // Resolved against the voucher's OWN date and branch, so recalculating a past
   // range applies the rate that was actually in force then rather than today's.
