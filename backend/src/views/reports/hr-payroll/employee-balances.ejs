@@ -7,6 +7,7 @@
   const selectedAsOn = String(filters?.asOn || "");
   const selectedViewMode = String(filters?.viewMode || "summary").toLowerCase() === "detail" ? "detail" : "summary";
   const isDetailView = selectedViewMode === "detail";
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
   const formatNumber = (value, digits = 2) => {
     return formatNumberDisplay(value, { decimals: digits, fallback: "0" });
   };
@@ -61,8 +62,8 @@
         <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('as_on') %></label>
         <input type="date" name="as_on" value="<%= selectedAsOn %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700">
 
-        <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('branch') %></label>
-        <% if (user?.isAdmin) { %>
+        <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= canUseBranchFilter ? t('branches') : t('branch') %></label>
+        <% if (canUseBranchFilter) { %>
           <div
             class="relative"
             data-multi-select
@@ -150,9 +151,9 @@
         <table class="min-w-[860px] w-full text-sm tabular-nums" data-table data-report-table>
           <thead class="bg-slate-100 text-slate-700">
             <tr>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="__sr">SR.NO</th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="entity_code"><%= t('code') %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="entity_name"><%= t('employees') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="__sr">SR.NO</th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="entity_code"><%= t('code') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="entity_name"><%= t('employees') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="amount"><%= t('amount') %></th>
             </tr>
           </thead>
@@ -182,9 +183,9 @@
         <table class="min-w-[860px] w-full text-sm tabular-nums" data-table data-report-table>
           <thead class="bg-slate-100 text-slate-700">
             <tr>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]">SR.NO</th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('code') %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('employees') %> / <%= t('description') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]">SR.NO</th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('code') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('employees') %> / <%= t('description') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('debit') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('credit') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('balance') %></th>

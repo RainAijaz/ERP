@@ -4,8 +4,19 @@ const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const { toBoolean, toIdList } = require("../../utils/report-filter-types");
 const {
+  getReportAllowedBranchIds,
+  normalizeReportBranchIds,
+  reportCanFilterAllBranches,
+} = require("../../utils/report-branch-scope");
+const {
   getUserEntityBlockedSet,
 } = require("../administration/entity-ledger-access-service");
+const {
+  localizedLineDescriptionSql,
+  localizedNarrativeSql,
+  supportsVoucherRemarksUr,
+} = require("../../utils/localized-name");
+const { resolveTranslation } = require("../../middleware/core/locale");
 
 // Employee/Labour ledger access restrictions (per-entity), mirroring the
 // per-account restrictions on the Account Activity Ledger. Admins bypass; every
@@ -38,8 +49,46 @@ const LEDGER_NET_SQL = `(${LEDGER_CREDIT_SQL}) - (${LEDGER_DEBIT_SQL})`;
 // of the generic ledger bucket and show it as its own commission-type row.
 const IS_SALES_COMMISSION_LINE_SQL =
   "COALESCE((vl.meta->>'auto_sales_commission')::boolean, false)";
+// Which labour a ledger row belongs to. Every voucher type carries it on the line, but a
+// DCV cannot: voucher_line allows exactly one entity reference and a DCV line already
+// fills sku_id, so the labour lives beside it in erp.dcv_line (per line, since one DCV
+// may complete several departments worked by different labours), with dcv_header as the
+// fallback for single-department vouchers and anything saved before dcv_line existed.
 const LABOUR_ENTITY_SQL =
   "CASE WHEN vh.voucher_type_code = 'DCV' THEN dcv.labour_id ELSE vl.labour_id END";
+const LABOUR_ENTITY_WITH_DCV_LINE_SQL =
+  "CASE WHEN vh.voucher_type_code = 'DCV' THEN COALESCE(dcvl.labour_id, dcv.labour_id) ELSE vl.labour_id END";
+
+// Guarded because the code may reach a database that has not run the dcv_line migration
+// yet; joining a missing table would break the whole labour ledger, not just this column.
+let dcvLineTableSupport;
+const hasDcvLineTable = async () => {
+  if (typeof dcvLineTableSupport === "boolean") return dcvLineTableSupport;
+  dcvLineTableSupport = await knex.schema
+    .withSchema("erp")
+    .hasTable("dcv_line");
+  return dcvLineTableSupport;
+};
+const resolveLabourEntitySql = async () =>
+  (await hasDcvLineTable())
+    ? LABOUR_ENTITY_WITH_DCV_LINE_SQL
+    : LABOUR_ENTITY_SQL;
+const resolveEntityVoucherScopeContext = async (cfg) => {
+  if (cfg.lineKind !== "LABOUR") {
+    return {
+      supportsDcvLine: false,
+      labourEntitySql: null,
+    };
+  }
+
+  const supportsDcvLine = await hasDcvLineTable();
+  return {
+    supportsDcvLine,
+    labourEntitySql: supportsDcvLine
+      ? LABOUR_ENTITY_WITH_DCV_LINE_SQL
+      : LABOUR_ENTITY_SQL,
+  };
+};
 const AUTO_PAYROLL_VOUCHER_TYPE = "PAYROLL_ACCRUAL";
 const AUTO_PAYROLL_DESCRIPTION = "Monthly salary accrual";
 const AUTO_PAYROLL_DAILY_DESCRIPTION =
@@ -49,6 +98,8 @@ const COMMISSION_TYPE_DESCRIPTIONS = {
   BRANCH_SALE: "Sales Commission (Branch Sale)",
   TRANSFER: "Sales Commission (Transfer)",
   PARTY: "Sales Commission (Party)",
+  PRODUCTION_FG: "Production Commission (Finished Goods)",
+  PRODUCTION_SFG: "Production Commission (Semi-Finished)",
 };
 
 const toPositiveId = (value) => {
@@ -60,6 +111,473 @@ const toAmount = (value, precision = 2) => {
   const num = Number(value || 0);
   if (!Number.isFinite(num)) return 0;
   return Number(num.toFixed(precision));
+};
+
+const parseJsonArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  if (typeof value === "object") return [];
+  try {
+    const parsed = JSON.parse(String(value));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.error("Error in HrPayrollReportService:", err);
+    return [];
+  }
+};
+
+const parseJsonObject = (value) => {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  } catch (err) {
+    console.error("Error in HrPayrollReportService:", err);
+    return {};
+  }
+};
+
+const normalizeCommissionEntries = (linesDetail) =>
+  parseJsonArray(linesDetail).flatMap((line) => {
+    const entries = Array.isArray(line?.entries) ? line.entries : [];
+    return entries
+      .map((entry) => ({
+        ruleId: toPositiveId(entry?.rule_id),
+        basis: String(entry?.basis || ""),
+        rate: Number(entry?.rate || 0),
+        amount: toAmount(entry?.computed_amount, 2),
+      }))
+      .filter((entry) => Math.abs(entry.amount) >= 0.005);
+  });
+
+const commissionTypeLabelKey = (type) =>
+  `commission_type_${String(type || "").toLowerCase()}`;
+
+const normalizeCommissionRuleRows = async ({ ruleIds, locale }) => {
+  const ids = [...new Set(ruleIds.map(toPositiveId).filter(Boolean))];
+  if (!ids.length) return new Map();
+  const localizedName = (alias) =>
+    locale === "ur"
+      ? `COALESCE(NULLIF(${alias}.name_ur, ''), ${alias}.name)`
+      : `${alias}.name`;
+
+  const rows = await knex("erp.employee_commission_rules as ecr")
+    .leftJoin("erp.skus as s", "s.id", "ecr.sku_id")
+    .leftJoin("erp.variants as v", "v.id", "s.variant_id")
+    .leftJoin("erp.items as i", "i.id", "v.item_id")
+    .leftJoin("erp.product_subgroups as sg", "sg.id", "ecr.subgroup_id")
+    .leftJoin("erp.product_groups as pg", "pg.id", "ecr.group_id")
+    .leftJoin("erp.branches as b", "b.id", "ecr.branch_id")
+    .whereIn("ecr.id", ids)
+    .select(
+      "ecr.id",
+      "ecr.apply_on",
+      "ecr.sku_id",
+      "ecr.subgroup_id",
+      "ecr.group_id",
+      "ecr.source_rule_id",
+      "ecr.commission_basis",
+      "ecr.rate_type",
+      "ecr.value",
+      "s.sku_code",
+      knex.raw(`${localizedName("i")} as item_name`),
+      knex.raw(`${localizedName("sg")} as subgroup_name`),
+      knex.raw(`${localizedName("pg")} as group_name`),
+      knex.raw(`${localizedName("b")} as branch_name`),
+      "ecr.branch_id",
+    );
+
+  const result = new Map(rows.map((row) => [Number(row.id), row]));
+  const sourceRuleIds = [
+    ...new Set(rows.map((row) => toPositiveId(row.source_rule_id)).filter(Boolean)),
+  ].filter((id) => !result.has(id));
+  if (sourceRuleIds.length) {
+    const sourceRows = await normalizeCommissionRuleRows({
+      ruleIds: sourceRuleIds,
+      locale,
+    });
+    sourceRows.forEach((row, id) => result.set(id, row));
+  }
+  return result;
+};
+
+const PAIRS_PER_DOZEN = 12;
+
+const normalizePairsFromCommissionLine = (line = {}) => {
+  const meta = parseJsonObject(line.meta);
+  const candidates = [
+    meta.total_pairs,
+    meta.transfer_qty_pairs,
+    line.total_pairs,
+    line.qty,
+  ];
+  const pairs = candidates
+    .map((value) => Number(value))
+    .find((value) => Number.isFinite(value) && value > 0);
+  return pairs || 0;
+};
+
+const loadCommissionSkuContextMap = async ({ skuIds, locale }) => {
+  const ids = [...new Set(skuIds.map(toPositiveId).filter(Boolean))];
+  if (!ids.length) return new Map();
+  const localizedName = (alias) =>
+    locale === "ur"
+      ? `COALESCE(NULLIF(${alias}.name_ur, ''), ${alias}.name)`
+      : `${alias}.name`;
+
+  const rows = await knex("erp.skus as s")
+    .leftJoin("erp.variants as v", "v.id", "s.variant_id")
+    .leftJoin("erp.items as i", "i.id", "v.item_id")
+    .leftJoin("erp.product_subgroups as sg", "sg.id", "i.subgroup_id")
+    .leftJoin("erp.product_groups as pg", "pg.id", "i.group_id")
+    .whereIn("s.id", ids)
+    .select(
+      "s.id as sku_id",
+      "s.sku_code",
+      "i.group_id",
+      "i.subgroup_id",
+      knex.raw(`${localizedName("i")} as item_name`),
+      knex.raw(`${localizedName("sg")} as subgroup_name`),
+      knex.raw(`${localizedName("pg")} as group_name`),
+    );
+
+  return new Map(rows.map((row) => [Number(row.sku_id), row]));
+};
+
+const makeCommissionSummaryRow = ({
+  level,
+  rowType,
+  labelKey,
+  labelText,
+  sortKey,
+  parentKey = null,
+  hierarchyKey = null,
+  commissionType = "",
+}) => ({
+  level,
+  rowType,
+  labelKey,
+  labelText,
+  commissionType,
+  totalDozen: 0,
+  showDozen: true,
+  debit: 0,
+  credit: 0,
+  sortKey,
+  parentKey,
+  hierarchyKey,
+  _quantityKeys: new Set(),
+  _scopeLabels: new Set(),
+  rateLabel: "",
+});
+
+const addAmountToCommissionSummaryRow = (row, amount) => {
+  const normalized = toAmount(amount, 2);
+  if (Math.abs(normalized) < 0.005) return;
+  if (normalized >= 0) {
+    row.credit = toAmount(Number(row.credit || 0) + normalized, 2);
+  } else {
+    row.debit = toAmount(Number(row.debit || 0) + Math.abs(normalized), 2);
+  }
+};
+
+const addDozenToCommissionSummaryRow = (row, fact) => {
+  if (!fact.quantityKey || fact.totalPairs <= 0) return;
+  if (row._quantityKeys.has(fact.quantityKey)) return;
+  row._quantityKeys.add(fact.quantityKey);
+  row.totalDozen = toQty(
+    Number(row.totalDozen || 0) + Number(fact.totalPairs || 0) / PAIRS_PER_DOZEN,
+    3,
+  );
+};
+
+const formatRateSuffix = ({ rateType, rate, locale }) => {
+  const normalizedRateType = String(rateType || "").trim().toLowerCase();
+  const rateLabel = normalizedRateType
+    ? resolveTranslation(locale, `rate_type_${normalizedRateType}`)
+    : "";
+  const normalizedRate = Number(rate);
+  if (!rateLabel || !Number.isFinite(normalizedRate)) return "";
+  return `${rateLabel} - ${toAmount(normalizedRate, 2).toFixed(2)}`;
+};
+
+const formatCommissionScopeName = ({ rule, sku, locale }) => {
+  const t = (key) => resolveTranslation(locale, key);
+  const applyOn = String(rule?.apply_on || "").trim().toUpperCase();
+
+  if (applyOn === "GROUP") {
+    return `${t("apply_on_group")}: ${rule?.group_name || sku?.group_name || "-"}`;
+  }
+  if (applyOn === "SUBGROUP") {
+    return `${t("apply_on_subgroup")}: ${rule?.subgroup_name || sku?.subgroup_name || "-"}`;
+  }
+  if (applyOn === "SKU") {
+    return t("apply_on_sku");
+  }
+
+  const groupName = sku?.group_name || "";
+  return groupName
+    ? `${t("apply_on_group")}: ${groupName}`
+    : t("apply_on_all");
+};
+
+const resolveCommissionScope = ({ fact, rule, sku, locale }) => {
+  const t = (key) => resolveTranslation(locale, key);
+  const applyOn = String(rule?.apply_on || "").trim().toUpperCase();
+  const rateSuffix = formatRateSuffix({
+    rateType: rule?.rate_type,
+    rate: fact.rate,
+    locale,
+  });
+
+  if (applyOn === "GROUP") {
+    const id = Number(rule?.group_id || sku?.group_id || 0) || "unknown";
+    const label = `${t("apply_on_group")}: ${rule?.group_name || sku?.group_name || "-"}`;
+    return {
+      key: `GROUP:${id}:${rule?.rate_type || ""}:${fact.rate}`,
+      labelText: [label, rateSuffix].filter(Boolean).join(" - "),
+    };
+  }
+
+  if (applyOn === "SUBGROUP") {
+    const id = Number(rule?.subgroup_id || sku?.subgroup_id || 0) || "unknown";
+    const label = `${t("apply_on_subgroup")}: ${rule?.subgroup_name || sku?.subgroup_name || "-"}`;
+    return {
+      key: `SUBGROUP:${id}:${rule?.rate_type || ""}:${fact.rate}`,
+      labelText: [label, rateSuffix].filter(Boolean).join(" - "),
+    };
+  }
+
+  if (applyOn === "SKU") {
+    const id = Number(sku?.subgroup_id || rule?.subgroup_id || 0) || "unknown";
+    const label = `${t("apply_on_subgroup")}: ${sku?.subgroup_name || "-"}`;
+    return {
+      key: `SKU_SUBGROUP:${id}:${rule?.rate_type || ""}:${fact.rate}`,
+      labelText: [
+        label,
+        t("apply_on_sku"),
+        rateSuffix,
+      ].filter(Boolean).join(" - "),
+    };
+  }
+
+  const groupId = Number(sku?.group_id || 0) || "unknown";
+  return {
+    key: `GROUP:${groupId}:ALL:${fact.rate || ""}`,
+    labelText: `${t("apply_on_group")}: ${sku?.group_name || t("commission_unclassified")}`,
+  };
+};
+
+const buildArticleCommissionLabel = ({ sku, locale }) => {
+  const t = (key) => resolveTranslation(locale, key);
+  if (!sku) return t("commission_unclassified");
+  const label = [sku.sku_code, sku.item_name].filter(Boolean).join(" - ");
+  return `${t("sku")}: ${label || "-"}`;
+};
+
+const pushCommissionFact = (facts, fact) => {
+  const amount = toAmount(fact.amount, 2);
+  if (Math.abs(amount) < 0.005) return;
+  facts.push({
+    ...fact,
+    amount,
+    skuId: toPositiveId(fact.skuId),
+    ruleId: toPositiveId(fact.ruleId),
+    totalPairs: Number(fact.totalPairs || 0),
+  });
+};
+
+const buildCommissionHierarchyRows = async ({
+  facts,
+  fallbackRows,
+  locale,
+}) => {
+  const skuContextMap = await loadCommissionSkuContextMap({
+    skuIds: facts.map((fact) => fact.skuId),
+    locale,
+  });
+  const ruleContextMap = await normalizeCommissionRuleRows({
+    ruleIds: facts.map((fact) => fact.ruleId),
+    locale,
+  });
+
+  const typeRows = new Map();
+  const scopeRows = new Map();
+  const articleRows = new Map();
+  const ensureTypeRow = (type) => {
+    const key = String(type || "");
+    if (!typeRows.has(key)) {
+      typeRows.set(
+        key,
+        makeCommissionSummaryRow({
+          level: 1,
+          rowType: "commission_type",
+          labelKey: commissionTypeLabelKey(type),
+          labelText: resolveTranslation(locale, commissionTypeLabelKey(type)),
+          sortKey: `1:${key}`,
+          hierarchyKey: key,
+          commissionType: key,
+        }),
+      );
+    }
+    return typeRows.get(key);
+  };
+
+  facts.forEach((fact) => {
+    const type = String(fact.type || "");
+    const rule = fact.ruleId ? ruleContextMap.get(Number(fact.ruleId)) : null;
+    const sourceRule = rule?.source_rule_id
+      ? ruleContextMap.get(Number(rule.source_rule_id))
+      : null;
+    const groupingRule = sourceRule || rule;
+    const sku = fact.skuId ? skuContextMap.get(Number(fact.skuId)) : null;
+    const typeRow = ensureTypeRow(type);
+    addAmountToCommissionSummaryRow(typeRow, fact.amount);
+    addDozenToCommissionSummaryRow(typeRow, fact);
+
+    const scope = resolveCommissionScope({ fact, rule: groupingRule, sku, locale });
+    const rateType = String(groupingRule?.rate_type || rule?.rate_type || "")
+      .trim()
+      .toUpperCase();
+    const rate = Number.isFinite(Number(fact.rate))
+      ? Number(fact.rate)
+      : Number(groupingRule?.value || rule?.value || 0);
+    const branchId = Number(groupingRule?.branch_id || rule?.branch_id || 0) || 0;
+    const scopeKey = [
+      type,
+      "RATE",
+      String(fact.basis || ""),
+      rateType,
+      Number.isFinite(rate) ? rate : "",
+      branchId,
+    ].join("|");
+    if (!scopeRows.has(scopeKey)) {
+      scopeRows.set(
+        scopeKey,
+        makeCommissionSummaryRow({
+          level: 2,
+          rowType: "commission_scope",
+          labelKey: "",
+          labelText: scope.labelText,
+          sortKey: `2:${type}:${rateType}:${rate}`,
+          parentKey: type,
+          hierarchyKey: scopeKey,
+          commissionType: type,
+        }),
+      );
+    }
+    const scopeRow = scopeRows.get(scopeKey);
+    scopeRow._scopeLabels.add(formatCommissionScopeName({
+      rule: groupingRule,
+      sku,
+      locale,
+    }));
+    if (groupingRule?.branch_name) {
+      scopeRow._scopeLabels.add(
+        `${resolveTranslation(locale, "branch")}: ${groupingRule.branch_name}`,
+      );
+    }
+    const rateSuffix = formatRateSuffix({
+      rateType,
+      rate,
+      locale,
+    });
+    scopeRow.labelText = [
+      [...scopeRow._scopeLabels].filter(Boolean).join(", "),
+      rateSuffix,
+    ].filter(Boolean).join(" - ");
+    scopeRow.rateLabel = rateSuffix;
+    addAmountToCommissionSummaryRow(scopeRow, fact.amount);
+    addDozenToCommissionSummaryRow(scopeRow, fact);
+
+    const articleKey = `${scopeKey}|SKU:${fact.skuId || "unknown"}`;
+    if (!articleRows.has(articleKey)) {
+      articleRows.set(
+        articleKey,
+        makeCommissionSummaryRow({
+          level: 3,
+          rowType: "commission_article",
+          labelKey: "",
+          labelText: buildArticleCommissionLabel({ sku, locale }),
+          sortKey: `3:${type}:${scope.labelText}:${sku?.sku_code || ""}`,
+          parentKey: scopeKey,
+          hierarchyKey: articleKey,
+          commissionType: type,
+        }),
+      );
+    }
+    const articleRow = articleRows.get(articleKey);
+    addAmountToCommissionSummaryRow(articleRow, fact.amount);
+    addDozenToCommissionSummaryRow(articleRow, fact);
+  });
+
+  fallbackRows.forEach((fallback) => {
+    const type = String(fallback.type || "");
+    const typeRow = ensureTypeRow(type);
+    typeRow.debit = toAmount(typeRow.debit + Number(fallback.debit || 0), 2);
+    typeRow.credit = toAmount(typeRow.credit + Number(fallback.credit || 0), 2);
+
+    const key = `${type}|fallback`;
+    if (!scopeRows.has(key)) {
+      scopeRows.set(
+        key,
+        makeCommissionSummaryRow({
+          level: 2,
+          rowType: "commission_unclassified",
+          labelKey: "commission_unclassified",
+          labelText: resolveTranslation(locale, "commission_unclassified"),
+          sortKey: `2:${type}:zz_unclassified`,
+          parentKey: type,
+          hierarchyKey: key,
+          commissionType: type,
+        }),
+      );
+    }
+    const row = scopeRows.get(key);
+    row.debit = toAmount(row.debit + Number(fallback.debit || 0), 2);
+    row.credit = toAmount(row.credit + Number(fallback.credit || 0), 2);
+  });
+
+  const result = [];
+  [...typeRows.keys()].sort().forEach((type) => {
+    const typeRow = typeRows.get(type);
+    result.push(typeRow);
+    [...scopeRows.entries()]
+      .filter(([, row]) => row.parentKey === type)
+      .sort((a, b) => String(a.sortKey).localeCompare(String(b.sortKey)))
+      .forEach(([, scopeRow]) => {
+        result.push(scopeRow);
+        [...articleRows.entries()]
+          .filter(([, row]) => row.parentKey === scopeRow.hierarchyKey)
+          .sort((a, b) => String(a.sortKey).localeCompare(String(b.sortKey)))
+          .forEach(([, row]) => result.push(row));
+      });
+  });
+
+  const parentKeys = new Set(
+    [...scopeRows.values(), ...articleRows.values()]
+      .map((row) => row.parentKey)
+      .filter(Boolean),
+  );
+  const childCounts = new Map();
+  [...scopeRows.values(), ...articleRows.values()].forEach((row) => {
+    if (!row.parentKey) return;
+    childCounts.set(row.parentKey, Number(childCounts.get(row.parentKey) || 0) + 1);
+  });
+
+  return result.map((row) => {
+    const { _quantityKeys, _scopeLabels, sortKey, hierarchyKey, ...publicRow } = row;
+    return {
+      ...publicRow,
+      rowKey: hierarchyKey,
+      hasChildren: parentKeys.has(hierarchyKey),
+      childCount: Number(childCounts.get(hierarchyKey) || 0),
+      scopeLabels: [..._scopeLabels],
+    };
+  });
 };
 
 const toQty = (value, precision = 3) => {
@@ -146,9 +664,22 @@ const countDaysExcludingSundays = ({ fromYmd, toYmdValue }) => {
   return Math.max(0, totalDays - sundayCount);
 };
 
-const countDailyAccrualDaysUpTo = ({ employmentStartYmd, asOnYmd }) => {
+// Salary stops accruing the day employment ends. Every accrual helper clamps its
+// upper bound through this, so a leaver's past figures stay untouched while no
+// new period is generated after their last day.
+const capAtEmploymentEnd = (ymd, employmentEndYmd) => {
+  if (!employmentEndYmd) return ymd;
+  if (!ymd) return ymd;
+  return ymd > employmentEndYmd ? employmentEndYmd : ymd;
+};
+
+const countDailyAccrualDaysUpTo = ({
+  employmentStartYmd,
+  asOnYmd,
+  employmentEndYmd = null,
+}) => {
   const startDate = toUtcDateFromYmd(employmentStartYmd);
-  const asOnDate = toUtcDateFromYmd(asOnYmd);
+  const asOnDate = toUtcDateFromYmd(capAtEmploymentEnd(asOnYmd, employmentEndYmd));
   if (!startDate || !asOnDate) return 0;
   if (asOnDate < startDate) return 0;
   return countDaysExcludingSundays({
@@ -157,13 +688,18 @@ const countDailyAccrualDaysUpTo = ({ employmentStartYmd, asOnYmd }) => {
   });
 };
 
-const countMonthlyAccrualsUpTo = ({ employmentStartYmd, asOnYmd }) => {
+const countMonthlyAccrualsUpTo = ({
+  employmentStartYmd,
+  asOnYmd,
+  employmentEndYmd = null,
+}) => {
+  const cappedAsOn = capAtEmploymentEnd(asOnYmd, employmentEndYmd);
   const firstAccrualYmd = getFirstAccrualDateYmd(employmentStartYmd);
-  if (!firstAccrualYmd || asOnYmd < firstAccrualYmd) return 0;
+  if (!firstAccrualYmd || cappedAsOn < firstAccrualYmd) return 0;
   const firstAccrualMonthStart = monthStartUtc(
     toUtcDateFromYmd(firstAccrualYmd),
   );
-  const lastAccrualMonthStart = getLastAccrualMonthStartUtc(asOnYmd);
+  const lastAccrualMonthStart = getLastAccrualMonthStartUtc(cappedAsOn);
   if (!firstAccrualMonthStart || !lastAccrualMonthStart) return 0;
   if (lastAccrualMonthStart < firstAccrualMonthStart) return 0;
   return monthDiff(firstAccrualMonthStart, lastAccrualMonthStart) + 1;
@@ -174,15 +710,17 @@ const buildMonthlyAccrualRowsInRange = ({
   fromYmd,
   toYmdValue,
   monthlyAmount,
+  employmentEndYmd = null,
   idSeed = 0,
 }) => {
   const rows = [];
+  const cappedTo = capAtEmploymentEnd(toYmdValue, employmentEndYmd);
   const firstAccrualYmd = getFirstAccrualDateYmd(employmentStartYmd);
   if (!firstAccrualYmd) return rows;
   const firstAccrualMonthStart = monthStartUtc(
     toUtcDateFromYmd(firstAccrualYmd),
   );
-  const lastAccrualMonthStart = getLastAccrualMonthStartUtc(toYmdValue);
+  const lastAccrualMonthStart = getLastAccrualMonthStartUtc(cappedTo);
   if (!firstAccrualMonthStart || !lastAccrualMonthStart) return rows;
   if (lastAccrualMonthStart < firstAccrualMonthStart) return rows;
   let cursor = firstAccrualMonthStart;
@@ -215,12 +753,13 @@ const buildDailyAccrualRowsInRange = ({
   fromYmd,
   toYmdValue,
   dailyAmount,
+  employmentEndYmd = null,
   idSeed = 0,
 }) => {
   const rows = [];
   const startDate = toUtcDateFromYmd(employmentStartYmd);
   const fromDate = toUtcDateFromYmd(fromYmd);
-  const toDate = toUtcDateFromYmd(toYmdValue);
+  const toDate = toUtcDateFromYmd(capAtEmploymentEnd(toYmdValue, employmentEndYmd));
   if (!startDate || !fromDate || !toDate) return rows;
   if (dailyAmount <= 0) return rows;
 
@@ -258,11 +797,25 @@ const loadEmployeeAccrualProfiles = async ({ entityIds = [] }) => {
     ),
   ];
   if (!normalizedIds.length) return new Map();
+  // Deliberately NOT filtered on status='active'. That filter was applied at
+  // load time, so flipping a leaver to inactive erased their entire historical
+  // accrual retroactively — their past balances changed. The employment window
+  // is what ends accrual now; status only governs whether they can be picked in
+  // new transactions.
   const employeeRows = await knex("erp.employees as e")
-    .select("e.id", "e.basic_salary", "e.created_at", "e.payroll_type")
+    .select(
+      "e.id",
+      "e.basic_salary",
+      "e.created_at",
+      "e.payroll_type",
+      "e.employment_start_date",
+      "e.employment_end_date",
+    )
     .whereIn("e.id", normalizedIds)
     .whereIn("e.payroll_type", ["MONTHLY", "DAILY"])
-    .whereRaw("lower(trim(coalesce(e.status, ''))) = 'active'");
+    .whereRaw(
+      "(lower(trim(coalesce(e.status, ''))) = 'active' OR e.employment_end_date IS NOT NULL)",
+    );
 
   const allowanceRows = await knex("erp.employee_allowance_rules as ar")
     .select("ar.employee_id")
@@ -362,9 +915,14 @@ const loadEmployeeAccrualProfiles = async ({ entityIds = [] }) => {
         Number.isFinite(dailyAllowanceOnly) && dailyAllowanceOnly > 0
           ? dailyAllowanceOnly
           : 0,
+      // Falls back to created_at so rows predating the employment-window
+      // migration keep accruing exactly as they did before.
       employmentStartYmd:
-        toLocalDateOnly(row.created_at || new Date()) ||
+        toLocalDateOnly(row.employment_start_date || row.created_at || new Date()) ||
         toLocalDateOnly(new Date()),
+      employmentEndYmd: row.employment_end_date
+        ? toLocalDateOnly(row.employment_end_date)
+        : null,
     });
   });
   return result;
@@ -416,18 +974,18 @@ const toIdListWithAll = (value) => {
   return toIdList(tokens);
 };
 
-const parseEntityBalanceFilters = ({ req, input = {} }) => {
+const parseEntityBalanceFilters = ({ req, input = {}, scopeKey }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(req, scopeKey);
   const today = toLocalDateOnly(new Date());
   const parsedAsOn = parseDateFilter(input.as_on, today);
   let asOn = parsedAsOn.value;
   if (!asOn) asOn = today;
 
-  const branchIdsFromInput = toIdList(input.branch_ids);
-  const branchIds = req.user?.isAdmin
-    ? branchIdsFromInput
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   const viewMode =
     String(input.view_mode || "summary")
@@ -439,6 +997,7 @@ const parseEntityBalanceFilters = ({ req, input = {} }) => {
   return {
     asOn,
     branchIds,
+    canFilterAllBranches,
     viewMode,
     reportLoaded: toBoolean(input.load_report, false),
     invalidAsOnDate: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
@@ -446,7 +1005,8 @@ const parseEntityBalanceFilters = ({ req, input = {} }) => {
   };
 };
 
-const parseEntityLedgerFilters = ({ req, input = {} }) => {
+const parseEntityLedgerFilters = ({ req, input = {}, scopeKey }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(req, scopeKey);
   const now = new Date();
   const fromDate = new Date(now);
   fromDate.setDate(fromDate.getDate() - 30);
@@ -465,18 +1025,17 @@ const parseEntityLedgerFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  const branchIdsFromInput = toIdListWithAll(input.branch_ids);
   const ledgerView =
     String(input.ledger_view || "summary")
       .trim()
       .toLowerCase() === "detail"
       ? "detail"
       : "summary";
-  const branchIds = req.user?.isAdmin
-    ? branchIdsFromInput
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   return {
     from,
@@ -484,6 +1043,7 @@ const parseEntityLedgerFilters = ({ req, input = {} }) => {
     entityId: toPositiveId(input.entity_id),
     ledgerView,
     branchIds,
+    canFilterAllBranches,
     reportLoaded: toBoolean(input.load_report, false),
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
     invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
@@ -579,6 +1139,7 @@ const applyEntityVoucherScope = ({
   cfg,
   entityId,
   includeEntitySelect = false,
+  scopeContext = null,
 }) => {
   if (cfg.lineKind !== "LABOUR") {
     return query
@@ -592,11 +1153,21 @@ const applyEntityVoucherScope = ({
       });
   }
 
+  const supportsDcvLine = Boolean(scopeContext?.supportsDcvLine);
+  const labourEntitySql = scopeContext?.labourEntitySql;
+  if (!labourEntitySql) {
+    throw new Error("Labour voucher scope context is required");
+  }
+
   return query
     .leftJoin("erp.dcv_header as dcv", "dcv.voucher_id", "vh.id")
     .modify((qb) => {
+      if (supportsDcvLine)
+        qb.leftJoin("erp.dcv_line as dcvl", "dcvl.voucher_line_id", "vl.id");
+    })
+    .modify((qb) => {
       if (includeEntitySelect)
-        qb.select(knex.raw(`${LABOUR_ENTITY_SQL} as entity_id`));
+        qb.select(knex.raw(`${labourEntitySql} as entity_id`));
     })
     .where(function whereLabourRows() {
       this.where(function whereDirectLabourLine() {
@@ -604,32 +1175,49 @@ const applyEntityVoucherScope = ({
       }).orWhere(function whereDcvSkuLine() {
         this.where("vh.voucher_type_code", "DCV")
           .andWhere("vl.line_kind", "SKU")
-          .whereNotNull("dcv.labour_id");
+          .modify((inner) => {
+            // A multi-department DCV credits each line's own labour; only fall back to
+            // the header labour for lines that have no dcv_line row of their own.
+            if (supportsDcvLine) {
+              inner.where(function whereAnyLabour() {
+                this.whereNotNull("dcvl.labour_id").orWhereNotNull(
+                  "dcv.labour_id",
+                );
+              });
+              return;
+            }
+            inner.whereNotNull("dcv.labour_id");
+          });
       });
     })
     .modify((qb) => {
       if (entityId != null)
-        qb.andWhereRaw(`${LABOUR_ENTITY_SQL} = ?`, [entityId]);
+        qb.andWhereRaw(`${labourEntitySql} = ?`, [entityId]);
     });
 };
 
 const loadLedgerOptions = async ({ req, filters, kind, blockedEntityIds }) => {
+  const locale = String(req?.locale || "en").toLowerCase();
+  const branchNameSql =
+    locale === "ur"
+      ? "COALESCE(NULLIF(branches.name_ur, ''), branches.name)"
+      : "branches.name";
   const cfg = getEntityConfig(kind);
   const blocked =
     blockedEntityIds instanceof Set
       ? blockedEntityIds
       : await resolveBlockedEntityIds({ req, kind });
-  const scopedBranchIds = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
-  const branches = req.user?.isAdmin
+  const branches = canUseAllBranches
     ? await knex("erp.branches")
-        .select("id", "name")
+        .select("id", knex.raw(`${branchNameSql} as name`))
         .where({ is_active: true })
-        .orderBy("name", "asc")
+        .orderByRaw(`${branchNameSql} asc`)
     : (req.branchOptions || []).map((row) => ({
         id: Number(row.id),
         name: row.name,
@@ -667,9 +1255,30 @@ const getLedgerRows = async ({
   kind,
   blockedEntityIds,
 }) => {
+  const locale = String(req?.locale || "en").toLowerCase();
+  const localizedName = (alias) =>
+    locale === "ur"
+      ? `COALESCE(NULLIF(${alias}.name_ur, ''), ${alias}.name)`
+      : `${alias}.name`;
+  const hasRemarksUr = await supportsVoucherRemarksUr();
+  const lineDescription = localizedLineDescriptionSql(locale, "vl");
+  const voucherRemarks = localizedNarrativeSql({ locale, hasRemarksUr });
+  // These labels are built inside SQL, so they cannot go through the view's
+  // t(); resolve them here and inline them as quoted literals instead. The
+  // words come from the static dictionary, but escape anyway so a future
+  // translation carrying an apostrophe cannot break the statement.
+  const sqlLabel = (key) =>
+    `'${String(resolveTranslation(locale, key)).replace(/'/g, "''")} '`;
+  const skuLabel = sqlLabel("sku");
+  const labourLabel = sqlLabel("labour");
+  const employeeLabel = sqlLabel("employee");
+  const creditSaleLabel = `'${String(resolveTranslation(locale, "credit_sale")).replace(/'/g, "''")} #'`;
   const cfg = getEntityConfig(kind);
+  const voucherScopeContext = await resolveEntityVoucherScopeContext(cfg);
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
   const includeBranchColumn = Boolean(
-    req.user?.isAdmin && filters.branchIds.length !== 1,
+    canUseAllBranches && filters.branchIds.length !== 1,
   );
 
   const blocked =
@@ -699,11 +1308,9 @@ const getLedgerRows = async ({
     };
   }
 
-  const scopedBranchIds = req.user?.isAdmin
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
   const selectedEntity = (options.entities || []).find(
     (row) => Number(row.id) === Number(filters.entityId),
@@ -722,6 +1329,7 @@ const getLedgerRows = async ({
     query: openingQuery,
     cfg,
     entityId: filters.entityId,
+    scopeContext: voucherScopeContext,
   });
   const openingRow = await openingQuery.first();
 
@@ -766,21 +1374,21 @@ const getLedgerRows = async ({
       "vh.voucher_type_code",
       "vh.voucher_no",
       "vh.book_no as bill_number",
-      "b.name as branch_name",
+      knex.raw(`${localizedName("b")} as branch_name`),
       knex.raw(`COALESCE(
-        NULLIF(vl.meta->>'description',''),
-        NULLIF(vh.remarks, ''),
+        ${lineDescription},
+        ${voucherRemarks},
         CASE
           WHEN vl.line_kind = 'SKU' THEN NULLIF(
             CONCAT(
-              'SKU ',
+              ${skuLabel},
               COALESCE(s.sku_code, ''),
-              CASE WHEN COALESCE(i.name, '') = '' THEN '' ELSE CONCAT(' - ', i.name) END
+              CASE WHEN COALESCE(${localizedName("i")}, '') = '' THEN '' ELSE CONCAT(' - ', ${localizedName("i")}) END
             ),
-            'SKU '
+            ${skuLabel}
           )
-          WHEN vl.line_kind = 'LABOUR' THEN NULLIF(CONCAT('Labour ', COALESCE(l.name, '')), 'Labour ')
-          WHEN vl.line_kind = 'EMPLOYEE' THEN NULLIF(CONCAT('Employee ', COALESCE(e.name, '')), 'Employee ')
+          WHEN vl.line_kind = 'LABOUR' THEN NULLIF(CONCAT(${labourLabel}, COALESCE(${localizedName("l")}, '')), ${labourLabel})
+          WHEN vl.line_kind = 'EMPLOYEE' THEN NULLIF(CONCAT(${employeeLabel}, COALESCE(${localizedName("e")}, '')), ${employeeLabel})
           ELSE NULL
         END,
         CONCAT(vh.voucher_type_code, ' #', vh.voucher_no::text)
@@ -809,9 +1417,38 @@ const getLedgerRows = async ({
     query: detailsQuery,
     cfg,
     entityId: filters.entityId,
+    scopeContext: voucherScopeContext,
   });
 
   const rawRows = await detailsQuery;
+  let salesCommissionBreakdownRows = [];
+  if (kind === "employee") {
+    const salesCommissionVoucherIds = [
+      ...new Set(
+        rawRows
+          .filter((row) => row.is_sales_commission)
+          .map((row) => Number(row.voucher_id || 0))
+          .filter((id) => Number.isInteger(id) && id > 0),
+      ),
+    ];
+    if (salesCommissionVoucherIds.length) {
+      salesCommissionBreakdownRows = await knex("erp.voucher_line as sku_vl")
+        .join("erp.voucher_header as vh", "vh.id", "sku_vl.voucher_header_id")
+        .join("erp.sales_header as sh", "sh.voucher_id", "vh.id")
+        .whereIn("vh.id", salesCommissionVoucherIds)
+        .andWhere("vh.status", "APPROVED")
+        .andWhere("sku_vl.line_kind", "SKU")
+        .andWhere("sh.salesman_employee_id", filters.entityId)
+        .select(
+          "sku_vl.id",
+          "vh.id as voucher_id",
+          "sku_vl.sku_id",
+          "sku_vl.line_no",
+          "sku_vl.qty",
+          "sku_vl.meta",
+        );
+    }
+  }
   let openingBalance = toAmount(
     Number(openingRow?.opening_balance || 0) +
       staffOpeningBalance +
@@ -833,7 +1470,7 @@ const getLedgerRows = async ({
       "vh.book_no as bill_number",
       "b2.name as branch_name",
       knex.raw(
-        `COALESCE(NULLIF(vh.remarks, ''), CONCAT('Credit Sale #', vh.voucher_no::text)) as description`,
+        `COALESCE(${voucherRemarks}, CONCAT(${creditSaleLabel}, vh.voucher_no::text)) as description`,
       ),
       knex.raw("0 as qty"),
       "ge.dr",
@@ -858,6 +1495,7 @@ const getLedgerRows = async ({
         "b3.name as branch_name",
         "cl.commission_type",
         "cl.total_amount",
+        "cl.lines_detail",
       );
   }
 
@@ -880,6 +1518,7 @@ const getLedgerRows = async ({
         : null;
       const openingAccrualCount = countMonthlyAccrualsUpTo({
         employmentStartYmd: accrualMeta.employmentStartYmd,
+        employmentEndYmd: accrualMeta.employmentEndYmd,
         asOnYmd: openingAsOnDate || filters.from,
       });
       if (openingAccrualCount > 0) {
@@ -892,6 +1531,7 @@ const getLedgerRows = async ({
       }
       syntheticEmployeeRows = buildMonthlyAccrualRowsInRange({
         employmentStartYmd: accrualMeta.employmentStartYmd,
+        employmentEndYmd: accrualMeta.employmentEndYmd,
         fromYmd: filters.from,
         toYmdValue: filters.to,
         monthlyAmount: Number(accrualMeta.monthlyAmount || 0),
@@ -908,6 +1548,7 @@ const getLedgerRows = async ({
         : null;
       const openingAccrualCount = countDailyAccrualDaysUpTo({
         employmentStartYmd: accrualMeta.employmentStartYmd,
+        employmentEndYmd: accrualMeta.employmentEndYmd,
         asOnYmd: openingAsOnDate || filters.from,
       });
       if (openingAccrualCount > 0) {
@@ -920,6 +1561,7 @@ const getLedgerRows = async ({
       }
       syntheticEmployeeRows = buildDailyAccrualRowsInRange({
         employmentStartYmd: accrualMeta.employmentStartYmd,
+        employmentEndYmd: accrualMeta.employmentEndYmd,
         fromYmd: filters.from,
         toYmdValue: filters.to,
         dailyAmount: Number(accrualMeta.dailyAmount || 0),
@@ -1091,12 +1733,122 @@ const getLedgerRows = async ({
   // balance as the per-voucher `totals` below (verified in report-service tests).
   let categoryBreakdown = null;
   if (kind === "employee" && filters.ledgerView === "summary") {
-    const commissionByType = new Map();
+    const commissionFacts = [];
+    const commissionFallbackRows = [];
+    const addCommissionFallback = ({ type, debit = 0, credit = 0 }) => {
+      const normalizedDebit = toAmount(debit, 2);
+      const normalizedCredit = toAmount(credit, 2);
+      if (
+        Math.abs(normalizedDebit) < 0.005 &&
+        Math.abs(normalizedCredit) < 0.005
+      ) {
+        return;
+      }
+      commissionFallbackRows.push({
+        type,
+        debit: normalizedDebit,
+        credit: normalizedCredit,
+      });
+    };
+
+    let commissionLineMap = new Map();
+    const commissionVoucherIds = [
+      ...new Set(
+        commissionDetailRows
+          .map((row) => Number(row.voucher_id || 0))
+          .filter((id) => Number.isInteger(id) && id > 0),
+      ),
+    ];
+    if (commissionVoucherIds.length) {
+      const commissionLineRows = await knex("erp.voucher_line as vl")
+        .whereIn("vl.voucher_header_id", commissionVoucherIds)
+        .andWhere("vl.line_kind", "SKU")
+        .select(
+          "vl.voucher_header_id",
+          "vl.line_no",
+          "vl.sku_id",
+          "vl.qty",
+          "vl.meta",
+        );
+      const mappedLines = new Map();
+      commissionLineRows.forEach((line) => {
+        const voucherId = Number(line.voucher_header_id || 0);
+        const lineNo = Number(line.line_no || 0);
+        const skuId = Number(line.sku_id || 0);
+        if (!voucherId || !lineNo) return;
+        mappedLines.set(`${voucherId}|${lineNo}`, line);
+        if (skuId) mappedLines.set(`${voucherId}|${lineNo}|${skuId}`, line);
+      });
+      commissionLineMap = mappedLines;
+    }
+
+    const resolveCommissionLedgerLine = ({ voucherId, line }) => {
+      const lineNo = Number(line?.line_no || 0);
+      const skuId = Number(line?.sku_id || 0);
+      if (!voucherId || !lineNo) return null;
+      return (
+        commissionLineMap.get(`${voucherId}|${lineNo}|${skuId}`) ||
+        commissionLineMap.get(`${voucherId}|${lineNo}`) ||
+        null
+      );
+    };
+
     commissionDetailRows.forEach((row) => {
       const type = String(row.commission_type || "");
-      const current = commissionByType.get(type) || { credit: 0, debit: 0 };
-      current.credit = toAmount(current.credit + Number(row.total_amount || 0), 2);
-      commissionByType.set(type, current);
+      const voucherId = Number(row.voucher_id || 0);
+      const linesDetail = parseJsonArray(row.lines_detail);
+      let expandedTotal = 0;
+
+      linesDetail.forEach((line) => {
+        const entries = normalizeCommissionEntries([line]);
+        const voucherLine = resolveCommissionLedgerLine({ voucherId, line });
+        const sourceLine = voucherLine || line;
+        const skuId = Number(line?.sku_id || sourceLine?.sku_id || 0);
+        const totalPairs = normalizePairsFromCommissionLine(sourceLine);
+        const quantityKey = `ledger:${voucherId || "no-voucher"}:${Number(
+          line?.line_no || sourceLine?.line_no || 0,
+        )}:${skuId || "unknown"}`;
+
+        if (!entries.length && Math.abs(Number(line?.total_amount || 0)) >= 0.005) {
+          const amount = toAmount(line.total_amount, 2);
+          expandedTotal = toAmount(expandedTotal + amount, 2);
+          pushCommissionFact(commissionFacts, {
+            type,
+            ruleId: null,
+            basis: "",
+            rate: null,
+            amount,
+            skuId,
+            totalPairs,
+            quantityKey,
+          });
+          return;
+        }
+
+        entries.forEach((entry) => {
+          expandedTotal = toAmount(expandedTotal + entry.amount, 2);
+          pushCommissionFact(commissionFacts, {
+            type,
+            ruleId: entry.ruleId,
+            basis: entry.basis,
+            rate: entry.rate,
+            amount: entry.amount,
+            skuId,
+            totalPairs,
+            quantityKey,
+          });
+        });
+      });
+
+      const ledgerTotal = toAmount(row.total_amount, 2);
+      const unexpandedTotal = toAmount(ledgerTotal - expandedTotal, 2);
+      if (Math.abs(unexpandedTotal) >= 0.005) {
+        addCommissionFallback({
+          type,
+          debit: unexpandedTotal < 0 ? Math.abs(unexpandedTotal) : 0,
+          credit: unexpandedTotal > 0 ? unexpandedTotal : 0,
+        });
+      }
     });
 
     let paymentsCredit = 0;
@@ -1115,17 +1867,61 @@ const getLedgerRows = async ({
         paymentsDebit = toAmount(paymentsDebit + debit, 2);
       }
     });
+
+    let expandedSalesCommission = 0;
+    salesCommissionBreakdownRows.forEach((row) => {
+      const meta = parseJsonObject(row.meta);
+      const commission = parseJsonObject(meta.commission);
+      const entries = normalizeCommissionEntries([
+        {
+          entries: Array.isArray(commission.entries)
+            ? commission.entries
+            : [],
+        },
+      ]);
+      entries.forEach((entry) => {
+        expandedSalesCommission = toAmount(
+          expandedSalesCommission + entry.amount,
+          2,
+        );
+        pushCommissionFact(commissionFacts, {
+          type: "SALESMAN_SALE",
+          ruleId: entry.ruleId,
+          basis: entry.basis,
+          rate: entry.rate,
+          amount: entry.amount,
+          skuId: row.sku_id,
+          totalPairs: normalizePairsFromCommissionLine(row),
+          quantityKey: `sales:${
+            Number(row.id || 0) || `${row.voucher_id || ""}:${row.line_no || ""}`
+          }`,
+        });
+      });
+    });
+
     if (
       Math.abs(salesCommissionCredit) >= 0.005 ||
       Math.abs(salesCommissionDebit) >= 0.005
     ) {
-      const current = commissionByType.get("SALESMAN_SALE") || {
-        credit: 0,
-        debit: 0,
-      };
-      current.credit = toAmount(current.credit + salesCommissionCredit, 2);
-      current.debit = toAmount(current.debit + salesCommissionDebit, 2);
-      commissionByType.set("SALESMAN_SALE", current);
+      const ledgerSalesCommission = toAmount(
+        salesCommissionCredit - salesCommissionDebit,
+        2,
+      );
+      const unexpandedSalesCommission = toAmount(
+        ledgerSalesCommission - expandedSalesCommission,
+        2,
+      );
+      if (Math.abs(unexpandedSalesCommission) >= 0.005) {
+        addCommissionFallback({
+          type: "SALESMAN_SALE",
+          debit:
+            unexpandedSalesCommission < 0
+              ? Math.abs(unexpandedSalesCommission)
+              : 0,
+          credit:
+            unexpandedSalesCommission > 0 ? unexpandedSalesCommission : 0,
+        });
+      }
     }
 
     let staffCreditPurchaseCredit = 0;
@@ -1161,18 +1957,15 @@ const getLedgerRows = async ({
       allowanceAmount = toAmount(perCycleAllowance * periodCount, 2);
     }
 
-    const breakdown = [];
-    commissionByType.forEach((value, type) => {
-      if (Math.abs(value.credit) < 0.005 && Math.abs(value.debit) < 0.005) return;
-      breakdown.push({
-        labelKey: `commission_type_${type.toLowerCase()}`,
-        debit: value.debit,
-        credit: value.credit,
-      });
+    const breakdown = await buildCommissionHierarchyRows({
+      facts: commissionFacts,
+      fallbackRows: commissionFallbackRows,
+      locale,
     });
     if (Math.abs(paymentsCredit) >= 0.005 || Math.abs(paymentsDebit) >= 0.005) {
       breakdown.push({
         labelKey: "employee_balance_payments_label",
+        showDozen: false,
         debit: paymentsDebit,
         credit: paymentsCredit,
       });
@@ -1183,29 +1976,61 @@ const getLedgerRows = async ({
     ) {
       breakdown.push({
         labelKey: "employee_balance_credit_purchases_label",
+        showDozen: false,
         debit: staffCreditPurchaseDebit,
         credit: staffCreditPurchaseCredit,
       });
     }
     if (salaryAmount >= 0.005) {
-      breakdown.push({ labelKey: "basic_salary", debit: 0, credit: salaryAmount });
+      breakdown.push({
+        labelKey: "basic_salary",
+        showDozen: false,
+        debit: 0,
+        credit: salaryAmount,
+      });
     }
     if (allowanceAmount >= 0.005) {
-      breakdown.push({ labelKey: "allowances", debit: 0, credit: allowanceAmount });
+      breakdown.push({
+        labelKey: "allowances",
+        showDozen: false,
+        debit: 0,
+        credit: allowanceAmount,
+      });
     }
 
+    const isBreakdownTotalRow = (entry) =>
+      !entry.rowType || entry.rowType === "commission_type";
     const totalDebitBreakdown = toAmount(
-      breakdown.reduce((sum, entry) => sum + Number(entry.debit || 0), 0),
+      breakdown.reduce(
+        (sum, entry) =>
+          isBreakdownTotalRow(entry) ? sum + Number(entry.debit || 0) : sum,
+        0,
+      ),
       2,
     );
     const totalCreditBreakdown = toAmount(
-      breakdown.reduce((sum, entry) => sum + Number(entry.credit || 0), 0),
+      breakdown.reduce(
+        (sum, entry) =>
+          isBreakdownTotalRow(entry) ? sum + Number(entry.credit || 0) : sum,
+        0,
+      ),
       2,
+    );
+    const totalDozenBreakdown = toQty(
+      breakdown.reduce(
+        (sum, entry) =>
+          entry.rowType === "commission_type"
+            ? sum + Number(entry.totalDozen || 0)
+            : sum,
+        0,
+      ),
+      3,
     );
 
     categoryBreakdown = {
       openingBalance,
       breakdown,
+      totalDozen: totalDozenBreakdown,
       totalDebit: totalDebitBreakdown,
       totalCredit: totalCreditBreakdown,
       closingBalance: toAmount(
@@ -1233,12 +2058,19 @@ const getLedgerRows = async ({
   };
 };
 
-const loadBalanceOptions = async ({ req }) => {
-  const branches = req.user?.isAdmin
+const loadBalanceOptions = async ({ req, filters }) => {
+  const locale = String(req?.locale || "en").toLowerCase();
+  const branchNameSql =
+    locale === "ur"
+      ? "COALESCE(NULLIF(branches.name_ur, ''), branches.name)"
+      : "branches.name";
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const branches = canUseAllBranches
     ? await knex("erp.branches")
-        .select("id", "name")
+        .select("id", knex.raw(`${branchNameSql} as name`))
         .where({ is_active: true })
-        .orderBy("name", "asc")
+        .orderByRaw(`${branchNameSql} asc`)
     : (req.branchOptions || []).map((row) => ({
         id: Number(row.id),
         name: row.name,
@@ -1250,12 +2082,13 @@ const loadBalanceOptions = async ({ req }) => {
 const getBalanceRows = async ({ req, filters, kind }) => {
   const cfg = getEntityConfig(kind);
   if (!filters.reportLoaded) return [];
+  const voucherScopeContext = await resolveEntityVoucherScopeContext(cfg);
 
-  const scopedBranchIds = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
   let balanceSubquery = knex("erp.voucher_line as vl")
     .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
@@ -1281,9 +2114,12 @@ const getBalanceRows = async ({ req, filters, kind }) => {
     cfg,
     entityId: null,
     includeEntitySelect: true,
+    scopeContext: voucherScopeContext,
   });
   if (cfg.lineKind === "LABOUR") {
-    balanceSubquery = balanceSubquery.groupByRaw(LABOUR_ENTITY_SQL);
+    balanceSubquery = balanceSubquery.groupByRaw(
+      voucherScopeContext.labourEntitySql,
+    );
   } else {
     balanceSubquery = balanceSubquery.groupBy(`vl.${cfg.vlEntityCol}`);
   }
@@ -1383,6 +2219,7 @@ const getBalanceRows = async ({ req, filters, kind }) => {
       if (meta.payrollType === "MONTHLY") {
         count = countMonthlyAccrualsUpTo({
           employmentStartYmd: meta.employmentStartYmd,
+          employmentEndYmd: meta.employmentEndYmd,
           asOnYmd: filters.asOn,
         });
         perCycleAmount = Number(meta.monthlyAmount || 0);
@@ -1391,6 +2228,7 @@ const getBalanceRows = async ({ req, filters, kind }) => {
       } else if (meta.payrollType === "DAILY") {
         count = countDailyAccrualDaysUpTo({
           employmentStartYmd: meta.employmentStartYmd,
+          employmentEndYmd: meta.employmentEndYmd,
           asOnYmd: filters.asOn,
         });
         perCycleAmount = Number(meta.dailyAmount || 0);
@@ -1534,7 +2372,11 @@ const getBalanceRows = async ({ req, filters, kind }) => {
 };
 
 const getLabourLedgerReportPageData = async ({ req, input = {} }) => {
-  const filters = parseEntityLedgerFilters({ req, input });
+  const filters = parseEntityLedgerFilters({
+    req,
+    input,
+    scopeKey: "labour_ledger",
+  });
   const blockedEntityIds = await resolveBlockedEntityIds({ req, kind: "labour" });
   const options = await loadLedgerOptions({
     req,
@@ -1553,7 +2395,11 @@ const getLabourLedgerReportPageData = async ({ req, input = {} }) => {
 };
 
 const getEmployeeLedgerReportPageData = async ({ req, input = {} }) => {
-  const filters = parseEntityLedgerFilters({ req, input });
+  const filters = parseEntityLedgerFilters({
+    req,
+    input,
+    scopeKey: "employee_ledger",
+  });
   const blockedEntityIds = await resolveBlockedEntityIds({
     req,
     kind: "employee",
@@ -1575,9 +2421,13 @@ const getEmployeeLedgerReportPageData = async ({ req, input = {} }) => {
 };
 
 const getLabourBalancesReportPageData = async ({ req, input = {} }) => {
-  const filters = parseEntityBalanceFilters({ req, input });
+  const filters = parseEntityBalanceFilters({
+    req,
+    input,
+    scopeKey: "labour_balances",
+  });
   const [options, rows] = await Promise.all([
-    loadBalanceOptions({ req }),
+    loadBalanceOptions({ req, filters }),
     getBalanceRows({ req, filters, kind: "labour" }),
   ]);
 
@@ -1595,9 +2445,13 @@ const getLabourBalancesReportPageData = async ({ req, input = {} }) => {
 };
 
 const getEmployeeBalancesReportPageData = async ({ req, input = {} }) => {
-  const filters = parseEntityBalanceFilters({ req, input });
+  const filters = parseEntityBalanceFilters({
+    req,
+    input,
+    scopeKey: "employee_balances",
+  });
   const [options, rows] = await Promise.all([
-    loadBalanceOptions({ req }),
+    loadBalanceOptions({ req, filters }),
     getBalanceRows({ req, filters, kind: "employee" }),
   ]);
 

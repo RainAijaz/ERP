@@ -8,6 +8,7 @@
   const selectedTo = String(filters?.to || "");
   const selectedLedgerView = String(filters?.ledgerView || "summary").toLowerCase() === "detail" ? "detail" : "summary";
   const selectedLedgerViewLabel = selectedLedgerView === "detail" ? t("details") : t("summary");
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
   const showLedgerNarrativeCols = selectedLedgerView === "detail";
   const ledgerStaticCols = showLedgerNarrativeCols ? 6 : 4;
   const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
@@ -175,9 +176,9 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t('branches') : t('branch') %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? t('branches') : t('branch') %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <div
                 class="relative"
                 data-multi-select
@@ -263,10 +264,11 @@
     <% if (reportLoaded && selectedEntityId && selectedLedgerView === "summary" && categoryBreakdown) { %>
       <div class="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
         <div class="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t('breakdown_by_category') %></div>
-        <table class="min-w-[520px] w-full text-sm tabular-nums">
+        <table class="min-w-[640px] w-full text-sm tabular-nums" data-report-table>
           <thead class="bg-slate-100 text-slate-700">
             <tr>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('description') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('description') %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('total_dozens') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('debit') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('credit') %></th>
             </tr>
@@ -275,23 +277,87 @@
             <tr class="bg-white">
               <td class="px-3 py-2 font-semibold"><%= t('opening_balance') %></td>
               <td class="px-3 py-2 text-right">-</td>
+              <td class="px-3 py-2 text-right">-</td>
               <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(categoryBreakdown.openingBalance, 2) %></td>
             </tr>
-            <% (categoryBreakdown.breakdown || []).forEach((entry) => { %>
-              <tr class="bg-white odd:bg-slate-50/30">
-                <td class="px-3 py-2 text-slate-600"><%= t(entry.labelKey) %></td>
+            <% const commissionTypeColors = {
+                 SALESMAN_SALE: 'border-blue-200 bg-blue-50 text-blue-700',
+                 BRANCH_SALE: 'border-violet-200 bg-violet-50 text-violet-700',
+                 TRANSFER: 'border-amber-200 bg-amber-50 text-amber-700',
+                 PARTY: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                 PRODUCTION_FG: 'border-cyan-200 bg-cyan-50 text-cyan-700',
+                 PRODUCTION_SFG: 'border-teal-200 bg-teal-50 text-teal-700',
+               }; %>
+            <% (categoryBreakdown.breakdown || []).forEach((entry) => {
+                 const entryLevel = Number(entry.level || 0);
+                 const isHierarchyChild = entryLevel > 1;
+                 const commissionType = String(entry.commissionType || '').toUpperCase();
+                 const commissionTypeClass = commissionTypeColors[commissionType] || 'border-slate-200 bg-white text-slate-600';
+                 const commissionTypeLabel = commissionType ? t(`commission_type_${commissionType.toLowerCase()}`) : '';
+                 const entryLabelClass = entryLevel === 1
+                   ? 'font-semibold text-slate-800'
+                   : entryLevel === 2
+                     ? 'pl-6 text-xs text-slate-600'
+                     : entryLevel === 3
+                       ? 'pl-10 text-xs text-slate-500'
+                       : 'text-slate-600';
+            %>
+              <tr class="bg-white odd:bg-slate-50/30 <%= isHierarchyChild ? 'hidden' : '' %>"
+                data-commission-summary-row
+                data-row-key="<%= entry.rowKey || '' %>"
+                data-parent-key="<%= entry.parentKey || '' %>"
+                data-level="<%= entryLevel %>">
+                <td class="px-3 py-2 <%= entryLabelClass %>">
+                  <span class="inline-flex flex-wrap items-center gap-2">
+                    <% if (entry.hasChildren) { %>
+                      <button type="button"
+                        class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-indigo-500 transition hover:border-indigo-300 hover:text-indigo-700"
+                        data-commission-summary-toggle="<%= entry.rowKey || '' %>"
+                        aria-expanded="false"
+                        aria-label="<%= t('expand') %>">
+                        <svg class="h-3.5 w-3.5 transition-transform duration-150" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                          <path d="M6 8l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"></path>
+                        </svg>
+                      </button>
+                    <% } else { %>
+                      <span class="inline-block h-5 w-5"></span>
+                    <% } %>
+                    <% if (entryLevel === 1 && commissionType) { %>
+                      <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] <%= commissionTypeClass %>"><%= commissionTypeLabel || entry.labelText || t(entry.labelKey) %></span>
+                      <% if (entry.childCount) { %>
+                        <span class="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500"><%= entry.childCount %> <%= t('rates') %></span>
+                      <% } %>
+                    <% } else if (entryLevel === 2) { %>
+                      <% (entry.scopeLabels || []).forEach((scopeLabel) => { %>
+                        <span class="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-violet-700"><%= scopeLabel %></span>
+                      <% }) %>
+                      <% if (entry.rateLabel) { %>
+                        <span class="text-xs font-semibold text-indigo-700"><%= entry.rateLabel %></span>
+                      <% } else { %>
+                        <span><%= entry.labelText || t(entry.labelKey) %></span>
+                      <% } %>
+                      <% if (entry.childCount) { %>
+                        <span class="rounded-full border border-indigo-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-indigo-500"><%= entry.childCount %> <%= t('skus') %></span>
+                      <% } %>
+                    <% } else { %>
+                      <span><%= entry.labelText || t(entry.labelKey) %></span>
+                    <% } %>
+                  </span>
+                </td>
+                <td class="px-3 py-2 text-right"><%= entry.showDozen ? formatNumber(entry.totalDozen || 0, 3) : '-' %></td>
                 <td class="px-3 py-2 text-right"><%= formatNumber(entry.debit, 2) %></td>
                 <td class="px-3 py-2 text-right"><%= formatNumber(entry.credit, 2) %></td>
               </tr>
             <% }) %>
             <tr class="border-t border-slate-200 bg-slate-100">
               <td class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('total') %></td>
+              <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(categoryBreakdown.totalDozen || 0, 3) %></td>
               <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(categoryBreakdown.totalDebit, 2) %></td>
               <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(categoryBreakdown.totalCredit, 2) %></td>
             </tr>
             <tr class="bg-slate-200">
               <td class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('closing_balance') %></td>
-              <td class="px-3 py-2 text-right" colspan="2"><span class="font-semibold text-slate-900"><%= formatNumber(categoryBreakdown.closingBalance, 2) %></span></td>
+              <td class="px-3 py-2 text-right" colspan="3"><span class="font-semibold text-slate-900"><%= formatNumber(categoryBreakdown.closingBalance, 2) %></span></td>
             </tr>
           </tbody>
         </table>
@@ -307,22 +373,22 @@
         <table class="min-w-280 w-full text-sm tabular-nums" data-table data-report-table>
           <thead class="bg-slate-100 text-slate-700">
             <tr>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="__sr"><%= t('sr_no') %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="entry_date"><%= t('date') %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="voucher_type"><%= t('voucher_type') %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="voucher_no"><%= t('voucher_no') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="__sr"><%= t('sr_no') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="entry_date"><%= t('date') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="voucher_type"><%= t('voucher_type') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="voucher_no"><%= t('voucher_no') %></th>
               <% if (showLedgerNarrativeCols) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="bill_number"><%= t('bill_number') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="bill_number"><%= t('bill_number') %></th>
               <% } %>
               <% if (showLedgerNarrativeCols) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="description"><%= t('description') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="description"><%= t('description') %></th>
               <% } %>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="qty"><%= t('quantity') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="debit"><%= t('debit') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="credit"><%= t('credit') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="balance"><%= t('balance') %></th>
               <% if (includeBranchColumn) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch"><%= t('branch') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch"><%= t('branch') %></th>
               <% } %>
             </tr>
           </thead>
@@ -426,6 +492,43 @@
     if (typeof window.initDataMultiSelects === 'function') {
       window.initDataMultiSelects(form);
     }
+
+    const summaryRows = Array.from(document.querySelectorAll('[data-commission-summary-row]'));
+    const toggleButtons = Array.from(document.querySelectorAll('[data-commission-summary-toggle]'));
+    const toggleByKey = new Map(toggleButtons.map((button) => [button.dataset.commissionSummaryToggle || '', button]));
+    const expandLabel = <%- JSON.stringify(t('expand')) %>;
+    const collapseLabel = <%- JSON.stringify(t('collapse')) %>;
+    const childRowsOf = (key) => summaryRows.filter((row) => row.dataset.parentKey === key);
+    const collapseChildren = (key) => {
+      childRowsOf(key).forEach((row) => {
+        row.classList.add('hidden');
+        const childKey = row.dataset.rowKey || '';
+        const btn = toggleByKey.get(childKey);
+        if (btn) {
+          btn.setAttribute('aria-expanded', 'false');
+          btn.setAttribute('aria-label', expandLabel);
+          const icon = btn.querySelector('svg');
+          if (icon) icon.classList.remove('rotate-180');
+        }
+        if (childKey) collapseChildren(childKey);
+      });
+    };
+
+    toggleButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const key = button.dataset.commissionSummaryToggle || '';
+        if (!key) return;
+        const willOpen = button.getAttribute('aria-expanded') !== 'true';
+        button.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        button.setAttribute('aria-label', willOpen ? collapseLabel : expandLabel);
+        const icon = button.querySelector('svg');
+        if (icon) icon.classList.toggle('rotate-180', willOpen);
+        childRowsOf(key).forEach((row) => {
+          row.classList.toggle('hidden', !willOpen);
+          if (!willOpen) collapseChildren(row.dataset.rowKey || '');
+        });
+      });
+    });
   })();
 </script>
 

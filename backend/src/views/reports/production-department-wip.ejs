@@ -18,11 +18,12 @@
   const selectedOrderBy = String(filters?.orderBy || "department").toLowerCase() === "sku"
     ? "sku"
     : "department";
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
   const branchAllSelected = !selectedBranchIds.length;
   const groupAllSelected = !selectedProductGroupIds.length;
   const subgroupAllSelected = !selectedProductSubgroupIds.length;
   const articleAllSelected = !selectedArticleIds.length;
-  const includeBranchColumn = Boolean(user?.isAdmin) && selectedBranchIds.length !== 1;
+  const includeBranchColumn = canUseBranchFilter && selectedBranchIds.length !== 1;
   const reportTitle = (() => { const v = t("department_wip_report"); return v && v !== "department_wip_report" ? v : "Department-wise Pending Production Report"; })();
   const reportPurposeTooltip = (() => {
     const v = t("department_wip_report_purpose_tooltip");
@@ -45,8 +46,10 @@
   const agingDaysLabel = (() => { const v = t("aging_days"); return v && v !== "aging_days" ? v : "Aging (Days)"; })();
   const agingBucketLabel = (() => { const v = t("aging_bucket"); return v && v !== "aging_bucket" ? v : "Aging Bucket"; })();
   const formatNumber = (value, decimals = 3) => formatNumberDisplay(value, { decimals, fallback: "0" });
-  const detailTotalsLabelSpan = 6;
-  const detailColumnCount = detailTotalsLabelSpan + 2 + (includeBranchColumn ? 1 : 0);
+  const detailTotalsLabelSpan = 5;
+  // Aging sits just before Branch (last when there is no Branch column), so the
+  // two measure columns are followed by a blank Aging cell on every totals row.
+  const detailColumnCount = detailTotalsLabelSpan + 3 + (includeBranchColumn ? 1 : 0);
   const summarizeNameSet = (valueSet = new Set()) => {
     const values = Array.from(valueSet.values())
       .map((value) => String(value || "").trim())
@@ -197,9 +200,9 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? t("branches") : t("branch") %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
                 <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
                 <% (options?.branches || []).forEach((branch) => { %>
@@ -276,22 +279,22 @@
           <table class="min-w-[1260px] w-full text-sm tabular-nums" data-table data-report-table>
             <thead class="bg-slate-100 text-slate-700">
               <tr>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="department_name"><%= t("department") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="article_name"><%= articlesLabel %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="sku_code"><%= t("sku") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="product_group_name"><%= t("product_group") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="production_type"><%= t("production_type") %></th>
-                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="aging_days"><%= agingDaysLabel %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="department_name"><%= t("department") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="article_name"><%= articlesLabel %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="sku_code"><%= t("sku") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="product_group_name"><%= t("product_group") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="production_type"><%= t("production_type") %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="pending_pairs"><%= pendingPairsLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="pending_dozen"><%= pendingDozenLabel %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="aging_days"><%= agingDaysLabel %></th>
                 <% if (includeBranchColumn) { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_name"><%= t("branch") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_name"><%= t("branch") %></th>
                 <% } %>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100" data-table-body>
-              <% detailGroups.forEach((group) => { %>
-                <tr class="bg-slate-700 text-white" data-row data-active="true">
+              <% detailGroups.forEach((group, groupIndex) => { %>
+                <tr class="bg-slate-700 text-white" data-row data-active="true" data-report-group-header data-report-group-key="wip<%= groupIndex %>">
                   <td colspan="<%= detailColumnCount %>" class="px-3 py-1.5">
                     <div class="flex flex-wrap items-center gap-2">
                       <% if (selectedOrderBy === "sku") { %>
@@ -305,21 +308,21 @@
                   </td>
                 </tr>
                 <% (group.rows || []).forEach((row) => { %>
-                  <tr class="odd:bg-slate-50 even:bg-white hover:bg-slate-100" data-row data-active="true">
+                  <tr class="odd:bg-slate-50 even:bg-white hover:bg-slate-100" data-row data-active="true" data-report-group-line data-report-group-key="wip<%= groupIndex %>">
                     <td class="px-3 py-2"><%= row.department_name || "-" %></td>
                     <td class="px-3 py-2"><%= row.article_name || "-" %></td>
                     <td class="px-3 py-2"><%= row.sku_code || "-" %></td>
                     <td class="px-3 py-2"><%= row.product_group_name || "-" %></td>
                     <td class="px-3 py-2"><%= row.production_type || "-" %></td>
-                    <td class="px-3 py-2 text-right"><%= Number(row.aging_days || 0) %></td>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(row.pending_pairs || 0, 3) %></td>
                     <td class="px-3 py-2 text-right"><%= formatNumber(row.pending_dozen || 0, 3) %></td>
+                    <td class="px-3 py-2 text-right"><%= Number(row.aging_days || 0) %></td>
                     <% if (includeBranchColumn) { %>
                       <td class="px-3 py-2"><%= row.branch_name || "-" %></td>
                     <% } %>
                   </tr>
                 <% }) %>
-                <tr class="bg-accent text-white" data-row data-active="true">
+                <tr class="bg-accent text-white" data-row data-active="true" data-report-group-total data-report-group-key="wip<%= groupIndex %>">
                   <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-2">
                     <div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[11px] font-extrabold uppercase tracking-[0.08em]">
                       <span><%= t("total") %></span>
@@ -327,6 +330,7 @@
                   </td>
                   <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatNumber(group.pending_pairs || 0, 3) %></td>
                   <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatNumber(group.pending_dozen || 0, 3) %></td>
+                  <td class="px-3 py-2"></td>
                   <% if (includeBranchColumn) { %>
                     <td class="px-3 py-2"></td>
                   <% } %>
@@ -336,6 +340,7 @@
                 <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-3 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
                 <td class="px-3 py-3 text-right font-black tabular-nums text-emerald-100"><%= formatNumber(reportData?.totals?.pendingPairs || 0, 3) %></td>
                 <td class="px-3 py-3 text-right font-extrabold tabular-nums"><%= formatNumber(reportData?.totals?.pendingDozen || 0, 3) %></td>
+                <td class="px-3 py-3"></td>
                 <% if (includeBranchColumn) { %>
                   <td class="px-3 py-3"></td>
                 <% } %>
@@ -348,14 +353,14 @@
           <table class="min-w-[960px] w-full text-sm tabular-nums" data-table data-report-table>
             <thead class="bg-slate-100 text-slate-700">
               <tr>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="department_name"><%= selectedOrderBy === "sku" ? t("sku") : t("department") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="department_name"><%= selectedOrderBy === "sku" ? t("sku") : t("department") %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="pending_articles"><%= selectedOrderBy === "sku" ? pendingDepartmentsLabel : pendingArticlesLabel %></th>
-                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="avg_aging_days"><%= avgAgingDaysLabel %></th>
-                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="max_aging_days"><%= maxAgingDaysLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="pending_pairs"><%= pendingPairsLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="pending_dozen"><%= pendingDozenLabel %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="avg_aging_days"><%= avgAgingDaysLabel %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="max_aging_days"><%= maxAgingDaysLabel %></th>
                 <% if (includeBranchColumn) { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_label"><%= t("branches") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_label"><%= t("branches") %></th>
                 <% } %>
               </tr>
             </thead>
@@ -364,21 +369,23 @@
                 <tr class="bg-slate-200/50 text-slate-700" data-row data-active="true">
                   <td class="px-3 py-2"><%= selectedOrderBy === "sku" ? (row.sku_code || "-") : (row.department_name || "-") %></td>
                   <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= selectedOrderBy === "sku" ? Number(row.pending_departments || 0) : Number(row.pending_articles || 0) %></td>
-                  <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= formatNumber(row.avg_aging_days || 0, 2) %></td>
-                  <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= Number(row.max_aging_days || 0) %></td>
                   <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= formatNumber(row.pending_pairs || 0, 3) %></td>
                   <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= formatNumber(row.pending_dozen || 0, 3) %></td>
+                  <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= formatNumber(row.avg_aging_days || 0, 2) %></td>
+                  <td class="px-3 py-2 text-right font-semibold tabular-nums"><%= Number(row.max_aging_days || 0) %></td>
                   <% if (includeBranchColumn) { %>
                     <td class="px-3 py-2"><%= row.branch_label || "-" %></td>
                   <% } %>
                 </tr>
               <% }) %>
               <tr class="bg-rose-700 text-white" data-row data-active="true" data-report-grand-total>
-                <td colspan="4" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
+                <td colspan="2" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
                 <td class="px-3 py-2 text-right font-black tabular-nums text-emerald-100"><%= formatNumber(reportData?.totals?.pendingPairs || 0, 3) %></td>
                 <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatNumber(reportData?.totals?.pendingDozen || 0, 3) %></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
                 <% if (includeBranchColumn) { %>
-                  <td class="px-3 py-2 text-left"><%= selectedOrderBy === "sku" ? Number(reportData?.totals?.skuCount || 0) : Number(reportData?.totals?.departmentCount || 0) %> <%= selectedOrderBy === "sku" ? t("sku") : t("departments") %></td>
+                  <td class="px-3 py-2 text-start"><%= selectedOrderBy === "sku" ? Number(reportData?.totals?.skuCount || 0) : Number(reportData?.totals?.departmentCount || 0) %> <%= selectedOrderBy === "sku" ? t("sku") : t("departments") %></td>
                 <% } %>
               </tr>
             </tbody>

@@ -5,6 +5,7 @@
   const allMultiOptionValue = "__ALL__";
   const partyAllSelected = !Array.isArray(filters?.supplierIds) || filters.supplierIds.length === 0;
   const branchAllSelected = !Array.isArray(filters?.branchIds) || filters.branchIds.length === 0;
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
   const formatDate = (value) => formatDateDisplay(value, "-");
   const formatNumber = (value, digits = 3) => formatNumberDisplay(value, { decimals: digits, fallback: "0" });
   const resolveSupplierName = (row) => {
@@ -18,6 +19,7 @@
   const categoryLabel = (value) => {
     const v = String(value || "").toUpperCase();
     if (v === "ASSET") return t("asset");
+    if (v === "CONSUMABLE") return t("consumable");
     return t("raw_material");
   };
   const daysPendingTone = (days) => {
@@ -136,9 +138,9 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t('branches') : t('branch') %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? t('branches') : t('branch') %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
                 <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t('all') %></option>
                 <% (options?.branches || []).forEach((branch) => { %>
@@ -167,6 +169,10 @@
               <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= purchaseCategory === 'asset' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
                 <input type="radio" name="purchase_category" value="asset" <%= purchaseCategory === "asset" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
                 <span><%= t('asset') %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= purchaseCategory === 'consumable' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="purchase_category" value="consumable" <%= purchaseCategory === "consumable" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t('consumable') %></span>
               </label>
             </div>
           </div>
@@ -212,20 +218,20 @@
         <table class="min-w-[1440px] w-full text-sm tabular-nums" data-table data-report-table>
           <thead class="bg-slate-100 text-slate-700">
             <tr>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="__sr">SR.NO</th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="grn_voucher_no"><%= t('voucher_no') %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="grn_voucher_date"><%= t('date') %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_name"><%= t('branch') %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="supplier_name"><%= t('party_name') %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="purchase_category"><%= t('category') %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="item_code"><%= t('code') %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="item_name"><%= t('item_name') %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('unit') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="__sr">SR.NO</th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="grn_voucher_no"><%= t('voucher_no') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="grn_voucher_date"><%= t('date') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_name"><%= t('branch') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="supplier_name"><%= t('party_name') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="purchase_category"><%= t('category') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="item_code"><%= t('code') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="item_name"><%= t('item_name') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('unit') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="qty"><%= t('grn_qty') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="allocated_qty"><%= t('billed_qty') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="open_qty"><%= t('pending_qty') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="days_pending"><%= t('days_pending') %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('reference_no') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('reference_no') %></th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100" data-table-body>

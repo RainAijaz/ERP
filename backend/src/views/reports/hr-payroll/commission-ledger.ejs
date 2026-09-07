@@ -9,17 +9,21 @@
   const selectedType     = String(filters?.commissionType || "");
 
   const COMMISSION_TYPES = [
-    { value: "SALESMAN_SALE", labelKey: "commission_type_salesman_sale" },
-    { value: "BRANCH_SALE",   labelKey: "commission_type_branch_sale"   },
-    { value: "TRANSFER",      labelKey: "commission_type_transfer"      },
-    { value: "PARTY",         labelKey: "commission_type_party"         },
+    { value: "SALESMAN_SALE",  labelKey: "commission_type_salesman_sale"  },
+    { value: "BRANCH_SALE",    labelKey: "commission_type_branch_sale"    },
+    { value: "TRANSFER",       labelKey: "commission_type_transfer"       },
+    { value: "PARTY",          labelKey: "commission_type_party"          },
+    { value: "PRODUCTION_FG",  labelKey: "commission_type_production_fg"  },
+    { value: "PRODUCTION_SFG", labelKey: "commission_type_production_sfg" },
   ];
 
   const typeColors = {
-    SALESMAN_SALE: "border-blue-200 bg-blue-50 text-blue-700",
-    BRANCH_SALE:   "border-violet-200 bg-violet-50 text-violet-700",
-    TRANSFER:      "border-amber-200 bg-amber-50 text-amber-700",
-    PARTY:         "border-emerald-200 bg-emerald-50 text-emerald-700",
+    SALESMAN_SALE:  "border-blue-200 bg-blue-50 text-blue-700",
+    BRANCH_SALE:    "border-violet-200 bg-violet-50 text-violet-700",
+    TRANSFER:       "border-amber-200 bg-amber-50 text-amber-700",
+    PARTY:          "border-emerald-200 bg-emerald-50 text-emerald-700",
+    PRODUCTION_FG:  "border-sky-200 bg-sky-50 text-sky-700",
+    PRODUCTION_SFG: "border-teal-200 bg-teal-50 text-teal-700",
   };
 
   const formatDate = (value) => formatDateDisplay(value, "-");
@@ -57,7 +61,7 @@
         <%/* Employee */%>
         <div class="flex flex-col gap-1">
           <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t("employees") %></label>
-          <select name="employee_id" class="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700">
+          <select name="employee_id" class="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified">
             <option value=""><%= t("all") %></option>
             <% employeeOptions.forEach(function(emp) { %>
               <option value="<%= emp.value %>" <%= Number(emp.value) === selectedEmpId ? "selected" : "" %>><%= emp.label %></option>
@@ -68,7 +72,7 @@
         <%/* Commission type */%>
         <div class="flex flex-col gap-1">
           <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t("commission_type") %></label>
-          <select name="commission_type" class="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700">
+          <select name="commission_type" class="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified">
             <option value=""><%= t("all") %></option>
             <% COMMISSION_TYPES.forEach(function(ct) { %>
               <option value="<%= ct.value %>" <%= ct.value === selectedType ? "selected" : "" %>><%= t(ct.labelKey) %></option>
@@ -96,14 +100,14 @@
     <% } else { %>
 
       <div class="overflow-x-auto">
-        <table class="w-full text-sm">
+        <table class="w-full text-sm" data-report-table>
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
             <tr>
-              <th class="px-4 py-3 text-left">#</th>
-              <th class="px-4 py-3 text-left"><%= t("date") %></th>
-              <th class="px-4 py-3 text-left"><%= t("voucher_no") || t("voucher") %></th>
-              <th class="px-4 py-3 text-left"><%= t("employees") %></th>
-              <th class="px-4 py-3 text-left"><%= t("commission_type") %></th>
+              <th class="px-4 py-3 text-start">#</th>
+              <th class="px-4 py-3 text-start"><%= t("date") %></th>
+              <th class="px-4 py-3 text-start"><%= t("voucher_no") || t("voucher") %></th>
+              <th class="px-4 py-3 text-start"><%= t("employees") %></th>
+              <th class="px-4 py-3 text-start"><%= t("commission_type") %></th>
               <th class="px-4 py-3 text-right"><%= t("amount") %></th>
               <th class="px-4 py-3 text-center w-10"></th>
             </tr>
@@ -145,11 +149,11 @@
             <tr id="<%= detailRowId %>" class="hidden bg-indigo-50/40">
               <td colspan="7" class="px-6 py-3">
                 <div class="overflow-x-auto rounded-lg border border-indigo-100">
-                  <table class="w-full text-xs">
+                  <table class="w-full text-xs" data-mobile-report>
                     <thead class="bg-indigo-50 text-[10px] font-semibold uppercase tracking-wider text-indigo-600">
                       <tr>
-                        <th class="px-3 py-2 text-left"><%= t("skus") || "SKU" %></th>
-                        <th class="px-3 py-2 text-left"><%= t("commission_basis") || "Basis" %></th>
+                        <th class="px-3 py-2 text-start"><%= t("skus") || "SKU" %></th>
+                        <th class="px-3 py-2 text-start"><%= t("commission_basis") || "Basis" %></th>
                         <th class="px-3 py-2 text-right"><%= t("rate_value") %></th>
                         <th class="px-3 py-2 text-right"><%= t("amount") %></th>
                       </tr>

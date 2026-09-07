@@ -18,6 +18,7 @@
   const selectedBranchIds = Array.isArray(filters?.branchIds) ? filters.branchIds : [];
   const allMultiOptionValue = "__ALL__";
   const branchAllSelected = !selectedBranchIds.length;
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
 
   const stockItems = Array.isArray(options?.stockItems) ? options.stockItems : [];
   const stockItemsByType = options?.stockItemsByType || {};
@@ -69,7 +70,8 @@
         ? ` (${selectedUnitLabel})`
         : "";
 
-  const includeBranchColumn = Boolean(user?.isAdmin) && selectedBranchIds.length !== 1;
+  const selectedStockItemLabel = String(filters?.stockItemLabel || "").trim();
+  const includeBranchColumn = canUseBranchFilter && selectedBranchIds.length !== 1;
   const hasData = rows.length > 0;
   const validationErrors = Array.isArray(filters?.validationErrors) ? filters.validationErrors : [];
 
@@ -219,9 +221,9 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? tt("branches", "Branches") : tt("branch", "Branch") %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? tt("branches", "Branches") : tt("branch", "Branch") %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
                 <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
                 <% (options?.branches || []).forEach((branch) => { %>
@@ -265,19 +267,22 @@
     <% } else if (!hasData) { %>
       <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= tt("no_entries", "No entries") %></div>
     <% } else { %>
+      <% if (selectedStockItemLabel) { %>
+        <div class="mt-3 text-sm font-semibold text-slate-700"><%= `${itemLabel}: ${selectedStockItemLabel}` %></div>
+      <% } %>
       <div class="relative mt-3 overflow-x-auto rounded-2xl border border-slate-200">
         <table class="min-w-300 w-full text-sm tabular-nums" data-report-table data-export-title="<%= tt('stock_ledger_report', 'Stock Ledger Report') %>">
           <thead class="bg-slate-100 text-slate-700">
             <tr>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("date", "Date") %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("voucher", "Voucher") %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("details", "Details") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("date", "Date") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("voucher", "Voucher") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("details", "Details") %></th>
               <% if (showLedgerColorSizeColumns) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("color", "Color") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("size", "Size") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("color", "Color") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("size", "Size") %></th>
               <% } %>
               <% if (showLedgerUnitColumn) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("units", "Units") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("units", "Units") %></th>
               <% } %>
               <% if (showBaseMovementColumns) { %>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("inward", "Inward") %></th>
@@ -296,22 +301,41 @@
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("out_amount", "Out Amount") %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("running_amount", "Running Amount") %></th>
               <% if (includeBranchColumn) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("branch", "Branch") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("branch", "Branch") %></th>
               <% } %>
             </tr>
           </thead>
           <tbody>
             <% rows.forEach((row) => { %>
               <% const detailText = (() => {
-                if (stockType === "RM") {
-                  const dims = [row.colorName, row.sizeName].filter(Boolean).join(" / ");
-                  return dims ? `${row.itemName} (${dims})` : row.itemName || "-";
-                }
-                return (row.skuCode || "-") + (row.itemName ? " - " + row.itemName : "");
+                // The article is fixed by the filter (and shown above the table),
+                // so Details carries the voucher's counterparty (which branch,
+                // customer, supplier, department) plus its reason / notes / remarks.
+                const segments = Array.isArray(row.detailSegments) ? row.detailSegments : [];
+                const text = segments
+                  .map((segment) => {
+                    const value = String(segment?.key ? t(segment.key) : segment?.text || "").trim();
+                    if (!value) return "";
+                    const label = segment?.labelKey
+                      ? tt(segment.labelKey, String(segment.labelFallback || "").trim())
+                      : "";
+                    return label ? `${label}: ${value}` : value;
+                  })
+                  .filter(Boolean)
+                  .join(" • ");
+                return text || "-";
               })(); %>
+              <% const voucherKindText = row.voucherKindKey
+                ? tt(row.voucherKindKey, String(row.voucherKindFallback || "").trim())
+                : String(row.voucherKindFallback || "").trim(); %>
               <tr class="bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100">
                 <td class="px-3 py-2"><%= formatDate(row.txnDate) %></td>
-                <td class="px-3 py-2"><%= `${row.voucherTypeCode || "-"}-${row.voucherNo || "-"}` %></td>
+                <td class="px-3 py-2">
+                  <div><%= `${row.voucherTypeCode || "-"}-${row.voucherNo || "-"}` %></div>
+                  <% if (voucherKindText) { %>
+                    <div class="text-xs text-slate-500"><%= voucherKindText %></div>
+                  <% } %>
+                </td>
                 <td class="px-3 py-2"><%= detailText %></td>
                 <% if (showLedgerColorSizeColumns) { %>
                   <td class="px-3 py-2"><%= row.colorName || "-" %></td>

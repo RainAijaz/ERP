@@ -16,6 +16,7 @@
   const selectedDisplayType = ["details", "summary"].includes(String(filters?.displayType || "").toLowerCase())
     ? String(filters.displayType).toLowerCase()
     : "details";
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
 
   const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
   const groups = Array.isArray(reportData?.groups) ? reportData.groups : [];
@@ -197,9 +198,9 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t('branches') : t('branch') %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? t('branches') : t('branch') %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <div class="relative" data-multi-select data-name="branch_ids" data-placeholder="<%= `${t('all')} ${t('branches')}` %>" data-multi-all-value="__ALL__" data-multi-auto-all="1">
                 <button type="button" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 pr-10 text-left text-sm text-slate-700" data-multi-trigger></button>
                 <span class="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-slate-500">
@@ -324,34 +325,34 @@
           <thead class="bg-slate-100 text-slate-700">
             <tr>
               <% if (selectedOrderBy === "party") { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('sales_order') %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('date') %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('product') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('sales_order') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('date') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('product') %></th>
               <% } else if (selectedOrderBy === "voucher") { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('date') %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('customer_name') %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('product') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('date') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('customer_name') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('product') %></th>
               <% } else { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('customer_name') %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('sales_order') %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('date') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('customer_name') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('sales_order') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('date') %></th>
               <% } %>
               <% if (selectedReportType === "complete") { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= completeDateLabel %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= completeDateLabel %></th>
               <% } %>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('unit') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('unit') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('ordered_qty') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('delivered_qty') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('remaining_qty') %></th>
               <% if (includeBranchColumn) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('branch') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('branch') %></th>
               <% } %>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('action') %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('action') %></th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100" data-table-body>
             <% groups.forEach((group) => { %>
-              <tr class="bg-slate-700 text-white" data-row data-active="true">
+              <tr class="bg-slate-700 text-white" data-row data-active="true" data-report-group-header data-report-group-key="<%= group.key %>">
                 <td colspan="<%= detailColumnCount %>" class="px-3 py-2">
                   <div class="flex flex-wrap items-center gap-2">
                     <button type="button" class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/30 bg-white/10 text-white" data-group-toggle="<%= group.key %>" aria-expanded="true">
@@ -367,7 +368,7 @@
                 </td>
               </tr>
               <% (group.lines || []).forEach((row) => { %>
-                <tr class="bg-white odd:bg-slate-50/30" data-group-line="<%= group.key %>" data-row data-active="true">
+                <tr class="bg-white odd:bg-slate-50/30" data-group-line="<%= group.key %>" data-row data-active="true" data-report-group-line data-report-group-key="<%= group.key %>">
                   <% if (selectedOrderBy === "party") { %>
                     <td class="px-3 py-2"><%= row.sales_order_no || '-' %></td>
                     <td class="px-3 py-2"><%= formatDate(row.sales_order_date) %></td>
@@ -394,7 +395,7 @@
                   <td class="px-3 py-2"><a class="text-accent hover:underline" href="<%= row.action_link %>"><%= t('view') %></a></td>
                 </tr>
               <% }) %>
-              <tr class="bg-accent text-white" data-group-line="<%= group.key %>">
+              <tr class="bg-accent text-white" data-group-line="<%= group.key %>" data-report-group-total data-report-group-key="<%= group.key %>">
                 <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t('total') %></td>
                 <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(group.total_ordered_qty || 0, 3) %></td>
                 <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(group.total_delivered_qty || 0, 3) %></td>
@@ -424,20 +425,20 @@
           <thead class="bg-slate-100 text-slate-700">
             <tr>
               <% if (selectedOrderBy === "party") { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('group') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('group') %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('sales_order') %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('article') %></th>
               <% } else if (selectedOrderBy === "voucher") { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('group') %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('date') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('group') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('date') %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('article') %></th>
               <% } else { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('group') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('group') %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('sales_order') %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('customer_name') %></th>
               <% } %>
               <% if (selectedReportType === "complete") { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= completeDateLabel %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= completeDateLabel %></th>
               <% } %>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('ordered_qty') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('delivered_qty') %></th>

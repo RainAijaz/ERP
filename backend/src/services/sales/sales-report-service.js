@@ -4,9 +4,31 @@ const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const { toBoolean, toIdList } = require("../../utils/report-filter-types");
 const {
+  getReportAllowedBranchIds,
+  normalizeReportBranchIds,
+  reportCanFilterAllBranches,
+} = require("../../utils/report-branch-scope");
+const {
+  localizedNameSelect,
+  localizedNameSql,
+  localizedNarrativeSql,
+  resolveLocale,
+  supportsVoucherRemarksUr,
+} = require("../../utils/localized-name");
+const { resolveTranslation } = require("../../middleware/core/locale");
+const {
   evaluateSalesDiscountPolicy,
   loadActiveSalesDiscountPolicyMapTx,
 } = require("./sales-discount-policy-service");
+
+// Party names are carried as an en/ur pair (both columns are consumed
+// downstream), so the locale choice happens where the label is built rather
+// than in SQL. Either side may be blank, hence the cross fallback.
+const preferLocalizedName = (locale, nameEn, nameUr) => {
+  const en = String(nameEn || "").trim();
+  const ur = String(nameUr || "").trim();
+  return resolveLocale(locale) === "ur" ? ur || en : en || ur;
+};
 
 const ALL_MULTI_FILTER_VALUE = "__ALL__";
 const SALES_ORDER_REPORT_ORDER_TYPES = Object.freeze({
@@ -155,22 +177,26 @@ const applyPartyBranchScope = (query, branchIds = []) => {
 };
 
 const parseCustomerBalanceFilters = ({ req, input = {} }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "customer_balances_report",
+  );
   const today = toLocalDateOnly(new Date());
   const parsedAsOn = parseDateFilter(input.as_on, today);
   let asOn = parsedAsOn.value;
 
   if (!asOn) asOn = today;
 
-  const branchIdsFromInput = toIdList(input.branch_ids);
-  const branchIds = req.user?.isAdmin
-    ? branchIdsFromInput
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   return {
     asOn,
     branchIds,
+    canFilterAllBranches,
     reportLoaded: toBoolean(input.load_report, false),
     invalidAsOnDate: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
     invalidFilterInput: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
@@ -178,6 +204,10 @@ const parseCustomerBalanceFilters = ({ req, input = {} }) => {
 };
 
 const parseCustomerLedgerFilters = ({ req, input = {} }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "customer_ledger_report",
+  );
   const now = new Date();
   const fromDate = new Date(now);
   fromDate.setDate(fromDate.getDate() - 30);
@@ -196,18 +226,17 @@ const parseCustomerLedgerFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  const branchIdsFromInput = toIdListWithAll(input.branch_ids);
   const ledgerView =
     String(input.ledger_view || "summary")
       .trim()
       .toLowerCase() === "detail"
       ? "detail"
       : "summary";
-  const branchIds = req.user?.isAdmin
-    ? branchIdsFromInput
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   return {
     from,
@@ -215,6 +244,7 @@ const parseCustomerLedgerFilters = ({ req, input = {} }) => {
     partyId: toPositiveId(input.party_id),
     ledgerView,
     branchIds,
+    canFilterAllBranches,
     reportLoaded: toBoolean(input.load_report, false),
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
     invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
@@ -228,6 +258,10 @@ const parseCustomerLedgerFilters = ({ req, input = {} }) => {
 };
 
 const parseSalesOrderReportFilters = ({ req, input = {} }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "sales_order_report",
+  );
   const now = new Date();
   const fromDate = new Date(now);
   fromDate.setDate(fromDate.getDate() - 30);
@@ -246,12 +280,11 @@ const parseSalesOrderReportFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  const branchIdsFromInput = toIdListWithAll(input.branch_ids);
-  const branchIds = req.user?.isAdmin
-    ? branchIdsFromInput
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   const reportTypeRaw = String(input.report_type || "pending")
     .trim()
@@ -274,6 +307,7 @@ const parseSalesOrderReportFilters = ({ req, input = {} }) => {
     partyId: toPositiveId(input.party_id),
     productGroupId: toPositiveId(input.product_group_id),
     branchIds,
+    canFilterAllBranches,
     reportType,
     orderBy,
     displayType,
@@ -290,13 +324,13 @@ const parseSalesOrderReportFilters = ({ req, input = {} }) => {
 };
 
 const loadSalesOrderReportOptions = async ({ req, filters }) => {
-  const scopedBranchIds = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
-  const branches = req.user?.isAdmin
+  const branches = canUseAllBranches
     ? await knex("erp.branches")
         .select("id", "name")
         .where({ is_active: true })
@@ -312,7 +346,7 @@ const loadSalesOrderReportOptions = async ({ req, filters }) => {
     .whereRaw("upper(coalesce(p.party_type::text, '')) in ('CUSTOMER','BOTH')")
     .orderBy("p.name", "asc");
 
-  if (!req.user?.isAdmin || scopedBranchIds.length) {
+  if (!canUseAllBranches || scopedBranchIds.length) {
     customersQuery = applyPartyBranchScope(customersQuery, scopedBranchIds);
   }
 
@@ -340,24 +374,27 @@ const loadSalesOrderReportOptions = async ({ req, filters }) => {
 };
 
 const getSalesOrderReportRows = async ({ req, filters }) => {
+  const locale = resolveLocale(req?.locale);
   if (!filters.reportLoaded) {
+    const canUseAllBranches =
+      req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
     return {
       includeBranchColumn: Boolean(
-        req.user?.isAdmin && filters.branchIds.length !== 1,
+        canUseAllBranches && filters.branchIds.length !== 1,
       ),
       rows: [],
     };
   }
 
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
   const includeBranchColumn = Boolean(
-    req.user?.isAdmin && filters.branchIds.length !== 1,
+    canUseAllBranches && filters.branchIds.length !== 1,
   );
 
-  const scopedBranchIds = req.user?.isAdmin
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
   let orderLinesQuery = knex("erp.voucher_header as vh")
     .join("erp.sales_order_header as soh", "soh.voucher_id", "vh.id")
@@ -374,7 +411,7 @@ const getSalesOrderReportRows = async ({ req, filters }) => {
       knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as sales_order_date"),
       "vh.status as voucher_status",
       "vh.branch_id",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", locale),
       "soh.customer_party_id",
       "p.code as customer_code",
       "p.name as customer_name_en",
@@ -385,8 +422,8 @@ const getSalesOrderReportRows = async ({ req, filters }) => {
       "vl.meta as line_meta",
       "s.id as sku_id",
       "s.sku_code",
-      "i.name as product_name",
-      "u.name as unit_name",
+      localizedNameSelect("i", "product_name", locale),
+      localizedNameSelect("u", "unit_name", locale),
       knex.raw("''::text as color_name"),
     )
     .where({
@@ -589,12 +626,12 @@ const getSalesOrderReportRows = async ({ req, filters }) => {
   };
 };
 
-const getSalesOrderReportGroupIdentity = (row, orderBy) => {
+const getSalesOrderReportGroupIdentity = (row, orderBy, locale) => {
   if (orderBy === SALES_ORDER_REPORT_ORDER_TYPES.voucher) {
     const key = `SO:${Number(row.sales_order_id || 0)}`;
     return {
       key,
-      label: `VR. NO. ${Number(row.sales_order_no || 0) || "-"} | ${row.sales_order_date || "-"} | ${row.customer_name_en || row.customer_name_ur || "-"}`,
+      label: `VR. NO. ${Number(row.sales_order_no || 0) || "-"} | ${row.sales_order_date || "-"} | ${preferLocalizedName(locale, row.customer_name_en, row.customer_name_ur) || "-"}`,
       sales_order_no: row.sales_order_no || null,
       sales_order_date: row.sales_order_date || "",
       close_date: row.close_date || "",
@@ -621,7 +658,9 @@ const getSalesOrderReportGroupIdentity = (row, orderBy) => {
   const key = `PTY:${Number(row.customer_party_id || 0)}`;
   return {
     key,
-    label: row.customer_name_en || row.customer_name_ur || "-",
+    label:
+      preferLocalizedName(locale, row.customer_name_en, row.customer_name_ur) ||
+      "-",
     sales_order_no: null,
     sales_order_date: "",
     close_date: "",
@@ -631,7 +670,7 @@ const getSalesOrderReportGroupIdentity = (row, orderBy) => {
   };
 };
 
-const buildSalesOrderReportData = ({ reportRows, filters }) => {
+const buildSalesOrderReportData = ({ reportRows, filters, locale }) => {
   const rows = Array.isArray(reportRows?.rows) ? reportRows.rows : [];
   const includeBranchColumn = Boolean(reportRows?.includeBranchColumn);
   const baseTotals = reportRows?.totals || {
@@ -643,7 +682,11 @@ const buildSalesOrderReportData = ({ reportRows, filters }) => {
   const groupMap = new Map();
 
   rows.forEach((row) => {
-    const identity = getSalesOrderReportGroupIdentity(row, filters.orderBy);
+    const identity = getSalesOrderReportGroupIdentity(
+      row,
+      filters.orderBy,
+      locale,
+    );
     let group = groupMap.get(identity.key);
     if (!group) {
       group = {
@@ -746,7 +789,11 @@ const getSalesOrderReportPageData = async ({ req, input = {} }) => {
   const filters = parseSalesOrderReportFilters({ req, input });
   const options = await loadSalesOrderReportOptions({ req, filters });
   const reportRows = await getSalesOrderReportRows({ req, filters });
-  const reportData = buildSalesOrderReportData({ reportRows, filters });
+  const reportData = buildSalesOrderReportData({
+    reportRows,
+    filters,
+    locale: resolveLocale(req?.locale),
+  });
 
   return {
     filters,
@@ -755,7 +802,12 @@ const getSalesOrderReportPageData = async ({ req, input = {} }) => {
   };
 };
 
-const parseSalesReportFilters = ({ req, input = {} }) => {
+const parseSalesReportFilters = ({
+  req,
+  input = {},
+  scopeKey = "sales_report",
+}) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(req, scopeKey);
   const now = new Date();
   const fromDate = new Date(now);
   fromDate.setDate(fromDate.getDate() - 30);
@@ -774,7 +826,7 @@ const parseSalesReportFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  const branchId = req.user?.isAdmin
+  const branchId = req.user?.isAdmin || canFilterAllBranches
     ? toPositiveId(input.filter_branch_id ?? input.branch_id)
     : Number(req.branchId || 0) || null;
 
@@ -789,6 +841,7 @@ const parseSalesReportFilters = ({ req, input = {} }) => {
     salesmanId: toPositiveId(input.salesman_employee_id),
     receiveIntoAccountId: toPositiveId(input.receive_into_account_id),
     branchId,
+    canFilterAllBranches,
     orderBy: resolveSalesOrderReportOrderType(
       input.order_by,
       SALES_ORDER_REPORT_ORDER_TYPES.payment_account,
@@ -818,11 +871,13 @@ const loadSaleReturnReasonOptions = async () =>
     .orderBy("description", "asc");
 
 const loadSalesReportOptions = async ({ req, filters }) => {
-  const branchScope = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const branchScope = canUseAllBranches
     ? [Number(filters.branchId || 0)].filter((id) => id > 0)
-    : [Number(req.branchId || 0)].filter((id) => id > 0);
+    : getReportAllowedBranchIds(req);
 
-  const branchesPromise = req.user?.isAdmin
+  const branchesPromise = canUseAllBranches
     ? knex("erp.branches")
         .select("id", "name")
         .where({ is_active: true })
@@ -839,7 +894,7 @@ const loadSalesReportOptions = async ({ req, filters }) => {
     .where({ "p.is_active": true })
     .whereRaw("upper(coalesce(p.party_type::text, '')) in ('CUSTOMER','BOTH')");
 
-  if (!req.user?.isAdmin || branchScope.length) {
+  if (!canUseAllBranches || branchScope.length) {
     customersQuery = applyPartyBranchScope(customersQuery, branchScope);
   }
 
@@ -867,7 +922,7 @@ const loadSalesReportOptions = async ({ req, filters }) => {
     .where({ "a.is_active": true })
     .whereRaw("lower(coalesce(apc.code, '')) in ('cash','bank')");
 
-  if (!req.user?.isAdmin || branchScope.length) {
+  if (!canUseAllBranches || branchScope.length) {
     const scopedBranches = branchScope.length
       ? branchScope
       : [Number(req.branchId || 0)];
@@ -955,6 +1010,7 @@ const getSalesReportRows = async ({
   filters,
   movementKind = "SALE",
 }) => {
+  const locale = resolveLocale(req?.locale);
   if (!filters.reportLoaded) return [];
 
   const rawMovementKind = String(movementKind || "SALE").trim().toUpperCase();
@@ -965,9 +1021,11 @@ const getSalesReportRows = async ({
         ? "ALL"
         : "SALE";
 
-  const scopedBranchIds = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const scopedBranchIds = canUseAllBranches
     ? [Number(filters.branchId || 0)].filter((id) => id > 0)
-    : [Number(req.branchId || 0)].filter((id) => id > 0);
+    : getReportAllowedBranchIds(req);
 
   let query = knex("erp.voucher_header as vh")
     .join("erp.sales_header as sh", "sh.voucher_id", "vh.id")
@@ -991,11 +1049,11 @@ const getSalesReportRows = async ({
       "vh.book_no as bill_number",
       knex.raw("COALESCE(NULLIF(vh.remarks, ''), '') as remarks"),
       "vh.branch_id",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", locale),
       "sh.payment_type",
       "sh.payment_received_amount",
       "sh.receive_into_account_id",
-      "ra.name as receive_account_name",
+      localizedNameSelect("ra", "receive_account_name", locale),
       "sh.customer_party_id",
       "sh.customer_name as walk_in_customer_name",
       "sh.customer_phone_number as walk_in_customer_phone",
@@ -1004,7 +1062,7 @@ const getSalesReportRows = async ({
       "p.name_ur as customer_name_ur",
       "p.phone1 as customer_phone1",
       "sh.salesman_employee_id",
-      "e.name as salesman_name",
+      localizedNameSelect("e", "salesman_name", locale),
       "sh.extra_discount",
       "vl.line_no",
       "vl.qty",
@@ -1014,13 +1072,13 @@ const getSalesReportRows = async ({
       "s.id as sku_id",
       "s.sku_code",
       "i.id as item_id",
-      "i.name as item_name",
+      localizedNameSelect("i", "item_name", locale),
       "i.group_id",
-      "pg.name as group_name",
+      localizedNameSelect("pg", "group_name", locale),
       "i.subgroup_id",
-      "sg.name as subgroup_name",
+      localizedNameSelect("sg", "subgroup_name", locale),
       "i.product_type_id",
-      "pt.name as category_name",
+      localizedNameSelect("pt", "category_name", locale),
       knex.raw("COALESCE(soh.payment_received_amount, 0) as so_advance_amount"),
       knex.raw(`COALESCE((
         SELECT SUM(sh2.payment_received_amount)
@@ -1243,19 +1301,18 @@ const getSalesReportRows = async ({
   }));
 };
 
-const resolveSalesReportCustomerLabel = (row) => {
+const resolveSalesReportCustomerLabel = (row, locale) => {
   if (!row) return "-";
   if (row.customer_party_id) {
     return (
-      String(row.customer_name_en || "").trim() ||
-      String(row.customer_name_ur || "").trim() ||
+      preferLocalizedName(locale, row.customer_name_en, row.customer_name_ur) ||
       "-"
     );
   }
   return String(row.walk_in_customer_name || "").trim() || "-";
 };
 
-const getSalesReportGroupIdentity = (row, orderBy) => {
+const getSalesReportGroupIdentity = (row, orderBy, locale) => {
   if (orderBy === SALES_ORDER_REPORT_ORDER_TYPES.voucher) {
     return {
       key: `V:${Number(row.voucher_id || 0) || 0}`,
@@ -1265,7 +1322,7 @@ const getSalesReportGroupIdentity = (row, orderBy) => {
       voucher_no: row.voucher_no,
       voucher_date: row.voucher_date || "",
       bill_number: row.bill_number || "",
-      customer_label: resolveSalesReportCustomerLabel(row),
+      customer_label: resolveSalesReportCustomerLabel(row, locale),
       customer_phone: String(row.customer_phone || "").trim(),
       payment_type: row.payment_type || "",
       payment_received_amount: toAmount(row.payment_received_amount || 0, 2),
@@ -1319,7 +1376,7 @@ const getSalesReportGroupIdentity = (row, orderBy) => {
     };
   }
 
-  const customerLabel = resolveSalesReportCustomerLabel(row);
+  const customerLabel = resolveSalesReportCustomerLabel(row, locale);
   const partyKey = row.customer_party_id
     ? `PTY:${Number(row.customer_party_id || 0)}`
     : `WALKIN:${customerLabel}`;
@@ -1341,12 +1398,15 @@ const getSalesReportGroupIdentity = (row, orderBy) => {
 };
 
 const buildSalesReportData = ({ rows, filters, req }) => {
-  const includeBranchColumn = Boolean(req.user?.isAdmin && !filters.branchId);
+  const includeBranchColumn = Boolean(
+    (req.user?.isAdmin || filters.canFilterAllBranches) && !filters.branchId,
+  );
+  const locale = resolveLocale(req?.locale);
   const groups = [];
   const groupMap = new Map();
 
   rows.forEach((row) => {
-    const identity = getSalesReportGroupIdentity(row, filters.orderBy);
+    const identity = getSalesReportGroupIdentity(row, filters.orderBy, locale);
     let group = groupMap.get(identity.key);
     if (!group) {
       group = {
@@ -1416,7 +1476,9 @@ const buildSalesReportData = ({ rows, filters, req }) => {
     group._customerKeys.add(
       row.customer_party_id
         ? `PTY:${Number(row.customer_party_id || 0)}`
-        : `WALKIN:${resolveSalesReportCustomerLabel(row)}`,
+        : // Deliberately locale-free: this is a distinct-customer dedupe key, and
+          // the walk-in branch returns the typed name, which never translates.
+          `WALKIN:${resolveSalesReportCustomerLabel(row)}`,
     );
     group._articleKeys.add(String(row.sku_id || row.item_id || row.item_label || ""));
 
@@ -1446,13 +1508,18 @@ const buildSalesReportData = ({ rows, filters, req }) => {
             2,
           )
         : paymentReceivedAmount;
+      // Mirror the voucher screen: final amount = net lines - extra discount.
+      // FROM_SO vouchers cannot carry their own extra discount (rejected at entry),
+      // so this stays a no-op for them.
+      const finalAmount = toAmount(
+        Number(group.total_net_amount || 0) -
+          Number(group.total_extra_discount || 0),
+        2,
+      );
       group.remaining_amount =
         paymentType === "CREDIT"
           ? toAmount(
-              Math.max(
-                0,
-                Number(group.total_net_amount || 0) - Number(effectiveTotalReceived || 0),
-              ),
+              Math.max(0, finalAmount - Number(effectiveTotalReceived || 0)),
               2,
             )
           : 0;
@@ -1592,7 +1659,11 @@ const getSalesReportPageData = async ({ req, input = {} }) => {
 };
 
 const getSaleReturnReportPageData = async ({ req, input = {} }) => {
-  const filters = parseSalesReportFilters({ req, input });
+  const filters = parseSalesReportFilters({
+    req,
+    input,
+    scopeKey: "sale_return_report",
+  });
   const [options, returnReasons, rows] = await Promise.all([
     loadSalesReportOptions({ req, filters }),
     loadSaleReturnReasonOptions(),
@@ -1611,13 +1682,13 @@ const getSaleReturnReportPageData = async ({ req, input = {} }) => {
 };
 
 const loadCustomerLedgerOptions = async ({ req, filters }) => {
-  const scopedBranchIds = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
-  const branches = req.user?.isAdmin
+  const branches = canUseAllBranches
     ? await knex("erp.branches")
         .select("id", "name")
         .where({ is_active: true })
@@ -1632,7 +1703,7 @@ const loadCustomerLedgerOptions = async ({ req, filters }) => {
     .where({ "p.is_active": true })
     .whereRaw("upper(coalesce(p.party_type::text, '')) in ('CUSTOMER','BOTH')");
 
-  if (!req.user?.isAdmin || scopedBranchIds.length) {
+  if (!canUseAllBranches || scopedBranchIds.length) {
     customersQuery = applyPartyBranchScope(customersQuery, scopedBranchIds);
   }
 
@@ -1645,8 +1716,13 @@ const loadCustomerLedgerOptions = async ({ req, filters }) => {
 };
 
 const getCustomerLedgerRows = async ({ req, filters, options }) => {
+  const locale = resolveLocale(req?.locale);
+  const t = (key) => resolveTranslation(locale, key);
+  const hasRemarksUr = await supportsVoucherRemarksUr();
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
   const includeBranchColumn = Boolean(
-    req.user?.isAdmin && filters.branchIds.length !== 1,
+    canUseAllBranches && filters.branchIds.length !== 1,
   );
 
   if (!filters.reportLoaded || !filters.partyId) {
@@ -1665,11 +1741,9 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
     };
   }
 
-  const scopedBranchIds = req.user?.isAdmin
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
   const selectedCustomer = (options.customers || []).find(
     (customer) => Number(customer.id) === Number(filters.partyId),
@@ -1715,9 +1789,13 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
       "vh.id as voucher_id",
       "vh.voucher_no",
       "vh.book_no as bill_number",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", locale),
       knex.raw(
-        "COALESCE(NULLIF(ge.narration, ''), NULLIF(vh.remarks, '')) as description",
+        `${localizedNarrativeSql({
+          locale,
+          narrationExpr: "ge.narration",
+          hasRemarksUr,
+        })} as description`,
       ),
       knex.raw("COALESCE(vq.qty, 0) as qty"),
       knex.raw("COALESCE(ge.dr, 0) as dr"),
@@ -1786,7 +1864,7 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
         "vl.amount",
         "vl.meta",
         "s.sku_code",
-        "i.name as item_name",
+        localizedNameSelect("i", "item_name", locale),
       )
       .whereIn("vl.voucher_header_id", voucherIds)
       .whereIn("vl.line_kind", ["ITEM", "SKU"])
@@ -1821,7 +1899,7 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
         rawAmount > 0 ? rawAmount : fallbackAmount > 0 ? fallbackAmount : 1;
       const lineText =
         voucherType === "SALES_VOUCHER"
-          ? `Article: ${name} | Qty: ${saleQty.toFixed(3)} | Pair Rate: ${pairRate.toFixed(2)} | Pair Discount: ${pairDiscount.toFixed(2)} | Line Total: ${lineTotal.toFixed(2)}`
+          ? `${t("article")}: ${name} | ${t("qty")}: ${saleQty.toFixed(3)} | ${t("pair_rate")}: ${pairRate.toFixed(2)} | ${t("pair_discount")}: ${pairDiscount.toFixed(2)} | ${t("line_total")}: ${lineTotal.toFixed(2)}`
           : `${name} x ${qty.toFixed(3)} @ ${rate.toFixed(2)}`;
       const list = linesByVoucherId.get(voucherId) || [];
       list.push({
@@ -1846,7 +1924,7 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
       );
       if (voucherType === "SALES_VOUCHER" && extraDiscount > 0) {
         sorted.push({
-          text: `Extra Discount: ${extraDiscount.toFixed(2)}`,
+          text: `${t("extra_discount")}: ${extraDiscount.toFixed(2)}`,
           qty: 0,
           rate: 0,
           weight: extraDiscount,
@@ -1855,7 +1933,10 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
       }
       voucherLineDetailsByVoucherId.set(voucherId, sorted);
       const compact = sorted.slice(0, 4).map((line) => line.text);
-      const suffix = sorted.length > 4 ? ` +${sorted.length - 4} more` : "";
+      const suffix =
+        sorted.length > 4
+          ? ` +${sorted.length - 4} ${t("ledger_more_lines")}`
+          : "";
       voucherLineSummaryByVoucherId.set(
         voucherId,
         `${compact.join("; ")}${suffix}`,
@@ -1869,9 +1950,7 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
     const baseDescription = String(row.description || "").trim();
     const voucherType = String(row.voucher_type_code || "").toUpperCase();
     const description =
-      voucherType === "SALES_ORDER"
-        ? "Advance Payment Received"
-        : baseDescription;
+      voucherType === "SALES_ORDER" ? t("advance_receive") : baseDescription;
 
     return {
       id: Number(row.id || 0),
@@ -1929,7 +2008,7 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
       return [
         {
           ...entry,
-          description: "Advance Payment Received",
+          description: t("advance_receive"),
           qty: 0,
         },
       ];
@@ -1989,7 +2068,7 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
             if (voucherType === "SALES_ORDER") {
               return {
                 ...entry,
-                description: "Advance Payment Received",
+                description: t("advance_receive"),
                 qty: 0,
               };
             }
@@ -2076,8 +2155,10 @@ const getCustomerLedgerReportPageData = async ({ req, input = {} }) => {
   };
 };
 
-const loadCustomerBalanceOptions = async ({ req }) => {
-  const branches = req.user?.isAdmin
+const loadCustomerBalanceOptions = async ({ req, filters }) => {
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const branches = canUseAllBranches
     ? await knex("erp.branches")
         .select("id", "name")
         .where({ is_active: true })
@@ -2093,11 +2174,11 @@ const loadCustomerBalanceOptions = async ({ req }) => {
 const getCustomerBalanceRows = async ({ req, filters }) => {
   if (!filters.reportLoaded) return [];
 
-  const scopedBranchIds = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
   const balanceSubquery = knex("erp.gl_entry as ge")
     .select("ge.party_id")
@@ -2152,7 +2233,7 @@ const getCustomerBalanceRows = async ({ req, filters }) => {
 const getCustomerBalancesReportPageData = async ({ req, input = {} }) => {
   const filters = parseCustomerBalanceFilters({ req, input });
   const [options, rows] = await Promise.all([
-    loadCustomerBalanceOptions({ req }),
+    loadCustomerBalanceOptions({ req, filters }),
     getCustomerBalanceRows({ req, filters }),
   ]);
 
@@ -2170,6 +2251,10 @@ const getCustomerBalancesReportPageData = async ({ req, input = {} }) => {
 };
 
 const parseSalesDiscountReportFilters = ({ req, input = {} }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "sales_discount_report",
+  );
   const now = new Date();
   const fromDate = new Date(now);
   fromDate.setDate(fromDate.getDate() - 30);
@@ -2188,12 +2273,11 @@ const parseSalesDiscountReportFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  const branchIdsFromInput = toIdListWithAll(input.branch_ids);
-  const branchIds = req.user?.isAdmin
-    ? branchIdsFromInput
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   const minDiscountRaw = Number(input.min_discount_amount);
   const minDiscountAmount =
@@ -2211,6 +2295,7 @@ const parseSalesDiscountReportFilters = ({ req, input = {} }) => {
     from,
     to,
     branchIds,
+    canFilterAllBranches,
     salesmanId: toPositiveId(input.salesman_employee_id),
     partyId: toPositiveId(input.party_id),
     productGroupId: toPositiveId(input.product_group_id),
@@ -2229,13 +2314,13 @@ const parseSalesDiscountReportFilters = ({ req, input = {} }) => {
 };
 
 const loadSalesDiscountReportOptions = async ({ req, filters }) => {
-  const scopedBranchIds = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
-  const branches = req.user?.isAdmin
+  const branches = canUseAllBranches
     ? await knex("erp.branches")
         .select("id", "name")
         .where({ is_active: true })
@@ -2251,7 +2336,7 @@ const loadSalesDiscountReportOptions = async ({ req, filters }) => {
     .whereRaw("upper(coalesce(p.party_type::text, '')) in ('CUSTOMER','BOTH')")
     .orderBy("p.name", "asc");
 
-  if (!req.user?.isAdmin || scopedBranchIds.length) {
+  if (!canUseAllBranches || scopedBranchIds.length) {
     customersQuery = applyPartyBranchScope(customersQuery, scopedBranchIds);
   }
 
@@ -2324,19 +2409,20 @@ const emptySalesDiscountReportData = ({ includeBranchColumn = false } = {}) => (
 });
 
 const getSalesDiscountReportData = async ({ req, filters }) => {
+  const locale = resolveLocale(req?.locale);
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
   const includeBranchColumn = Boolean(
-    req.user?.isAdmin && filters.branchIds.length !== 1,
+    canUseAllBranches && filters.branchIds.length !== 1,
   );
 
   if (!filters.reportLoaded) {
     return emptySalesDiscountReportData({ includeBranchColumn });
   }
 
-  const scopedBranchIds = req.user?.isAdmin
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
   let voucherQuery = knex("erp.voucher_header as vh")
     .join("erp.sales_header as sh", "sh.voucher_id", "vh.id")
@@ -2349,7 +2435,7 @@ const getSalesDiscountReportData = async ({ req, filters }) => {
       knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as voucher_date"),
       "vh.status as voucher_status",
       "vh.branch_id",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", locale),
       "sh.sale_mode",
       "sh.payment_type",
       "sh.customer_party_id",
@@ -2357,7 +2443,7 @@ const getSalesDiscountReportData = async ({ req, filters }) => {
       "p.name as customer_name_en",
       "p.name_ur as customer_name_ur",
       "sh.salesman_employee_id",
-      "e.name as salesman_name",
+      localizedNameSelect("e", "salesman_name", locale),
       "sh.extra_discount",
     )
     .where({
@@ -2401,9 +2487,9 @@ const getSalesDiscountReportData = async ({ req, filters }) => {
       "vl.amount",
       "vl.meta",
       "i.group_id",
-      "pg.name as group_name",
+      localizedNameSelect("pg", "group_name", locale),
       "s.sku_code",
-      "i.name as item_name",
+      localizedNameSelect("i", "item_name", locale),
     )
     .whereIn("vl.voucher_header_id", voucherIds)
     .where("vl.line_kind", "SKU")
@@ -2990,6 +3076,10 @@ const normalizeContactNameForAnalysis = (value) =>
     .toUpperCase();
 
 const parseCustomerContactAnalysisFilters = ({ req, input = {} }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "customer_contact_analysis",
+  );
   const now = new Date();
   const fromDate = new Date(now);
   fromDate.setDate(fromDate.getDate() - 89);
@@ -3009,7 +3099,7 @@ const parseCustomerContactAnalysisFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  const branchId = req.user?.isAdmin
+  const branchId = req.user?.isAdmin || canFilterAllBranches
     ? toPositiveId(input.filter_branch_id ?? input.branch_id)
     : Number(req.branchId || 0) || null;
 
@@ -3041,6 +3131,7 @@ const parseCustomerContactAnalysisFilters = ({ req, input = {} }) => {
     from,
     to,
     branchId,
+    canFilterAllBranches,
     groupBy,
     dormantDays,
     minBillAmount,
@@ -3058,7 +3149,9 @@ const parseCustomerContactAnalysisFilters = ({ req, input = {} }) => {
 };
 
 const loadCustomerContactAnalysisOptions = async ({ req, filters }) => {
-  const branches = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const branches = canUseAllBranches
     ? await knex("erp.branches")
         .select("id", "name")
         .where({ is_active: true })
@@ -3075,6 +3168,7 @@ const loadCustomerContactAnalysisOptions = async ({ req, filters }) => {
 };
 
 const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
+  const locale = resolveLocale(req?.locale);
   const filters = parseCustomerContactAnalysisFilters({ req, input });
   const options = await loadCustomerContactAnalysisOptions({ req, filters });
 
@@ -3094,9 +3188,11 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
     };
   }
 
-  const scopedBranchIds = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const scopedBranchIds = canUseAllBranches
     ? [Number(filters.branchId || 0)].filter((id) => id > 0)
-    : [Number(req.branchId || 0)].filter((id) => id > 0);
+    : getReportAllowedBranchIds(req);
 
   let voucherQuery = knex("erp.voucher_header as vh")
     .join("erp.sales_header as sh", "sh.voucher_id", "vh.id")
@@ -3108,7 +3204,7 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
       knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as voucher_date"),
       "vh.book_no as bill_number",
       "vh.branch_id",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", locale),
       "vh.status as voucher_status",
       "sh.payment_type",
       "sh.customer_party_id",
@@ -3135,7 +3231,7 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
       "vl.amount",
       "vl.qty",
       "vl.meta",
-      "pg.name as group_name",
+      localizedNameSelect("pg", "group_name", locale),
     )
     .where("vh.voucher_type_code", "SALES_VOUCHER")
     .whereNot("vh.status", "REJECTED")
@@ -3478,19 +3574,22 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
 };
 
 const getCustomerListingsRows = async ({ req }) => {
+  const locale = resolveLocale(req?.locale);
   let query = knex("erp.parties as p")
     .leftJoin("erp.party_groups as pg", "pg.id", "p.group_id")
     .leftJoin("erp.cities as c", "c.id", "p.city_id")
     .select(
       "p.id",
-      "p.name",
-      knex.raw("COALESCE(pg.name, '') as group_name"),
-      knex.raw("COALESCE(c.name, p.city, '') as city_name"),
+      localizedNameSelect("p", "name", locale),
+      knex.raw(`COALESCE(${localizedNameSql("pg", locale)}, '') as group_name`),
+      knex.raw(
+        `COALESCE(${localizedNameSql("c", locale)}, p.city, '') as city_name`,
+      ),
       knex.raw(
         "COALESCE(NULLIF(p.phone1, ''), NULLIF(p.phone2, '')) as phone_primary",
       ),
       "p.created_at",
-      knex.raw(`(SELECT COALESCE(string_agg(b.name, ', ' ORDER BY b.name), '')
+      knex.raw(`(SELECT COALESCE(string_agg(${localizedNameSql("b", locale)}, ', ' ORDER BY ${localizedNameSql("b", locale)}), '')
         FROM erp.party_branch pb
         JOIN erp.branches b ON b.id = pb.branch_id
         WHERE pb.party_id = p.id) as branch_names`),
@@ -3498,7 +3597,10 @@ const getCustomerListingsRows = async ({ req }) => {
     .where({ "p.is_active": true, "p.party_type": "CUSTOMER" })
     .orderBy("p.id", "desc");
 
-  if (!req.user?.isAdmin && Number(req.branchId || 0) > 0) {
+  const canUseAllBranches =
+    req.user?.isAdmin ||
+    reportCanFilterAllBranches(req, "customer_listings");
+  if (!canUseAllBranches && Number(req.branchId || 0) > 0) {
     query = query.whereExists(function whereCustomerBranch() {
       this.select(1)
         .from("erp.party_branch as pb")

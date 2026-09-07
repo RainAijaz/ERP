@@ -3,6 +3,10 @@
 const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const {
+  localizedNarrativeSql,
+  supportsVoucherRemarksUr,
+} = require("../../utils/localized-name");
+const {
   REPORT_ORDER_TYPES,
   REPORT_TYPES,
   resolveReportOrderType,
@@ -10,6 +14,11 @@ const {
   toIdList,
   toBoolean,
 } = require("../../utils/report-filter-types");
+const {
+  getReportAllowedBranchIds,
+  normalizeReportBranchIds,
+  reportCanFilterAllBranches,
+} = require("../../utils/report-branch-scope");
 
 const PURCHASE_TYPE_FILTERS = Object.freeze({
   all: "all",
@@ -23,10 +32,19 @@ const PURCHASE_CATEGORY_FILTERS = Object.freeze({
   consumable: "consumable",
 });
 
+// NULLIF matters: name_ur is frequently an empty string rather than NULL, and a
+// bare COALESCE would then render a blank cell instead of the English name.
 const localizedNameSelect = (alias, as, locale) =>
   locale === "ur"
-    ? knex.raw(`COALESCE(${alias}.name_ur, ${alias}.name) as ${as}`)
+    ? knex.raw(
+        `COALESCE(NULLIF(${alias}.name_ur, ''), ${alias}.name) as ${as}`,
+      )
     : `${alias}.name as ${as}`;
+
+const localizedNameSql = (alias, locale) =>
+  locale === "ur"
+    ? `COALESCE(NULLIF(${alias}.name_ur, ''), ${alias}.name)`
+    : `${alias}.name`;
 
 // Color/size a purchase line was booked against, read from voucher_line.meta
 // (older vouchers used the rm_* key names). NULL when the line has no dimension.
@@ -208,7 +226,8 @@ const getAssetColumnSupport = async () => {
   return assetColumnSupport;
 };
 
-const parseFilters = ({ req, input = {} }) => {
+const parseFilters = ({ req, input = {}, scopeKey = "purchase_report" }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(req, scopeKey);
   const now = new Date();
   const fromDate = new Date(now);
   fromDate.setDate(fromDate.getDate() - 30);
@@ -226,25 +245,11 @@ const parseFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  const selectedBranchIds = toIdListWithAll(input.branch_ids);
-  let branchIds;
-  if (req.user?.isAdmin) {
-    branchIds = selectedBranchIds;
-  } else {
-    const allowedBranchIds = (req.branchOptions || [])
-      .map((b) => Number(b.id || 0))
-      .filter((id) => id > 0);
-    const fallback = Number(req.branchId || 0);
-    const effectiveAllowed = allowedBranchIds.length
-      ? allowedBranchIds
-      : fallback > 0 ? [fallback] : [];
-    if (selectedBranchIds.length) {
-      branchIds = selectedBranchIds.filter((id) => effectiveAllowed.includes(id));
-      if (!branchIds.length) branchIds = effectiveAllowed;
-    } else {
-      branchIds = effectiveAllowed;
-    }
-  }
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   const orderBy = resolveReportOrderType(
     input.order_by,
@@ -276,6 +281,7 @@ const parseFilters = ({ req, input = {} }) => {
     from,
     to,
     branchIds,
+    canFilterAllBranches,
     orderBy,
     reportType,
     purchaseType,
@@ -317,7 +323,9 @@ const loadReportFilterOptions = async ({ req, filters }) => {
   const branchScope = filters.branchIds;
   const locale = String(req?.locale || "en").toLowerCase();
 
-  const branchesPromise = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const branchesPromise = canUseAllBranches
     ? knex("erp.branches")
         .select("id", localizedNameSelect("erp.branches", "name", locale))
         .where({ is_active: true })
@@ -1049,22 +1057,26 @@ const getPurchaseReportPageData = async ({ req, input = {} }) => {
 };
 
 const parseSupplierBalanceFilters = ({ req, input = {} }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "supplier_balances",
+  );
   const today = toLocalDateOnly(new Date());
   const parsedAsOn = parseDateFilter(input.as_on, today);
   let asOn = parsedAsOn.value;
 
   if (!asOn) asOn = today;
 
-  const branchIdsFromInput = toIdList(input.branch_ids);
-  const branchIds = req.user?.isAdmin
-    ? branchIdsFromInput
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   return {
     asOn,
     branchIds,
+    canFilterAllBranches,
     reportLoaded: toBoolean(input.load_report, false),
     invalidAsOnDate: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
     invalidFilterInput: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
@@ -1072,6 +1084,10 @@ const parseSupplierBalanceFilters = ({ req, input = {} }) => {
 };
 
 const parseSupplierLedgerFilters = ({ req, input = {} }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "supplier_ledger",
+  );
   const now = new Date();
   const fromDate = new Date(now);
   fromDate.setDate(fromDate.getDate() - 30);
@@ -1090,18 +1106,17 @@ const parseSupplierLedgerFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  const branchIdsFromInput = toIdListWithAll(input.branch_ids);
   const ledgerView =
     String(input.ledger_view || "summary")
       .trim()
       .toLowerCase() === "detail"
       ? "detail"
       : "summary";
-  const branchIds = req.user?.isAdmin
-    ? branchIdsFromInput
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   return {
     from,
@@ -1109,6 +1124,7 @@ const parseSupplierLedgerFilters = ({ req, input = {} }) => {
     partyId: toPositiveId(input.party_id),
     ledgerView,
     branchIds,
+    canFilterAllBranches,
     reportLoaded: toBoolean(input.load_report, false),
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
     invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
@@ -1122,17 +1138,18 @@ const parseSupplierLedgerFilters = ({ req, input = {} }) => {
 };
 
 const loadSupplierLedgerOptions = async ({ req, filters }) => {
-  const scopedBranchIds = req.user?.isAdmin
+  const locale = String(req?.locale || "en").toLowerCase();
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
-  const branches = req.user?.isAdmin
+  const branches = canUseAllBranches
     ? await knex("erp.branches")
-        .select("id", "name")
+        .select("id", localizedNameSelect("branches", "name", locale))
         .where({ is_active: true })
-        .orderBy("name", "asc")
+        .orderByRaw(`${localizedNameSql("branches", locale)} asc`)
     : (req.branchOptions || []).map((row) => ({
         id: Number(row.id),
         name: row.name,
@@ -1143,7 +1160,7 @@ const loadSupplierLedgerOptions = async ({ req, filters }) => {
     .where({ "p.is_active": true })
     .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')");
 
-  if (!req.user?.isAdmin || scopedBranchIds.length) {
+  if (!canUseAllBranches || scopedBranchIds.length) {
     suppliersQuery = applyPartyBranchScope(suppliersQuery, scopedBranchIds);
   }
 
@@ -1230,8 +1247,10 @@ const fetchSupplierLedgerDetailLines = async ({ voucherHeaderIds, locale }) => {
 
 const getSupplierLedgerRows = async ({ req, filters, options }) => {
   const locale = String(req?.locale || "en").toLowerCase();
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
   const includeBranchColumn = Boolean(
-    req.user?.isAdmin && filters.branchIds.length !== 1,
+    canUseAllBranches && filters.branchIds.length !== 1,
   );
 
   if (!filters.reportLoaded || !filters.partyId) {
@@ -1249,11 +1268,9 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
     };
   }
 
-  const scopedBranchIds = req.user?.isAdmin
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
   const selectedSupplier = (options.suppliers || []).find(
     (supplier) => Number(supplier.id) === Number(filters.partyId),
@@ -1281,6 +1298,7 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
     })
     .first();
 
+  const hasRemarksUr = await supportsVoucherRemarksUr();
   const qtyByVoucherSubquery = knex("erp.voucher_line as vl")
     .select("vl.voucher_header_id")
     .sum({ qty: knex.raw("COALESCE(vl.qty, 0)") })
@@ -1300,7 +1318,11 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
       "vh.book_no as bill_number",
       localizedNameSelect("b", "branch_name", locale),
       knex.raw(
-        "COALESCE(NULLIF(ge.narration, ''), NULLIF(vh.remarks, '')) as description",
+        `${localizedNarrativeSql({
+          locale,
+          narrationExpr: "ge.narration",
+          hasRemarksUr,
+        })} as description`,
       ),
       knex.raw("COALESCE(vq.qty, 0) as qty"),
       knex.raw("COALESCE(ge.dr, 0) as dr"),
@@ -1437,12 +1459,15 @@ const getSupplierLedgerReportPageData = async ({ req, input = {} }) => {
   };
 };
 
-const loadSupplierBalanceOptions = async ({ req }) => {
-  const branches = req.user?.isAdmin
+const loadSupplierBalanceOptions = async ({ req, filters }) => {
+  const locale = String(req?.locale || "en").toLowerCase();
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const branches = canUseAllBranches
     ? await knex("erp.branches")
-        .select("id", "name")
+        .select("id", localizedNameSelect("branches", "name", locale))
         .where({ is_active: true })
-        .orderBy("name", "asc")
+        .orderByRaw(`${localizedNameSql("branches", locale)} asc`)
     : (req.branchOptions || []).map((row) => ({
         id: Number(row.id),
         name: row.name,
@@ -1456,11 +1481,11 @@ const loadSupplierBalanceOptions = async ({ req }) => {
 const getSupplierBalanceRows = async ({ req, filters }) => {
   if (!filters.reportLoaded) return [];
 
-  const scopedBranchIds = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const scopedBranchIds = canUseAllBranches
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter(
-        (id) => Number.isInteger(id) && id > 0,
-      );
+    : getReportAllowedBranchIds(req);
 
   const balanceSubquery = knex("erp.gl_entry as ge")
     .select("ge.party_id")
@@ -1505,7 +1530,7 @@ const getSupplierBalanceRows = async ({ req, filters }) => {
 const getSupplierBalancesReportPageData = async ({ req, input = {} }) => {
   const filters = parseSupplierBalanceFilters({ req, input });
   const [options, rows] = await Promise.all([
-    loadSupplierBalanceOptions({ req }),
+    loadSupplierBalanceOptions({ req, filters }),
     getSupplierBalanceRows({ req, filters }),
   ]);
 
@@ -1523,6 +1548,7 @@ const getSupplierBalancesReportPageData = async ({ req, input = {} }) => {
 };
 
 const parsePendingGrnFilters = ({ req, input = {} }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(req, "pending_grn");
   const parsedFrom = parseDateFilter(input.from_date, "");
   const parsedTo = parseDateFilter(input.to_date, "");
   let from = parsedFrom.value;
@@ -1534,34 +1560,17 @@ const parsePendingGrnFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  const selectedBranchIds = toIdListWithAll(input.branch_ids);
-  let branchIds;
-  if (req.user?.isAdmin) {
-    branchIds = selectedBranchIds;
-  } else {
-    const allowedBranchIds = (req.branchOptions || [])
-      .map((b) => Number(b.id || 0))
-      .filter((id) => id > 0);
-    const fallback = Number(req.branchId || 0);
-    const effectiveAllowed = allowedBranchIds.length
-      ? allowedBranchIds
-      : fallback > 0
-        ? [fallback]
-        : [];
-    if (selectedBranchIds.length) {
-      branchIds = selectedBranchIds.filter((id) =>
-        effectiveAllowed.includes(id),
-      );
-      if (!branchIds.length) branchIds = effectiveAllowed;
-    } else {
-      branchIds = effectiveAllowed;
-    }
-  }
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   return {
     from,
     to,
     branchIds,
+    canFilterAllBranches,
     supplierIds: toIdListWithAll(input.party_ids),
     purchaseCategory: resolvePurchaseCategoryFilter(
       input.purchase_category,
@@ -1580,13 +1589,16 @@ const parsePendingGrnFilters = ({ req, input = {} }) => {
 };
 
 const loadPendingGrnReportOptions = async ({ req, filters }) => {
+  const locale = String(req?.locale || "en").toLowerCase();
   const branchScope = filters.branchIds;
 
-  const branchesPromise = req.user?.isAdmin
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
+  const branchesPromise = canUseAllBranches
     ? knex("erp.branches")
-        .select("id", "name")
+        .select("id", localizedNameSelect("branches", "name", locale))
         .where({ is_active: true })
-        .orderBy("name", "asc")
+        .orderByRaw(`${localizedNameSql("branches", locale)} asc`)
     : Promise.resolve(
         (req.branchOptions || []).map((row) => ({
           id: Number(row.id),
@@ -1625,9 +1637,14 @@ const getPendingGrnReportRows = async ({ req, filters }) => {
 
   const locale = String(req?.locale || "en").toLowerCase();
   const includeRawMaterialRows =
-    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.asset;
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.asset &&
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.consumable;
   const includeAssetRows =
-    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.rawMaterial;
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.rawMaterial &&
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.consumable;
+  const includeConsumableRows =
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.rawMaterial &&
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.asset;
 
   const applyCommonGrnFilters = (query) => {
     let next = query.where({
@@ -1763,11 +1780,56 @@ const getPendingGrnReportRows = async ({ req, filters }) => {
       })()
     : Promise.resolve([]);
 
-  const [rawMaterialRows, assetRows] = await Promise.all([
+  // Consumable GRN lines are ACCOUNT lines with no asset_id — the expense account
+  // is the identity, mirroring how the General Purchase matches them.
+  const consumableRowsPromise = includeConsumableRows
+    ? (() => {
+        const query = knex("erp.voucher_header as vh")
+          .join("erp.purchase_grn_header_ext as ghe", "ghe.voucher_id", "vh.id")
+          .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
+          .leftJoin("erp.parties as p", "p.id", "ghe.supplier_party_id")
+          .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
+          .leftJoin("erp.accounts as ac", "ac.id", "vl.account_id")
+          .select(
+            "vh.id as grn_voucher_id",
+            "vh.voucher_no as grn_voucher_no",
+            "vh.voucher_date",
+            "vh.book_no",
+            "vh.branch_id",
+            localizedNameSelect("b", "branch_name", locale),
+            "ghe.supplier_party_id",
+            "p.code as supplier_code",
+            "p.name as supplier_name",
+            "p.name_ur as supplier_name_ur",
+            knex.raw(
+              "COALESCE(NULLIF(ghe.supplier_reference_no, ''), NULLIF(vh.book_no, ''), NULL) as grn_reference_no",
+            ),
+            "vl.id as grn_line_id",
+            "vl.line_no as grn_line_no",
+            knex.raw("NULL::bigint as item_id"),
+            knex.raw("COALESCE(ac.code, '') as item_code"),
+            knex.raw("COALESCE(ac.name, '-') as item_name"),
+            knex.raw("NULL::text as item_name_ur"),
+            knex.raw("NULL::text as uom_code"),
+            "vl.qty",
+            knex.raw("NULL::text as color_name"),
+            knex.raw("NULL::text as size_name"),
+            knex.raw("'CONSUMABLE'::text as purchase_category"),
+          )
+          .where({ "vl.line_kind": "ACCOUNT" })
+          .whereRaw("coalesce(vl.meta->>'asset_id', '') !~ '^[0-9]+$'")
+          .andWhere("ghe.purchase_category", "CONSUMABLE");
+
+        return applyCommonGrnFilters(query);
+      })()
+    : Promise.resolve([]);
+
+  const [rawMaterialRows, assetRows, consumableRows] = await Promise.all([
     rawMaterialRowsPromise,
     assetRowsPromise,
+    consumableRowsPromise,
   ]);
-  const grnLines = [...rawMaterialRows, ...assetRows];
+  const grnLines = [...rawMaterialRows, ...assetRows, ...consumableRows];
   if (!grnLines.length) return [];
 
   const grnLineIds = grnLines.map((line) => Number(line.grn_line_id));
@@ -1873,6 +1935,10 @@ const SUPPLIER_ANALYSIS_GROUP_BY = Object.freeze({
 const SUPPLIER_ANALYSIS_WAC_TOLERANCE_PERCENT = 2;
 
 const parseSupplierAnalysisFilters = ({ req, input = {} }) => {
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "supplier_analysis",
+  );
   const now = new Date();
   const fromDate = new Date(now);
   // Purchases are less frequent than sales; default to a 6-month window so a
@@ -1892,31 +1958,11 @@ const parseSupplierAnalysisFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  // Branch scoping mirrors parseFilters(): admins pick freely, others are
-  // constrained to their allowed branches.
-  const selectedBranchIds = toIdListWithAll(input.branch_ids);
-  let branchIds;
-  if (req.user?.isAdmin) {
-    branchIds = selectedBranchIds;
-  } else {
-    const allowedBranchIds = (req.branchOptions || [])
-      .map((b) => Number(b.id || 0))
-      .filter((id) => id > 0);
-    const fallback = Number(req.branchId || 0);
-    const effectiveAllowed = allowedBranchIds.length
-      ? allowedBranchIds
-      : fallback > 0
-        ? [fallback]
-        : [];
-    if (selectedBranchIds.length) {
-      branchIds = selectedBranchIds.filter((id) =>
-        effectiveAllowed.includes(id),
-      );
-      if (!branchIds.length) branchIds = effectiveAllowed;
-    } else {
-      branchIds = effectiveAllowed;
-    }
-  }
+  const branchIds = normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canFilterAllBranches,
+  });
 
   const groupBy =
     String(input.group_by || "").trim().toLowerCase() ===
@@ -1934,6 +1980,7 @@ const parseSupplierAnalysisFilters = ({ req, input = {} }) => {
     from,
     to,
     branchIds,
+    canFilterAllBranches,
     groupBy,
     minSpreadPct,
     onlyMultiSupplier: toBoolean(input.only_multi_supplier, false),

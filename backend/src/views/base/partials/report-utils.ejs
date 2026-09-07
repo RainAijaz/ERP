@@ -66,33 +66,54 @@
 <script>
   (function () {
     const path = String(window.location.pathname || "");
-    if (!path.startsWith("/reports/")) return;
+    // BOM reports live under the master-data tree, not /reports/, so they were
+    // silently skipped by this whole partial and had no print/export at all.
+    const REPORT_PATH_ROOTS = ["/reports/", "/master-data/bom/reports/"];
+    if (!REPORT_PATH_ROOTS.some((root) => path.startsWith(root))) return;
 
     const REPORT_SCOPE_BY_PATH = [
+      ["/master-data/bom/reports/readiness", "master_data.bom.reports.readiness"],
+      ["/master-data/bom/reports/version-history", "master_data.bom.reports.version_history"],
+      ["/master-data/bom/reports/cost-breakdown", "master_data.bom.reports.cost_breakdown"],
+      ["/master-data/bom/reports/lifecycle-status", "master_data.bom.reports.lifecycle_status"],
+      ["/master-data/bom/reports/change-log", "master_data.bom.reports.change_log"],
+      ["/master-data/bom/reports/approval-queue-aging", "master_data.bom.reports.approval_queue_aging"],
+      ["/reports/sales/customer-ledger", "customer_ledger_report"],
+      ["/reports/sales/customer-balances", "customer_balances_report"],
+      ["/reports/sales/customer-contact-analysis", "customer_contact_analysis"],
+      ["/reports/sales/customer-listings", "customer_listings"],
+      ["/reports/sales/sales-order-report", "sales_order_report"],
+      ["/reports/sales/sale-return-report", "sale_return_report"],
+      ["/reports/sales/sales-discount-report", "sales_discount_report"],
       ["/reports/sales/", "sales_report"],
       ["/reports/purchases/supplier-ledger", "supplier_ledger"],
       ["/reports/purchases/supplier-balances", "supplier_balances"],
       ["/reports/purchases/pending-grn", "pending_grn"],
+      ["/reports/purchases/supplier-analysis", "supplier_analysis"],
       ["/reports/purchases/", "purchase_report"],
+      ["/reports/production/planned-consumption", "planned_consumption_report"],
+      ["/reports/production/department-wip-balances", "department_wip_balances_report"],
+      ["/reports/production/department-wip-ledger", "department_wip_ledger_report"],
+      ["/reports/production/department-wip", "department_wip_report"],
       ["/reports/production/consumption", "consumption_report"],
       ["/reports/production/", "production_report"],
       ["/reports/inventory/stock-amount", "stock_amount"],
       ["/reports/inventory/stock-balances", "stock_quantity"],
       ["/reports/inventory/stock-ledger", "stock_ledger"],
       ["/reports/inventory/stock-movement", "stock_item_activity"],
-      ["/reports/inventory/stock-transfer", "stock_item_activity"],
+      ["/reports/inventory/stock-transfer", "stock_transfer_report"],
       ["/reports/inventory/dead-stock", "dead_stock_report"],
       ["/reports/inventory/stock-count-accuracy", "stock_count_accuracy"],
       ["/reports/hr-payroll/labour-ledger", "labour_ledger"],
       ["/reports/hr-payroll/labour-balances", "labour_balances"],
       ["/reports/hr-payroll/employee-ledger", "employee_ledger"],
       ["/reports/hr-payroll/employee-balances", "employee_balances"],
+      ["/reports/hr-payroll/commission-ledger", "commission_ledger"],
       ["/reports/returnables/", "pending_returnables"],
       ["/reports/financial/cash_book", "cash_book"],
       ["/reports/financial/voucher_register", "voucher_register"],
       ["/reports/financial/expense_analysis", "expense_analysis"],
       ["/reports/financial/expense_trends", "expense_trends"],
-      ["/reports/financial/profitability_analysis", "profitability_analysis"],
       ["/reports/financial/profit_and_loss", "profit_and_loss"],
       ["/reports/financial/account_activity_ledger", "account_activity_ledger"],
       ["/reports/financial/trial_balance", "trial_balance"],
@@ -106,6 +127,55 @@
         details: can("REPORT", "sales_report", "view_details"),
         filterAllBranches: can("REPORT", "sales_report", "filter_all_branches"),
         viewCostFields: can("REPORT", "sales_report", "view_cost_fields"),
+      },
+      customer_ledger_report: {
+        print: can("REPORT", "customer_ledger_report", "print"),
+        export: can("REPORT", "customer_ledger_report", "export_excel_csv"),
+        details: can("REPORT", "customer_ledger_report", "view_details"),
+        filterAllBranches: can("REPORT", "customer_ledger_report", "filter_all_branches"),
+        viewCostFields: can("REPORT", "customer_ledger_report", "view_cost_fields"),
+      },
+      customer_balances_report: {
+        print: can("REPORT", "customer_balances_report", "print"),
+        export: can("REPORT", "customer_balances_report", "export_excel_csv"),
+        details: can("REPORT", "customer_balances_report", "view_details"),
+        filterAllBranches: can("REPORT", "customer_balances_report", "filter_all_branches"),
+        viewCostFields: can("REPORT", "customer_balances_report", "view_cost_fields"),
+      },
+      customer_contact_analysis: {
+        print: can("REPORT", "customer_contact_analysis", "print"),
+        export: can("REPORT", "customer_contact_analysis", "export_excel_csv"),
+        details: can("REPORT", "customer_contact_analysis", "view_details"),
+        filterAllBranches: can("REPORT", "customer_contact_analysis", "filter_all_branches"),
+        viewCostFields: can("REPORT", "customer_contact_analysis", "view_cost_fields"),
+      },
+      customer_listings: {
+        print: can("REPORT", "customer_listings", "print"),
+        export: can("REPORT", "customer_listings", "export_excel_csv"),
+        details: can("REPORT", "customer_listings", "view_details"),
+        filterAllBranches: can("REPORT", "customer_listings", "filter_all_branches"),
+        viewCostFields: can("REPORT", "customer_listings", "view_cost_fields"),
+      },
+      sales_order_report: {
+        print: can("REPORT", "sales_order_report", "print"),
+        export: can("REPORT", "sales_order_report", "export_excel_csv"),
+        details: can("REPORT", "sales_order_report", "view_details"),
+        filterAllBranches: can("REPORT", "sales_order_report", "filter_all_branches"),
+        viewCostFields: can("REPORT", "sales_order_report", "view_cost_fields"),
+      },
+      sale_return_report: {
+        print: can("REPORT", "sale_return_report", "print"),
+        export: can("REPORT", "sale_return_report", "export_excel_csv"),
+        details: can("REPORT", "sale_return_report", "view_details"),
+        filterAllBranches: can("REPORT", "sale_return_report", "filter_all_branches"),
+        viewCostFields: can("REPORT", "sale_return_report", "view_cost_fields"),
+      },
+      sales_discount_report: {
+        print: can("REPORT", "sales_discount_report", "print"),
+        export: can("REPORT", "sales_discount_report", "export_excel_csv"),
+        details: can("REPORT", "sales_discount_report", "view_details"),
+        filterAllBranches: can("REPORT", "sales_discount_report", "filter_all_branches"),
+        viewCostFields: can("REPORT", "sales_discount_report", "view_cost_fields"),
       },
       purchase_report: {
         print: can("REPORT", "purchase_report", "print"),
@@ -135,6 +205,13 @@
         filterAllBranches: can("REPORT", "pending_grn", "filter_all_branches"),
         viewCostFields: can("REPORT", "pending_grn", "view_cost_fields"),
       },
+      supplier_analysis: {
+        print: can("REPORT", "supplier_analysis", "print"),
+        export: can("REPORT", "supplier_analysis", "export_excel_csv"),
+        details: can("REPORT", "supplier_analysis", "view_details"),
+        filterAllBranches: can("REPORT", "supplier_analysis", "filter_all_branches"),
+        viewCostFields: can("REPORT", "supplier_analysis", "view_cost_fields"),
+      },
       production_report: {
         print: can("REPORT", "production_report", "print"),
         export: can("REPORT", "production_report", "export_excel_csv"),
@@ -148,6 +225,34 @@
         details: can("REPORT", "consumption_report", "view_details"),
         filterAllBranches: can("REPORT", "consumption_report", "filter_all_branches"),
         viewCostFields: can("REPORT", "consumption_report", "view_cost_fields"),
+      },
+      planned_consumption_report: {
+        print: can("REPORT", "planned_consumption_report", "print"),
+        export: can("REPORT", "planned_consumption_report", "export_excel_csv"),
+        details: can("REPORT", "planned_consumption_report", "view_details"),
+        filterAllBranches: can("REPORT", "planned_consumption_report", "filter_all_branches"),
+        viewCostFields: can("REPORT", "planned_consumption_report", "view_cost_fields"),
+      },
+      department_wip_report: {
+        print: can("REPORT", "department_wip_report", "print"),
+        export: can("REPORT", "department_wip_report", "export_excel_csv"),
+        details: can("REPORT", "department_wip_report", "view_details"),
+        filterAllBranches: can("REPORT", "department_wip_report", "filter_all_branches"),
+        viewCostFields: can("REPORT", "department_wip_report", "view_cost_fields"),
+      },
+      department_wip_balances_report: {
+        print: can("REPORT", "department_wip_balances_report", "print"),
+        export: can("REPORT", "department_wip_balances_report", "export_excel_csv"),
+        details: can("REPORT", "department_wip_balances_report", "view_details"),
+        filterAllBranches: can("REPORT", "department_wip_balances_report", "filter_all_branches"),
+        viewCostFields: can("REPORT", "department_wip_balances_report", "view_cost_fields"),
+      },
+      department_wip_ledger_report: {
+        print: can("REPORT", "department_wip_ledger_report", "print"),
+        export: can("REPORT", "department_wip_ledger_report", "export_excel_csv"),
+        details: can("REPORT", "department_wip_ledger_report", "view_details"),
+        filterAllBranches: can("REPORT", "department_wip_ledger_report", "filter_all_branches"),
+        viewCostFields: can("REPORT", "department_wip_ledger_report", "view_cost_fields"),
       },
       stock_amount: {
         print: can("REPORT", "stock_amount", "print"),
@@ -176,6 +281,13 @@
         details: can("REPORT", "stock_item_activity", "view_details"),
         filterAllBranches: can("REPORT", "stock_item_activity", "filter_all_branches"),
         viewCostFields: can("REPORT", "stock_item_activity", "view_cost_fields"),
+      },
+      stock_transfer_report: {
+        print: can("REPORT", "stock_transfer_report", "print"),
+        export: can("REPORT", "stock_transfer_report", "export_excel_csv"),
+        details: can("REPORT", "stock_transfer_report", "view_details"),
+        filterAllBranches: can("REPORT", "stock_transfer_report", "filter_all_branches"),
+        viewCostFields: can("REPORT", "stock_transfer_report", "view_cost_fields"),
       },
       dead_stock_report: {
         print: can("REPORT", "dead_stock_report", "print"),
@@ -218,6 +330,13 @@
         details: can("REPORT", "employee_balances", "view_details"),
         filterAllBranches: can("REPORT", "employee_balances", "filter_all_branches"),
         viewCostFields: can("REPORT", "employee_balances", "view_cost_fields"),
+      },
+      commission_ledger: {
+        print: can("REPORT", "commission_ledger", "print"),
+        export: can("REPORT", "commission_ledger", "export_excel_csv"),
+        details: can("REPORT", "commission_ledger", "view_details"),
+        filterAllBranches: can("REPORT", "commission_ledger", "filter_all_branches"),
+        viewCostFields: can("REPORT", "commission_ledger", "view_cost_fields"),
       },
       pending_returnables: {
         print: can("REPORT", "pending_returnables", "print"),
@@ -289,11 +408,32 @@
         filterAllBranches: can("REPORT", "payroll_wage_balance", "filter_all_branches"),
         viewCostFields: can("REPORT", "payroll_wage_balance", "view_cost_fields"),
       },
+      ...Object.fromEntries([
+        "master_data.bom.reports.readiness",
+        "master_data.bom.reports.version_history",
+        "master_data.bom.reports.cost_breakdown",
+        "master_data.bom.reports.lifecycle_status",
+        "master_data.bom.reports.change_log",
+        "master_data.bom.reports.approval_queue_aging",
+      ].map((scope) => [scope, {
+        print: can("REPORT", scope, "print"),
+        export: can("REPORT", scope, "export_excel_csv"),
+        details: can("REPORT", scope, "view_details"),
+        filterAllBranches: can("REPORT", scope, "filter_all_branches"),
+        viewCostFields: can("REPORT", scope, "view_cost_fields"),
+      }])),
     }) %>;
 
+    // Compare on a path that always carries a trailing slash. A report whose
+    // form posts back to its bare mount point (the purchase report posts to
+    // req.baseUrl, so the result page is "/reports/purchases", not
+    // "/reports/purchases/") never matched its own "/reports/purchases/"
+    // prefix, so every permission below silently resolved to "denied" - which
+    // force-locked the branch filter to the navbar branch and disabled it.
     const resolveReportScopeKey = () => {
+      const candidate = path.endsWith("/") ? path : `${path}/`;
       for (const [prefix, scopeKey] of REPORT_SCOPE_BY_PATH) {
-        if (path.startsWith(prefix)) return scopeKey;
+        if (candidate.startsWith(prefix)) return scopeKey;
       }
       return null;
     };
@@ -571,6 +711,12 @@
       setTimeout(() => document.addEventListener("click", outsideClick, true), 0);
     };
 
+    const cellText = (cell) => String(cell.textContent || "").replace(/\s+/g, " ").trim();
+    const cellSpan = (cell, attr) => {
+      const span = Number(cell.getAttribute(attr));
+      return Number.isFinite(span) && span > 1 ? Math.floor(span) : 1;
+    };
+
     const exportTablesToCsv = (root, trigger) => {
       const tables = Array.from(root.querySelectorAll("[data-report-table], table[data-table], table"));
       if (!tables.length) return;
@@ -586,9 +732,15 @@
             // Skip rows explicitly filtered out by search; include all pagination-hidden rows
             if (row.dataset.inFilter === "false") return;
             if (row.hidden) return;
-            const cells = Array.from(row.querySelectorAll("th,td")).map((cell) =>
-              csvEscape(String(cell.textContent || "").replace(/\s+/g, " ").trim()),
-            );
+            // A colspan cell (e.g. the "Grand Total" label) occupies several
+            // columns, so pad it out or every later value lands one column left.
+            const cells = [];
+            Array.from(row.querySelectorAll("th,td")).forEach((cell) => {
+              cells.push(csvEscape(cellText(cell)));
+              for (let extra = 1; extra < cellSpan(cell, "colspan"); extra += 1) {
+                cells.push(csvEscape(""));
+              }
+            });
             if (cells.length) lines.push(cells.join(","));
           });
 
@@ -608,7 +760,9 @@
         trigger?.getAttribute("data-download-filename") || fallbackName,
       ).trim() || fallbackName;
 
-      const blob = new Blob([csvChunks.join("\n\n")], {
+      // Excel reads a BOM-less CSV as ANSI, which turns Urdu names into mojibake
+      // even though the bytes are correct UTF-8. The BOM makes it pick UTF-8.
+      const blob = new Blob(["﻿" + csvChunks.join("\n\n")], {
         type: "text/csv;charset=utf-8;",
       });
       const link = document.createElement("a");
@@ -634,6 +788,11 @@
         });
       window.__pdfLibsPromise = loadScript("/vendor/jspdf.umd.min.js")
         .then(() => loadScript("/vendor/jspdf.plugin.autotable.min.js"))
+        // Urdu/Arabic text is unrenderable in jsPDF's default Helvetica; this
+        // helper embeds a Unicode font on demand. It is a small shim -- the
+        // 300KB font itself is only fetched when a report actually contains
+        // Arabic-script characters.
+        .then(() => loadScript("/vendor/pdf-urdu-font.js"))
         .then(() => {
           if (!window.jspdf?.jsPDF) throw new Error("jsPDF loaded without jsPDF object");
           return window.jspdf.jsPDF;
@@ -662,64 +821,94 @@
           let cursorY = 0;
           let renderedTables = 0;
 
-          tables.forEach((table) => {
-            const tableTitle = String(table.getAttribute("data-export-title") || "").trim();
-            const headers = Array.from(table.querySelectorAll("thead tr"))
-              .map((row) =>
-                Array.from(row.querySelectorAll("th,td")).map((cell) =>
-                  String(cell.textContent || "").replace(/\s+/g, " ").trim(),
-                ),
-              )
-              .filter((row) => row.length);
-            const body = Array.from(table.querySelectorAll("tbody tr"))
-              .filter((row) => row.dataset.inFilter !== "false" && !row.hidden)
-              .map((row) =>
-                Array.from(row.querySelectorAll("th,td")).map((cell) =>
-                  String(cell.textContent || "").replace(/\s+/g, " ").trim(),
-                ),
-              );
-            if (!headers.length && !body.length) return;
-
-            if (renderedTables > 0) doc.addPage();
-            renderedTables += 1;
-            doc.setFontSize(13);
-            doc.text(title, 28, 28);
-            doc.setFontSize(9);
-            doc.setTextColor(100);
-            doc.text(new Date().toLocaleString(), 28, 42);
-            cursorY = 52;
-            if (tableTitle) {
-              doc.setFontSize(10);
-              doc.setTextColor(30);
-              doc.text(tableTitle, 28, cursorY);
-              cursorY += 10;
-            }
-
-            doc.autoTable({
-              head: headers,
-              body,
-              startY: cursorY,
-              margin: { left: 28, right: 28 },
-              styles: { fontSize: 7, cellPadding: 3, overflow: "linebreak" },
-              headStyles: { fillColor: [30, 41, 59], textColor: 255 },
-              alternateRowStyles: { fillColor: [248, 250, 252] },
-              horizontalPageBreak: true,
-              horizontalPageBreakRepeat: 0,
+          // Keep colspan/rowspan on the exported cells: flattening them to plain
+          // text makes spanning rows (e.g. "Grand Total") one cell short per
+          // extra column, which shifts every value into the wrong column.
+          const pdfCells = (row) =>
+            Array.from(row.querySelectorAll("th,td")).map((cell) => {
+              const content = cellText(cell);
+              const colSpan = cellSpan(cell, "colspan");
+              const rowSpan = cellSpan(cell, "rowspan");
+              if (colSpan === 1 && rowSpan === 1) return content;
+              return { content, colSpan, rowSpan };
             });
-          });
 
-          const slug = path
-            .replace(/^\/reports\//, "")
-            .replace(/[^a-zA-Z0-9_-]+/g, "-")
-            .replace(/-+/g, "-")
-            .replace(/^-|-$/g, "");
-          const fallbackName = `${slug || "report"}.pdf`;
-          const downloadName = String(
-            trigger?.getAttribute("data-download-filename") || fallbackName,
-          )
-            .trim()
-            .replace(/\.csv$/i, ".pdf") || fallbackName;
-          doc.save(downloadName);
+          // Read every table up front so the text can be scanned for Urdu before
+          // any of it is drawn -- the font has to be registered on `doc` before
+          // the first doc.text() call, and registering it is asynchronous.
+          const datasets = tables
+            .map((table) => ({
+              tableTitle: String(table.getAttribute("data-export-title") || "").trim(),
+              headers: Array.from(table.querySelectorAll("thead tr"))
+                .map(pdfCells)
+                .filter((row) => row.length),
+              // tfoot carries the totals row on some reports (e.g. Commission
+              // Ledger); without it the PDF silently drops the grand total.
+              body: Array.from(table.querySelectorAll("tbody tr, tfoot tr"))
+                .filter((row) => row.dataset.inFilter !== "false" && !row.hidden)
+                .map(pdfCells),
+            }))
+            .filter((set) => set.headers.length || set.body.length);
+
+          const cellString = (cell) => (cell && typeof cell === "object" ? cell.content : cell);
+          const sampleText = [title]
+            .concat(
+              datasets.flatMap((set) =>
+                [set.tableTitle].concat(
+                  set.headers.concat(set.body).flatMap((row) => row.map(cellString)),
+                ),
+              ),
+            )
+            .join(" ");
+
+          return window.__pdfUrduFont.ensure(doc, sampleText).then((urduFont) => {
+            datasets.forEach((set) => {
+              if (renderedTables > 0) doc.addPage();
+              renderedTables += 1;
+              doc.setFontSize(13);
+              doc.text(title, 28, 28);
+              doc.setFontSize(9);
+              doc.setTextColor(100);
+              doc.text(new Date().toLocaleString(), 28, 42);
+              cursorY = 52;
+              if (set.tableTitle) {
+                doc.setFontSize(10);
+                doc.setTextColor(30);
+                doc.text(set.tableTitle, 28, cursorY);
+                cursorY += 10;
+              }
+
+              doc.autoTable({
+                head: set.headers,
+                body: set.body,
+                startY: cursorY,
+                margin: { left: 28, right: 28 },
+                styles: {
+                  fontSize: 7,
+                  cellPadding: 3,
+                  overflow: "linebreak",
+                  ...(urduFont ? { font: urduFont } : {}),
+                },
+                headStyles: { fillColor: [30, 41, 59], textColor: 255 },
+                alternateRowStyles: { fillColor: [248, 250, 252] },
+                horizontalPageBreak: true,
+                horizontalPageBreakRepeat: 0,
+              });
+            });
+
+            const slug = path
+              .replace(/^\/reports\//, "")
+              .replace(/[^a-zA-Z0-9_-]+/g, "-")
+              .replace(/-+/g, "-")
+              .replace(/^-|-$/g, "");
+            const fallbackName = `${slug || "report"}.pdf`;
+            const downloadName = String(
+              trigger?.getAttribute("data-download-filename") || fallbackName,
+            )
+              .trim()
+              .replace(/\.csv$/i, ".pdf") || fallbackName;
+            doc.save(downloadName);
+          });
         })
         .catch((err) => {
           console.error(err);

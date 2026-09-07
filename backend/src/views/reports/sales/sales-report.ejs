@@ -30,6 +30,7 @@ const returnReasonOptions = Array.isArray(options?.returnReasons) ? options.retu
 const salesmanOptions = Array.isArray(options?.salesmen) ? options.salesmen : [];
 const receiveAccountOptions = Array.isArray(options?.receiveAccounts) ? options.receiveAccounts : [];
 const branchOptions = Array.isArray(options?.branches) ? options.branches : [];
+const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
 const showReturnReasonFilter = Boolean(returnReasonFilter);
 const showReceiveAccountFilter = !showReturnReasonFilter;
 const pageTitle = (() => {
@@ -196,7 +197,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
           <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
             <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("status") %></label>
             <div class="sm:col-span-9">
-              <select name="voucher_status" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <select name="voucher_status" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
                 <option value="all" <%= selectedVoucherStatus === "all" ? "selected" : "" %>><%= allLabel %></option>
                 <option value="approved" <%= selectedVoucherStatus === "approved" ? "selected" : "" %>><%= t("approved") %></option>
                 <option value="pending" <%= selectedVoucherStatus === "pending" ? "selected" : "" %>><%= t("pending") %></option>
@@ -282,9 +283,9 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? t("branches") : t("branch") %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <select name="filter_branch_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
                 <option value=""><%= allLabel %></option>
                 <% branchOptions.forEach((branch) => { %>
@@ -293,6 +294,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
               </select>
             <% } else { %>
               <input type="text" readonly class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700" value="<%= branchOptions[0]?.name || branchId || '-' %>">
+              <input type="hidden" name="filter_branch_id" value="<%= branchId || '' %>">
             <% } %>
           </div>
         </div>
@@ -384,24 +386,24 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
           <table class="min-w-[1480px] w-full text-sm tabular-nums" data-table data-report-table>
             <thead class="bg-slate-100 text-slate-700">
               <tr>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("date") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("date") %></th>
                 <% if (selectedOrderBy !== "voucher") { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= invoiceLabel %></th>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("bill_number") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= invoiceLabel %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("bill_number") %></th>
                 <% } %>
                 <% if (selectedOrderBy !== "voucher") { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("customer_name") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("customer_name") %></th>
                 <% } %>
                 <% if (selectedOrderBy !== "article") { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("article") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("article") %></th>
                 <% } %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("salesman") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("salesman") %></th>
                 <% if (selectedOrderBy !== "voucher") { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= salesTypeLabel %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= salesTypeLabel %></th>
                 <% } %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("unit") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("unit") %></th>
                 <% if (showReturnReasonFilter) { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= returnReasonLabel %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= returnReasonLabel %></th>
                 <% } %>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
                 <% if (canViewCostFields) { %>
@@ -414,7 +416,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("net_amount") %></th>
                 <% } %>
                 <% if (includeBranchColumn) { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("branch") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("branch") %></th>
                 <% } %>
               </tr>
             </thead>
@@ -692,22 +694,22 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
             <thead class="bg-slate-100 text-slate-700">
               <tr>
                 <% if (selectedOrderBy === "voucher") { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= invoiceLabel %></th>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("date") %></th>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("bill_number") %></th>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("customer_name") %></th>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("receive_into_account") %></th>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= salesTypeLabel %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= invoiceLabel %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("date") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("bill_number") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("customer_name") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("receive_into_account") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= salesTypeLabel %></th>
                   <% if (canViewCostFields) { %>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("payment_received_amount") %></th>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("remaining_amount") %></th>
                   <% } %>
                 <% } else if (selectedOrderBy === "article") { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("group") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("group") %></th>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("parties_label") %></th>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("vouchers_label") %></th>
                 <% } else { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= paymentAccountLabel %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= paymentAccountLabel %></th>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("vouchers_label") %></th>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("items_label") %></th>
                 <% } %>

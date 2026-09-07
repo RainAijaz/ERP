@@ -3,6 +3,16 @@
 const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const { toIdList, toBoolean } = require("../../utils/report-filter-types");
+const {
+  localizedNameSelect,
+  localizedNameSql,
+  resolveLocale,
+} = require("../../utils/localized-name");
+const {
+  getReportAllowedBranchIds,
+  normalizeReportBranchIds,
+  reportCanFilterAllBranches,
+} = require("../../utils/report-branch-scope");
 // Shared with the voucher screen so the report filter can never list a party the
 // dispatch form refuses to accept.
 const { RETURNABLE_PARTY_TYPES_SQL } = require("./returnable-voucher-service");
@@ -106,11 +116,12 @@ const daysBetween = (fromDate, toDate) => {
   return Math.floor(diffMs / 86400000);
 };
 
-const resolveBranchScope = (req, branchIds) => {
-  if (req.user?.isAdmin) return branchIds;
-  const branchId = Number(req.branchId || 0);
-  return Number.isInteger(branchId) && branchId > 0 ? [branchId] : [];
-};
+const resolveBranchScope = (req, input) =>
+  normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: reportCanFilterAllBranches(req, "pending_returnables"),
+  });
 
 const parseCommonFilters = ({ req, input = {} }) => {
   const now = new Date();
@@ -131,11 +142,15 @@ const parseCommonFilters = ({ req, input = {} }) => {
     invalidDateRange = true;
   }
 
-  const selectedBranchIds = toIdListWithAll(input.branch_ids);
+  const canFilterAllBranches = reportCanFilterAllBranches(
+    req,
+    "pending_returnables",
+  );
 
   return {
     from,
     to,
+    locale: resolveLocale(req?.locale),
     vendorIds: toIdListWithAll(input.vendor_ids),
     assetIds: toIdListWithAll(input.asset_ids),
     reasonCodes: toReasonCodeList(input.reason_codes),
@@ -143,7 +158,8 @@ const parseCommonFilters = ({ req, input = {} }) => {
     overdueOnly: toBoolean(input.overdue_only, false),
     includeClosed: toBoolean(input.include_closed, true),
     overdueVendorsOnly: toBoolean(input.overdue_vendors_only, false),
-    branchIds: resolveBranchScope(req, selectedBranchIds),
+    branchIds: resolveBranchScope(req, input),
+    canFilterAllBranches,
     reportLoaded: toBoolean(input.load_report, false),
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
     invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
@@ -156,12 +172,15 @@ const parseCommonFilters = ({ req, input = {} }) => {
   };
 };
 
-const loadOptions = async ({ req, branchIds }) => {
-  const branchesPromise = req.user?.isAdmin
+const loadOptions = async ({ req, branchIds, canFilterAllBranches = false }) => {
+  const locale = resolveLocale(req?.locale);
+  const canUseAllBranches =
+    req.user?.isAdmin || Boolean(canFilterAllBranches);
+  const branchesPromise = canUseAllBranches
     ? knex("erp.branches")
-        .select("id", "name")
+        .select("id", localizedNameSelect("branches", "name", locale))
         .where({ is_active: true })
-        .orderBy("name", "asc")
+        .orderByRaw(`${localizedNameSql("branches", locale)} asc`)
     : Promise.resolve(
         (req.branchOptions || []).map((row) => ({
           id: Number(row.id),
@@ -170,15 +189,15 @@ const loadOptions = async ({ req, branchIds }) => {
       );
 
   let vendorQuery = knex("erp.parties as p")
-    .select("p.id", "p.name")
+    .select("p.id", localizedNameSelect("p", "name", locale))
     .where("p.is_active", true)
     .whereRaw(RETURNABLE_PARTY_TYPES_SQL)
-    .orderBy("p.name", "asc");
+    .orderByRaw(`${localizedNameSql("p", locale)} asc`);
 
-  if (!req.user?.isAdmin || branchIds.length) {
+  if (!canUseAllBranches || branchIds.length) {
     const scopedBranchIds = branchIds.length
       ? branchIds
-      : [Number(req.branchId || 0)].filter(Boolean);
+      : getReportAllowedBranchIds(req);
     vendorQuery = vendorQuery.where(function scopedPartyBranch() {
       this.whereIn("p.branch_id", scopedBranchIds).orWhereExists(
         function branchMap() {
@@ -195,15 +214,17 @@ const loadOptions = async ({ req, branchIds }) => {
     .select(
       "id",
       "asset_code",
-      knex.raw("COALESCE(name, description) as asset_name"),
+      knex.raw(
+        `COALESCE(${localizedNameSql("assets", locale)}, description) as asset_name`,
+      ),
     )
     .where("is_active", true)
     .orderBy("asset_code", "asc");
 
-  if (!req.user?.isAdmin || branchIds.length) {
+  if (!canUseAllBranches || branchIds.length) {
     const scopedBranchIds = branchIds.length
       ? branchIds
-      : [Number(req.branchId || 0)].filter(Boolean);
+      : getReportAllowedBranchIds(req);
     assetQuery = assetQuery.where(function scopedAssetBranch() {
       this.whereNull("home_branch_id").orWhereIn(
         "home_branch_id",
@@ -297,18 +318,18 @@ const loadControlRows = async ({ filters }) => {
       "ovh.voucher_no as rdv_no",
       "ovh.voucher_date as rdv_date",
       "ovh.branch_id",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", filters.locale),
       "ovl.id as outward_line_id",
       "ovl.line_no",
       "ro.vendor_party_id",
-      "p.name as vendor_name",
+      localizedNameSelect("p", "vendor_name", filters.locale),
       "ro.reason_code",
       "ro.expected_return_date",
       "rol.asset_id",
       knex.raw("COALESCE(a.asset_code, '') as asset_code"),
       knex.raw(
         // Raw-material lines have no asset, so the item name identifies them.
-        "COALESCE(a.name, a.description, itm.name, rol.item_description, '') as asset_name",
+        `COALESCE(${localizedNameSql("a", filters.locale)}, a.description, ${localizedNameSql("itm", filters.locale)}, rol.item_description, '') as asset_name`,
       ),
       "rol.item_description",
       "rol.qty as sent_qty",
@@ -594,7 +615,11 @@ const buildVendorPerformance = ({ rows, conditionVarianceMap, filters }) => {
 
 const getReturnablesControlReportPageData = async ({ req, input = {} }) => {
   const filters = parseCommonFilters({ req, input });
-  const options = await loadOptions({ req, branchIds: filters.branchIds });
+  const options = await loadOptions({
+    req,
+    branchIds: filters.branchIds,
+    canFilterAllBranches: filters.canFilterAllBranches,
+  });
 
   if (!filters.reportLoaded) {
     return {
@@ -632,7 +657,11 @@ const getReturnablesControlReportPageData = async ({ req, input = {} }) => {
 
 const getReturnablesVendorPerformancePageData = async ({ req, input = {} }) => {
   const filters = parseCommonFilters({ req, input });
-  const options = await loadOptions({ req, branchIds: filters.branchIds });
+  const options = await loadOptions({
+    req,
+    branchIds: filters.branchIds,
+    canFilterAllBranches: filters.canFilterAllBranches,
+  });
 
   if (!filters.reportLoaded) {
     return {

@@ -2,25 +2,44 @@
 
 const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
+const { normalizeConversionFactor } = require("../../utils/uom-conversion");
 const { toBoolean } = require("../../utils/report-filter-types");
 const {
-  canAccessScope,
-} = require("../../middleware/access/role-permissions");
+  getReportAllowedBranchIds,
+  normalizeReportBranchIds,
+  reportCanFilterAllBranches,
+} = require("../../utils/report-branch-scope");
 
 // A non-admin may filter a report across every branch (ignoring their own
 // branch assignment) only when granted the report's `filter_all_branches`
 // permission. Admins always can. Callers pass the REPORT scope key that governs
 // the report being rendered (e.g. "stock_amount", "stock_quantity").
 const userCanFilterAllBranches = (req, scopeKey) => {
-  if (req?.user?.isAdmin) return true;
-  if (!scopeKey) return false;
-  return Boolean(canAccessScope(req, "REPORT", scopeKey, "filter_all_branches"));
+  return reportCanFilterAllBranches(req, scopeKey);
 };
 
+// NULLIF matters: name_ur is frequently an empty string rather than NULL, and a
+// bare COALESCE would then render a blank cell instead of the English name.
 const localizedNameSelect = (alias, as, locale) =>
   locale === "ur"
-    ? knex.raw(`COALESCE(${alias}.name_ur, ${alias}.name) as ${as}`)
+    ? knex.raw(
+        `COALESCE(NULLIF(${alias}.name_ur, ''), ${alias}.name) as ${as}`,
+      )
     : `${alias}.name as ${as}`;
+
+const localizedNameSql = (alias, locale) =>
+  locale === "ur"
+    ? `COALESCE(NULLIF(${alias}.name_ur, ''), ${alias}.name)`
+    : `${alias}.name`;
+
+// Same idea as localizedNameSelect for tables whose text lives in a column
+// other than "name" (e.g. return_reasons.description / description_ur).
+const localizedTextSelect = (alias, column, as, locale) =>
+  locale === "ur"
+    ? knex.raw(
+        `COALESCE(NULLIF(${alias}.${column}_ur, ''), ${alias}.${column}) as ${as}`,
+      )
+    : `${alias}.${column} as ${as}`;
 
 const ALL_MULTI_FILTER_VALUE = "__ALL__";
 const STOCK_TYPES = Object.freeze({
@@ -49,6 +68,10 @@ const ORDER_BY_TYPES = Object.freeze({
 const TRANSFER_REPORT_MODES = Object.freeze({
   out: "OUT",
   in: "IN",
+  // Dispatched and not yet received: the stock has left the source but has not landed at the
+  // destination, so it sits in the destination's IN_TRANSIT bucket and shows on no balance
+  // report. This mode is the only place it is visible.
+  inTransit: "IN_TRANSIT",
 });
 const TRANSFER_REPORT_ORDER_BY_TYPES = Object.freeze({
   branch: "BRANCH",
@@ -147,6 +170,18 @@ const parseDateFilter = (value, fallback) => {
   return { value: parsed, provided: true, valid: true };
 };
 
+// Whole days between a stored date and today. Both ends are normalised to a local date-only
+// string first and then compared in UTC, so a timestamp's clock component cannot make an
+// in-transit dispatch look a day older or younger than it is.
+const daysSinceDate = (value) => {
+  const from = parseYmdStrict(toLocalDateOnly(value));
+  const today = parseYmdStrict(toLocalDateOnly(new Date()));
+  if (!from || !today) return 0;
+  const elapsedMs = Date.parse(`${today}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`);
+  if (!Number.isFinite(elapsedMs)) return 0;
+  return Math.max(0, Math.round(elapsedMs / 86400000));
+};
+
 const toIdListWithAll = (value) => {
   const raw = Array.isArray(value)
     ? value
@@ -176,30 +211,20 @@ const toIdListWithAll = (value) => {
 
 const getAllowedBranchIds = (req, canAllBranches = false) => {
   if (req?.user?.isAdmin || canAllBranches) return [];
-  const scoped = Array.isArray(req?.branchScope)
-    ? req.branchScope
-        .map((entry) => Number(entry))
-        .filter((entry) => Number.isInteger(entry) && entry > 0)
-    : [];
-  if (scoped.length) return scoped;
-  const fallback = toPositiveInt(req?.branchId);
-  return fallback ? [Number(fallback)] : [];
+  return getReportAllowedBranchIds(req);
 };
 
-const normalizeBranchFilter = ({ req, input = {}, canAllBranches = false }) => {
-  const selected = toIdListWithAll(input.branch_ids || input.branchIds);
-  if (req?.user?.isAdmin || canAllBranches) return selected;
-
-  const allowed = getAllowedBranchIds(req);
-  if (!allowed.length) return [];
-  if (!selected.length) return allowed;
-  const allowedSet = new Set(allowed);
-  const filtered = selected.filter((entry) => allowedSet.has(Number(entry)));
-  // If a non-admin submits only out-of-scope branch ids, fall back to their
-  // allowed branches — never an empty list, which the report query would treat
-  // as "no branch filter" and leak every branch.
-  return filtered.length ? filtered : allowed;
-};
+const normalizeBranchFilter = ({
+  req,
+  input = {},
+  canAllBranches = false,
+  scopeKey = null,
+}) =>
+  normalizeReportBranchIds({
+    req,
+    input,
+    canAllBranches: canAllBranches || userCanFilterAllBranches(req, scopeKey),
+  });
 
 const normalizeStockType = (value) => {
   const normalized = String(value || STOCK_TYPES.finished)
@@ -352,6 +377,7 @@ const parseFilters = ({
     orderBy,
     unitId: toPositiveInt(input.unit_id || input.unitId),
     branchIds: normalizeBranchFilter({ req, input, canAllBranches }),
+    canFilterAllBranches: canAllBranches,
     productGroupIds: toIdListWithAll(
       input.product_group_ids || input.productGroupIds,
     ),
@@ -366,6 +392,7 @@ const parseFilters = ({
 };
 
 const parseDeadStockFilters = ({ req, input = {} }) => {
+  const canAllBranches = userCanFilterAllBranches(req, "dead_stock_report");
   const { today, defaultFrom } = getDefaultDeadStockDateRange();
   const parsedFrom = parseDateFilter(
     input.from_date || input.fromDate,
@@ -415,7 +442,8 @@ const parseDeadStockFilters = ({ req, input = {} }) => {
     minClosingQty,
     deadStockOnly,
     sortBy,
-    branchIds: normalizeBranchFilter({ req, input }),
+    branchIds: normalizeBranchFilter({ req, input, canAllBranches }),
+    canFilterAllBranches: canAllBranches,
     productGroupIds: toIdListWithAll(
       input.product_group_ids || input.productGroupIds,
     ),
@@ -489,11 +517,12 @@ const resolveSemifinishedUnitSelection = ({ filters, unitOptions = [] }) => {
 };
 
 const loadBranchOptions = async (req, canAllBranches = false) => {
+  const locale = String(req?.locale || "en").toLowerCase();
   if (req?.user?.isAdmin || canAllBranches) {
     return knex("erp.branches")
-      .select("id", "name")
+      .select("id", localizedNameSelect("branches", "name", locale))
       .where({ is_active: true })
-      .orderBy("name", "asc");
+      .orderByRaw(`${localizedNameSql("branches", locale)} asc`);
   }
 
   if (Array.isArray(req?.branchOptions) && req.branchOptions.length) {
@@ -509,9 +538,9 @@ const loadBranchOptions = async (req, canAllBranches = false) => {
   const allowed = getAllowedBranchIds(req);
   if (!allowed.length) return [];
   return knex("erp.branches")
-    .select("id", "name")
+    .select("id", localizedNameSelect("branches", "name", locale))
     .whereIn("id", allowed)
-    .orderBy("name", "asc");
+    .orderByRaw(`${localizedNameSql("branches", locale)} asc`);
 };
 
 const loadProductGroupOptions = async (stockType) => {
@@ -556,10 +585,14 @@ const buildUomGraph = (conversionRows) => {
   (conversionRows || []).forEach((row) => {
     const fromId = toPositiveInt(row?.from_uom_id);
     const toId = toPositiveInt(row?.to_uom_id);
-    const factor = Number(row?.factor || 0);
+    const factor = normalizeConversionFactor(Number(row?.factor || 0));
     if (!fromId || !toId || !(factor > 0)) return;
     addEdge(Number(fromId), Number(toId), factor);
-    addEdge(Number(toId), Number(fromId), 1 / factor);
+    addEdge(
+      Number(toId),
+      Number(fromId),
+      normalizeConversionFactor(1 / factor),
+    );
   });
 
   return graph;
@@ -1496,6 +1529,7 @@ const getMovementVoucherCodeBuckets = () => {
 };
 
 const parseStockMovementFilters = ({ req, input = {} }) => {
+  const canAllBranches = userCanFilterAllBranches(req, "stock_item_activity");
   const { today, defaultFrom } = getDefaultLedgerDateRange();
   const parsedFrom = parseDateFilter(
     input.from_date || input.fromDate,
@@ -1538,7 +1572,8 @@ const parseStockMovementFilters = ({ req, input = {} }) => {
     unitId: toPositiveInt(input.unit_id || input.unitId),
     viewType,
     orderBy,
-    branchIds: normalizeBranchFilter({ req, input }),
+    branchIds: normalizeBranchFilter({ req, input, canAllBranches }),
+    canFilterAllBranches: canAllBranches,
     productGroupIds: toIdListWithAll(
       input.product_group_ids || input.productGroupIds,
     ),
@@ -2713,10 +2748,11 @@ const loadDeadStockProductSubgroupOptions = async () => {
 };
 
 const getInventoryDeadStockReportPageData = async ({ req, input = {} }) => {
+  const canAllBranches = userCanFilterAllBranches(req, "dead_stock_report");
   const filters = parseDeadStockFilters({ req, input });
 
   const [branches, productGroups, productSubgroups] = await Promise.all([
-    loadBranchOptions(req),
+    loadBranchOptions(req, canAllBranches),
     loadDeadStockProductGroupOptions(),
     loadDeadStockProductSubgroupOptions(),
   ]);
@@ -2895,10 +2931,11 @@ const getInventoryDeadStockReportPageData = async ({ req, input = {} }) => {
 };
 
 const getInventoryStockMovementReportPageData = async ({ req, input = {} }) => {
+  const canAllBranches = userCanFilterAllBranches(req, "stock_item_activity");
   const filters = parseStockMovementFilters({ req, input });
   // Keep detail grid structure stable regardless of branch filter cardinality.
   // Selecting a single branch should not downgrade detail rendering semantics.
-  const includeBranchColumn = Boolean(req?.user?.isAdmin);
+  const includeBranchColumn = Boolean(req?.user?.isAdmin || canAllBranches);
   const showSkuGroupedDetail = filters.viewType === VIEW_TYPES.details;
 
   const [
@@ -2909,7 +2946,7 @@ const getInventoryStockMovementReportPageData = async ({ req, input = {} }) => {
     stockItemsByType,
     unitOptions,
   ] = await Promise.all([
-    loadBranchOptions(req),
+    loadBranchOptions(req, canAllBranches),
     loadProductGroupOptionsByType(),
     loadProductSubgroupOptionsByType(),
     loadStockMovementArticleOptionsByType(),
@@ -3196,9 +3233,11 @@ const normalizeTransferMode = (value) => {
   const normalized = String(value || TRANSFER_REPORT_MODES.out)
     .trim()
     .toUpperCase();
-  return normalized === TRANSFER_REPORT_MODES.in
-    ? TRANSFER_REPORT_MODES.in
-    : TRANSFER_REPORT_MODES.out;
+  if (normalized === TRANSFER_REPORT_MODES.in) return TRANSFER_REPORT_MODES.in;
+  if (normalized === TRANSFER_REPORT_MODES.inTransit) {
+    return TRANSFER_REPORT_MODES.inTransit;
+  }
+  return TRANSFER_REPORT_MODES.out;
 };
 
 const normalizeTransferStatus = (value) => {
@@ -3248,16 +3287,12 @@ const normalizeTransferReportType = (value) =>
     ? VIEW_TYPES.summary
     : VIEW_TYPES.details;
 
-const normalizeScopedBranchFilter = ({ req, value }) => {
-  const selected = toIdListWithAll(value);
-  if (req?.user?.isAdmin) return selected;
-
-  const allowed = getAllowedBranchIds(req);
-  if (!allowed.length) return [];
-  if (!selected.length) return allowed;
-
-  const allowedSet = new Set(allowed.map((entry) => Number(entry)));
-  return selected.filter((entry) => allowedSet.has(Number(entry)));
+const normalizeScopedBranchFilter = ({ req, value, canAllBranches = false }) => {
+  return normalizeReportBranchIds({
+    req,
+    value,
+    canAllBranches,
+  });
 };
 
 const toTokenListWithAll = (value) => {
@@ -3286,6 +3321,10 @@ const toTokenListWithAll = (value) => {
 
 const parseStockTransferReportFilters = ({ req, input = {} }) => {
   const { today, defaultFrom } = getDefaultLedgerDateRange();
+  const canAllBranches = userCanFilterAllBranches(
+    req,
+    "stock_transfer_report",
+  );
   const parsedFrom = parseDateFilter(
     input.from_date || input.fromDate,
     defaultFrom,
@@ -3313,6 +3352,7 @@ const parseStockTransferReportFilters = ({ req, input = {} }) => {
         input.source_branch_ids ||
         input.sourceBranchIds ||
         input.source_branch_id,
+      canAllBranches,
     }),
     destinationBranchIds: normalizeScopedBranchFilter({
       req,
@@ -3320,7 +3360,9 @@ const parseStockTransferReportFilters = ({ req, input = {} }) => {
         input.destination_branch_ids ||
         input.destinationBranchIds ||
         input.destination_branch_id,
+      canAllBranches,
     }),
+    canFilterAllBranches: canAllBranches,
     stockType,
     stockStatus:
       stockType === STOCK_TYPES.finished
@@ -3711,7 +3753,9 @@ const buildStockTransferSummaryRows = ({ rows = [], filters }) => {
       2,
     );
 
-    if (filters.mode === TRANSFER_REPORT_MODES.out) {
+    // IN TRANSIT rows are OUT-shaped -- one dispatched quantity, nothing received yet -- so
+    // they accumulate through the same branch as OUT rather than the received/rejected set.
+    if (filters.mode !== TRANSFER_REPORT_MODES.in) {
       existing.qtyOut = toQuantity(
         Number(existing.qtyOut || 0) + Number(row.qtyOut || 0),
         3,
@@ -3779,7 +3823,7 @@ const buildStockTransferTotals = ({ rows = [], filters }) => {
     }
     if (status === TRANSFER_REPORT_STATUSES.approved) totals.approvedCount += 1;
 
-    if (filters.mode === TRANSFER_REPORT_MODES.out) {
+    if (filters.mode !== TRANSFER_REPORT_MODES.in) {
       totals.qtyOut = toQuantity(
         Number(totals.qtyOut || 0) + Number(row.qtyOut || 0),
         3,
@@ -3848,6 +3892,7 @@ const loadStockTransferOutRows = async ({
   hasTransferRefColumn,
   hasTransferReasonColumn,
   hasBillBookNoColumn,
+  hasWipColumns = false,
 }) => {
   const transferRefExpr = hasTransferRefColumn
     ? "coalesce(sth.transfer_ref_no, vh.book_no)"
@@ -3902,6 +3947,14 @@ const loadStockTransferOutRows = async ({
       "vh.branch_id as source_branch_id",
       localizedNameSelect("sb", "source_branch_name", filters.locale),
       "sth.dest_branch_id as destination_branch_id",
+      hasWipColumns
+        ? "sth.is_wip_transfer"
+        : knex.raw("false as is_wip_transfer"),
+      hasWipColumns
+        ? knex.raw(
+            "(select ps.name from erp.production_stages ps where ps.id = sth.stage_id) as wip_stage_name",
+          )
+        : knex.raw("null::text as wip_stage_name"),
       localizedNameSelect("db", "destination_branch_name", filters.locale),
       "vh.book_no",
       "vh.voucher_date",
@@ -4036,6 +4089,10 @@ const loadStockTransferOutRows = async ({
         qtyOut,
         rate,
         amount,
+        // A work-in-process dispatch is an SFG/FG line like any other, so without this the
+        // report shows half-made pairs as ordinary finished stock.
+        isWipTransfer: row?.is_wip_transfer === true,
+        wipStageName: String(row?.wip_stage_name || "").trim(),
         stockStatus: lineStockStatus,
         transferStatus,
       };
@@ -4051,6 +4108,10 @@ const loadStockTransferPendingForInRows = async ({
   filters,
   hasTransferReasonColumn,
   hasBillBookNoColumn,
+  hasWipColumns = false,
+  // IN mode folds these rows in beside real receipts; IN TRANSIT mode shows nothing else, so
+  // the rows are stamped with whichever mode asked for them.
+  rowMode = TRANSFER_REPORT_MODES.in,
 }) => {
 
   const transferReasonExpr = hasTransferReasonColumn
@@ -4084,6 +4145,14 @@ const loadStockTransferPendingForInRows = async ({
       "vh.branch_id as source_branch_id",
       localizedNameSelect("sb", "source_branch_name", filters.locale),
       "sth.dest_branch_id as destination_branch_id",
+      hasWipColumns
+        ? "sth.is_wip_transfer"
+        : knex.raw("false as is_wip_transfer"),
+      hasWipColumns
+        ? knex.raw(
+            "(select ps.name from erp.production_stages ps where ps.id = sth.stage_id) as wip_stage_name",
+          )
+        : knex.raw("null::text as wip_stage_name"),
       localizedNameSelect("db", "destination_branch_name", filters.locale),
       "vh.book_no",
       "vh.voucher_date",
@@ -4157,17 +4226,28 @@ const loadStockTransferPendingForInRows = async ({
       if (!shouldIncludeTransferLineByStockStatus({ filters, stockType, lineStockStatus })) {
         return null;
       }
+      // Everything here is by definition awaiting receipt, so a Transfer Status filter of
+      // anything but Pending selects none of it. IN mode applies the filter to the receipts it
+      // loads separately, so the guard belongs here rather than in the caller.
+      if (
+        filters.transferStatus &&
+        filters.transferStatus !== TRANSFER_REPORT_STATUSES.pending
+      ) {
+        return null;
+      }
 
       const itemLabel = resolveTransferLineLabel(row);
       const expectedQty = resolveTransferOutQty({ row, meta, stockType });
       const rate = resolveTransferDisplayRate({ row, meta, stockType });
+      const dispatchDate = String(row?.movement_date || row?.voucher_date || "");
 
       return {
-        mode: TRANSFER_REPORT_MODES.in,
+        mode: rowMode,
         voucherId: Number(row?.voucher_id || 0) || null,
         voucherNo: Number(row?.voucher_no || 0) || null,
-        movementDate: String(row?.movement_date || row?.voucher_date || ""),
+        movementDate: dispatchDate,
         billNo: String(row?.bill_book_no || "").trim() || "-",
+        refBillNo: String(row?.bill_book_no || "").trim() || "-",
         sourceBranchId: Number(row?.source_branch_id || 0) || null,
         sourceBranchName: String(row?.source_branch_name || "").trim() || "-",
         destinationBranchId: Number(row?.destination_branch_id || 0) || null,
@@ -4176,11 +4256,20 @@ const loadStockTransferPendingForInRows = async ({
         itemLabel,
         unitLabel: String(meta?.uom_code || row?.uom_code || row?.uom_name || "").trim() || "-",
         expectedQty,
+        // Nothing has been received, so the whole dispatched quantity is still in flight. It is
+        // published under qtyOut as well so the OUT-shaped totals, unit splits and summary rows
+        // that IN TRANSIT mode reuses all add it up without a parallel set of accumulators.
+        qtyOut: expectedQty,
+        daysInTransit: daysSinceDate(dispatchDate),
         receivedQty: 0,
         rejectedQty: 0,
         varianceQty: expectedQty,
         rate,
         amount: 0,
+        // A work-in-process dispatch is an SFG/FG line like any other, so without this the
+        // report shows half-made pairs as ordinary finished stock.
+        isWipTransfer: row?.is_wip_transfer === true,
+        wipStageName: String(row?.wip_stage_name || "").trim(),
         stockStatus: lineStockStatus,
         transferStatus: TRANSFER_REPORT_STATUSES.pending,
       };
@@ -4192,6 +4281,7 @@ const loadStockTransferInRows = async ({
   filters,
   hasTransferReasonColumn,
   hasBillBookNoColumn,
+  hasWipColumns = false,
 }) => {
   const transferReasonExpr = hasTransferReasonColumn
     ? "upper(coalesce(sth.transfer_reason::text, ''))"
@@ -4230,6 +4320,14 @@ const loadStockTransferInRows = async ({
       "stn.branch_id as source_branch_id",
       localizedNameSelect("sb", "source_branch_name", filters.locale),
       "sth.dest_branch_id as destination_branch_id",
+      hasWipColumns
+        ? "sth.is_wip_transfer"
+        : knex.raw("false as is_wip_transfer"),
+      hasWipColumns
+        ? knex.raw(
+            "(select ps.name from erp.production_stages ps where ps.id = sth.stage_id) as wip_stage_name",
+          )
+        : knex.raw("null::text as wip_stage_name"),
       localizedNameSelect("db", "destination_branch_name", filters.locale),
       "stn.book_no",
       "vh.voucher_date",
@@ -4348,6 +4446,10 @@ const loadStockTransferInRows = async ({
         varianceQty: quantities.varianceQty,
         rate,
         amount: toAmount(row?.amount, 2),
+        // A work-in-process dispatch is an SFG/FG line like any other, so without this the
+        // report shows half-made pairs as ordinary finished stock.
+        isWipTransfer: row?.is_wip_transfer === true,
+        wipStageName: String(row?.wip_stage_name || "").trim(),
         stockStatus: lineStockStatus,
       };
     })
@@ -4394,6 +4496,7 @@ const loadStockTransferInRows = async ({
       filters,
       hasTransferReasonColumn,
       hasBillBookNoColumn,
+      hasWipColumns,
     });
     allRows = [...withStatus, ...pendingRows];
   }
@@ -4425,11 +4528,16 @@ const buildDefaultStockTransferReportData = ({
 
 const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
   const filters = parseStockTransferReportFilters({ req, input });
+  const canAllBranches = userCanFilterAllBranches(
+    req,
+    "stock_transfer_report",
+  );
 
   const [
     hasTransferRefColumn,
     hasTransferReasonColumn,
     hasBillBookNoColumn,
+    hasWipColumns,
     branches,
     productGroupsByType,
     productSubgroupsByType,
@@ -4439,7 +4547,8 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
     hasInventoryColumn("stock_transfer_out_header", "transfer_ref_no"),
     hasInventoryColumn("stock_transfer_out_header", "transfer_reason"),
     hasInventoryColumn("stock_transfer_out_header", "bill_book_no"),
-    loadBranchOptions(req),
+    hasInventoryColumn("stock_transfer_out_header", "is_wip_transfer"),
+    loadBranchOptions(req, canAllBranches),
     loadProductGroupOptionsByType(),
     loadProductSubgroupOptionsByType(),
     loadStockMovementArticleOptionsByType(),
@@ -4588,6 +4697,7 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
     transferModes: [
       { value: TRANSFER_REPORT_MODES.out, labelKey: "transfer_out" },
       { value: TRANSFER_REPORT_MODES.in, labelKey: "transfer_in" },
+      { value: TRANSFER_REPORT_MODES.inTransit, labelKey: "in_transit" },
     ],
     orderByOptions: [
       { value: TRANSFER_REPORT_ORDER_BY_TYPES.branch, labelKey: "branch" },
@@ -4623,19 +4733,36 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
     };
   }
 
-  const detailRows =
-    filters.mode === TRANSFER_REPORT_MODES.in
-      ? await loadStockTransferInRows({
-          filters,
-          hasTransferReasonColumn,
-          hasBillBookNoColumn,
-        })
-      : await loadStockTransferOutRows({
-          filters,
-          hasTransferRefColumn,
-          hasTransferReasonColumn,
-          hasBillBookNoColumn,
-        });
+  let detailRows;
+  if (filters.mode === TRANSFER_REPORT_MODES.in) {
+    detailRows = await loadStockTransferInRows({
+      filters,
+      hasTransferReasonColumn,
+      hasBillBookNoColumn,
+      hasWipColumns,
+    });
+  } else if (filters.mode === TRANSFER_REPORT_MODES.inTransit) {
+    // Same dispatched-but-unreceived set the IN report folds in as "Pending", shown on its own
+    // so the stock sitting in the destination's IN_TRANSIT bucket is visible somewhere.
+    detailRows = sortStockTransferRows({
+      rows: await loadStockTransferPendingForInRows({
+        filters,
+        hasTransferReasonColumn,
+        hasBillBookNoColumn,
+        hasWipColumns,
+        rowMode: TRANSFER_REPORT_MODES.inTransit,
+      }),
+      filters,
+    });
+  } else {
+    detailRows = await loadStockTransferOutRows({
+      filters,
+      hasTransferRefColumn,
+      hasTransferReasonColumn,
+      hasBillBookNoColumn,
+      hasWipColumns,
+    });
+  }
 
   const summaryRows = buildStockTransferSummaryRows({
     rows: detailRows,
@@ -4657,6 +4784,7 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
 };
 
 const parseLedgerFilters = ({ req, input = {} }) => {
+  const canAllBranches = userCanFilterAllBranches(req, "stock_ledger");
   const { today, defaultFrom } = getDefaultLedgerDateRange();
   const parsedFrom = parseDateFilter(
     input.from_date || input.fromDate,
@@ -4703,7 +4831,8 @@ const parseLedgerFilters = ({ req, input = {} }) => {
     stockStatus,
     unitId: toPositiveInt(input.unit_id || input.unitId),
     stockItemId,
-    branchIds: normalizeBranchFilter({ req, input }),
+    branchIds: normalizeBranchFilter({ req, input, canAllBranches }),
+    canFilterAllBranches: canAllBranches,
     missingDateRange,
     missingStockItem,
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
@@ -4805,6 +4934,198 @@ const applyStockLedgerBaseFilters = ({
   return query;
 };
 
+// Some of what the ledger "Details" cell reads was added by later migrations
+// (erp.dcv_line only exists once the multi-department DCV migration has run),
+// so a DB that has not run them must not break the whole report.
+let stockLedgerDetailColumnSupportPromise = null;
+const loadStockLedgerDetailColumnSupport = () => {
+  if (!stockLedgerDetailColumnSupportPromise) {
+    const hasColumn = (table, column) =>
+      knex.schema
+        .withSchema("erp")
+        .hasColumn(table, column)
+        .catch(() => false);
+    const hasTable = (table) =>
+      knex.schema
+        .withSchema("erp")
+        .hasTable(table)
+        .catch(() => false);
+    stockLedgerDetailColumnSupportPromise = Promise.all([
+      hasColumn("voucher_header", "remarks_ur"),
+      hasColumn("purchase_return_header_ext", "notes"),
+      hasTable("dcv_line"),
+    ])
+      .then(([remarksUr, purchaseReturnNotes, dcvLine]) => ({
+        remarksUr,
+        purchaseReturnNotes,
+        dcvLine,
+      }))
+      .catch(() => ({
+        remarksUr: false,
+        purchaseReturnNotes: false,
+        dcvLine: false,
+      }));
+  }
+  return stockLedgerDetailColumnSupportPromise;
+};
+
+// The voucher cell shows the raw type code (DCV, STN_OUT, ...) because that is
+// what users read on the printed voucher, but a code alone does not say what
+// the movement WAS. These labels sit under it. They exist because the
+// erp.voucher_type names are either module-blind ("Department Completion
+// Voucher (DCV)" never says "production") or just a longer spelling of the
+// code; any type not listed here falls back to its voucher_type name.
+const STOCK_LEDGER_VOUCHER_TYPE_LABELS = Object.freeze({
+  DCV: {
+    key: "voucher_kind_production_completion",
+    fallback: "Production Completion",
+  },
+  CONSUMP: {
+    key: "voucher_kind_production_consumption",
+    fallback: "Production Consumption",
+  },
+  LABOUR_PROD: {
+    key: "voucher_kind_production_labour",
+    fallback: "Production Labour",
+  },
+  PROD_PLAN: {
+    key: "voucher_kind_production_plan",
+    fallback: "Production Plan",
+  },
+  LOSS: { key: "voucher_kind_abnormal_loss", fallback: "Abnormal Loss" },
+  STN_OUT: {
+    key: "voucher_kind_branch_transfer_out",
+    fallback: "Branch Transfer (Sent)",
+  },
+  GRN_IN: {
+    key: "voucher_kind_branch_transfer_in",
+    fallback: "Branch Transfer (Received)",
+  },
+  STOCK_COUNT_ADJ: {
+    key: "voucher_kind_stock_count",
+    fallback: "Stock Count Adjustment",
+  },
+  OPENING_STOCK: {
+    key: "voucher_kind_opening_stock",
+    fallback: "Opening Stock",
+  },
+  PI: { key: "voucher_kind_purchase_invoice", fallback: "Purchase Invoice" },
+  PR: { key: "voucher_kind_purchase_return", fallback: "Purchase Return" },
+  SALES_VOUCHER: { key: "voucher_kind_sale", fallback: "Sale" },
+  SALES_ORDER: { key: "voucher_kind_sales_order", fallback: "Sales Order" },
+  RDV: {
+    key: "voucher_kind_returnable_dispatch",
+    fallback: "Returnable Dispatch",
+  },
+  RRV: {
+    key: "voucher_kind_returnable_receipt",
+    fallback: "Returnable Receipt",
+  },
+});
+
+// Every stock-moving voucher type keeps its narrative somewhere different:
+// a reason code (stock count, abnormal loss, returnable dispatch), a reason
+// enum (purchase return), free-text notes (stock count, incoming transfer,
+// purchase invoice/return), a per-line return reason (sales return), or just
+// voucher_header.remarks. The Details cell shows whichever ones the row has,
+// so the ledger explains WHY the stock moved.
+//
+// It leads with the COUNTERPARTY — the branch a transfer went to, the customer
+// or supplier, the production department — because that is what the voucher
+// number hides: "STN_OUT-237" does not say which branch received the goods.
+//
+// Segments are returned untranslated-but-tagged: { text } is DB text rendered
+// as-is, { key } is a translation key the view resolves, and
+// { labelKey, labelFallback, text } is a translated label in front of DB text
+// (never call t() on a DB-stored label).
+const buildStockLedgerDetailSegments = (row) => {
+  const segments = [];
+  const seen = new Set();
+
+  const pushText = (value) => {
+    const text = String(value || "").trim();
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    segments.push({ text });
+  };
+
+  const pushLabeled = (labelKey, labelFallback, value) => {
+    const text = String(value || "").trim();
+    if (!text) return;
+    const dedupeKey = `${labelKey} ${text}`;
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    segments.push({ labelKey, labelFallback, text });
+  };
+
+  const voucherTypeCode = String(row?.voucher_type_code || "")
+    .trim()
+    .toUpperCase();
+
+  // Transfers: the Branch column shows the branch this row belongs to, so the
+  // half worth spelling out is the OTHER end plus the bill book the goods
+  // travelled on.
+  if (voucherTypeCode === "STN_OUT") {
+    pushLabeled("sent_to", "Sent to", row?.transfer_dest_branch);
+    pushLabeled("bill_book_no", "Bill Book No", row?.transfer_bill_no);
+  } else if (voucherTypeCode === "GRN_IN") {
+    pushLabeled("received_from", "Received from", row?.transfer_source_branch);
+    if (Number(row?.transfer_source_voucher_no || 0) > 0) {
+      pushLabeled(
+        "against_voucher",
+        "Against",
+        `STN_OUT-${row.transfer_source_voucher_no}`,
+      );
+    }
+    pushLabeled("bill_book_no", "Bill Book No", row?.transfer_source_bill_no);
+  }
+
+  // Production: which department/labour completed the stock, and — for the
+  // consumption voucher the completion generates — which DCV it belongs to.
+  pushLabeled("department", "Department", row?.production_department);
+  pushLabeled("labour", "Labour", row?.production_labour);
+  if (Number(row?.source_production_voucher_no || 0) > 0) {
+    pushLabeled(
+      "against_voucher",
+      "Against",
+      `DCV-${row.source_production_voucher_no}`,
+    );
+  }
+
+  pushLabeled(
+    "customer",
+    "Customer",
+    row?.sales_customer_name || row?.sales_walkin_customer,
+  );
+  pushLabeled(
+    "supplier",
+    "Supplier",
+    row?.purchase_supplier_name || row?.purchase_return_supplier_name,
+  );
+  pushLabeled("party", "Party", row?.returnable_party_name);
+
+  const purchaseReturnReason = String(row?.purchase_return_reason || "")
+    .trim()
+    .toLowerCase();
+  if (purchaseReturnReason) {
+    segments.push({ key: `return_reason_${purchaseReturnReason}` });
+  }
+
+  pushText(row?.stock_count_reason);
+  pushText(row?.loss_reason);
+  pushText(row?.returnable_reason);
+  pushText(row?.sales_return_reason);
+
+  pushText(row?.stock_count_notes);
+  pushText(row?.transfer_receive_notes);
+  pushText(row?.purchase_invoice_notes);
+  pushText(row?.purchase_return_notes);
+
+  pushText(row?.voucher_remarks);
+
+  return segments;
+};
+
 const buildDefaultStockLedgerReportData = () => ({
   rows: [],
   totals: {
@@ -4873,6 +5194,8 @@ const loadStockLedgerRows = async ({
   );
   const openingValue = toAmount(openingRow?.opening_value, 2);
 
+  const detailColumnSupport = await loadStockLedgerDetailColumnSupport();
+
   let txnQuery = knex("erp.stock_ledger as sl")
     .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
     .join("erp.voucher_type as vt", "vt.code", "vh.voucher_type_code")
@@ -4880,6 +5203,66 @@ const loadStockLedgerRows = async ({
     .leftJoin("erp.sales_line as sln", "sln.voucher_line_id", "vl.id")
     .leftJoin("erp.production_line as pl", "pl.voucher_line_id", "vl.id")
     .leftJoin("erp.branches as b", "b.id", "sl.branch_id")
+    // Voucher narrative sources for the Details cell (all 1:1 on voucher_id).
+    .leftJoin("erp.stock_count_header as sch", "sch.voucher_id", "vh.id")
+    .leftJoin("erp.reason_codes as scrc", "scrc.id", "sch.reason_code_id")
+    .leftJoin("erp.abnormal_loss_header as alh", "alh.voucher_id", "vh.id")
+    .leftJoin("erp.reason_codes as alrc", "alrc.id", "alh.reason_code_id")
+    .leftJoin("erp.grn_in_header as gih", "gih.voucher_id", "vh.id")
+    .leftJoin(
+      "erp.purchase_invoice_header_ext as pih",
+      "pih.voucher_id",
+      "vh.id",
+    )
+    .leftJoin("erp.purchase_return_header_ext as prh", "prh.voucher_id", "vh.id")
+    .leftJoin("erp.rgp_outward as rgo", "rgo.voucher_id", "vh.id")
+    // An RRV carries no party/reason of its own — both live on the RDV it
+    // returns against.
+    .leftJoin("erp.rgp_inward as rgi", "rgi.voucher_id", "vh.id")
+    .leftJoin(
+      "erp.rgp_outward as rgo2",
+      "rgo2.voucher_id",
+      "rgi.rgp_out_voucher_id",
+    )
+    .leftJoin("erp.rgp_reason_registry as rgr", function () {
+      this.on(
+        "rgr.code",
+        "=",
+        knex.raw("COALESCE(rgo.reason_code, rgo2.reason_code)"),
+      );
+    })
+    .leftJoin("erp.return_reasons as srr", "srr.id", "sln.return_reason_id")
+    // Counterparty sources for the Details cell.
+    .leftJoin("erp.stock_transfer_out_header as sto", "sto.voucher_id", "vh.id")
+    .leftJoin("erp.branches as stob", "stob.id", "sto.dest_branch_id")
+    .leftJoin(
+      "erp.voucher_header as srcvh",
+      "srcvh.id",
+      "gih.against_stn_out_id",
+    )
+    .leftJoin("erp.branches as srcb", "srcb.id", "srcvh.branch_id")
+    .leftJoin(
+      "erp.stock_transfer_out_header as srcsto",
+      "srcsto.voucher_id",
+      "gih.against_stn_out_id",
+    )
+    .leftJoin("erp.consumption_header as coh", "coh.voucher_id", "vh.id")
+    .leftJoin(
+      "erp.voucher_header as prodvh",
+      "prodvh.id",
+      "coh.source_production_id",
+    )
+    .leftJoin("erp.sales_header as shd", "shd.voucher_id", "vh.id")
+    .leftJoin("erp.parties as scp", "scp.id", "shd.customer_party_id")
+    .leftJoin("erp.parties as pip", "pip.id", "pih.supplier_party_id")
+    .leftJoin("erp.parties as prp", "prp.id", "prh.supplier_party_id")
+    .leftJoin("erp.parties as rgpp", function () {
+      this.on(
+        "rgpp.id",
+        "=",
+        knex.raw("COALESCE(rgo.vendor_party_id, rgo2.vendor_party_id)"),
+      );
+    })
     .select(
       "sl.id",
       "sl.txn_date",
@@ -4892,9 +5275,84 @@ const loadStockLedgerRows = async ({
       "vh.voucher_no",
       "vh.voucher_type_code",
       localizedNameSelect("vt", "voucher_type_name", filters.locale),
+      "scrc.name as stock_count_reason",
+      "sch.notes as stock_count_notes",
+      "alrc.name as loss_reason",
+      "gih.notes as transfer_receive_notes",
+      "pih.notes as purchase_invoice_notes",
+      "prh.reason as purchase_return_reason",
+      "rgr.name as returnable_reason",
+      localizedTextSelect(
+        "srr",
+        "description",
+        "sales_return_reason",
+        filters.locale,
+      ),
+      localizedNameSelect("stob", "transfer_dest_branch", filters.locale),
+      "sto.bill_book_no as transfer_bill_no",
+      localizedNameSelect("srcb", "transfer_source_branch", filters.locale),
+      "srcvh.voucher_no as transfer_source_voucher_no",
+      "srcsto.bill_book_no as transfer_source_bill_no",
+      "prodvh.voucher_no as source_production_voucher_no",
+      localizedNameSelect("scp", "sales_customer_name", filters.locale),
+      "shd.customer_name as sales_walkin_customer",
+      localizedNameSelect("pip", "purchase_supplier_name", filters.locale),
+      localizedNameSelect(
+        "prp",
+        "purchase_return_supplier_name",
+        filters.locale,
+      ),
+      localizedNameSelect("rgpp", "returnable_party_name", filters.locale),
+    )
+    .select(
+      detailColumnSupport.remarksUr && filters.locale === "ur"
+        ? knex.raw(
+            "COALESCE(NULLIF(vh.remarks_ur, ''), vh.remarks) as voucher_remarks",
+          )
+        : "vh.remarks as voucher_remarks",
     )
     .select(knex.raw(`${qtyColumnSql} as movement_qty`))
     .whereBetween("sl.txn_date", [filters.from, filters.to]);
+
+  if (detailColumnSupport.purchaseReturnNotes) {
+    txnQuery = txnQuery.select("prh.notes as purchase_return_notes");
+  }
+
+  // A DCV can complete several departments in one voucher, each worked by a
+  // different labour, so the department that produced THIS ledger row lives on
+  // erp.dcv_line. dcv_header only holds the first one — it is the fallback
+  // for a DB that has not run the multi-department migration yet.
+  txnQuery = txnQuery.leftJoin(
+    "erp.dcv_header as dch",
+    "dch.voucher_id",
+    "vh.id",
+  );
+  if (detailColumnSupport.dcvLine) {
+    txnQuery = txnQuery
+      .leftJoin("erp.dcv_line as dcl", "dcl.voucher_line_id", "vl.id")
+      .leftJoin("erp.departments as dcd", function () {
+        this.on(
+          "dcd.id",
+          "=",
+          knex.raw("COALESCE(dcl.dept_id, dch.dept_id)"),
+        );
+      })
+      .leftJoin("erp.labours as dclb", function () {
+        this.on(
+          "dclb.id",
+          "=",
+          knex.raw("COALESCE(dcl.labour_id, dch.labour_id)"),
+        );
+      });
+  } else {
+    txnQuery = txnQuery
+      .leftJoin("erp.departments as dcd", "dcd.id", "dch.dept_id")
+      .leftJoin("erp.labours as dclb", "dclb.id", "dch.labour_id");
+  }
+  txnQuery = txnQuery.select(
+    localizedNameSelect("dcd", "production_department", filters.locale),
+    localizedNameSelect("dclb", "production_labour", filters.locale),
+  );
 
   if (filters.stockType === STOCK_TYPES.rawMaterial) {
     txnQuery = txnQuery
@@ -4995,11 +5453,20 @@ const loadStockLedgerRows = async ({
       );
     });
 
+    const voucherTypeCode = String(row?.voucher_type_code || "").trim();
+    const voucherTypeName = String(row?.voucher_type_name || "").trim();
+    const voucherKindLabel =
+      STOCK_LEDGER_VOUCHER_TYPE_LABELS[voucherTypeCode.toUpperCase()] || null;
+
     return {
       id: Number(row?.id || 0),
       txnDate: String(row?.txn_date || ""),
-      voucherTypeCode: String(row?.voucher_type_code || "").trim(),
-      voucherTypeName: String(row?.voucher_type_name || "").trim(),
+      voucherTypeCode,
+      voucherTypeName,
+      // The view resolves the key and falls back to the English wording, then
+      // to the DB voucher_type name for any type not in the curated map.
+      voucherKindKey: voucherKindLabel?.key || "",
+      voucherKindFallback: voucherKindLabel?.fallback || voucherTypeName,
       voucherNo: Number(row?.voucher_no || 0) || null,
       voucherHeaderId: Number(row?.voucher_header_id || 0) || null,
       branchId: Number(row?.branch_id || 0) || null,
@@ -5008,6 +5475,7 @@ const loadStockLedgerRows = async ({
       skuCode: String(row?.sku_code || "").trim(),
       colorName: String(row?.color_name || "").trim(),
       sizeName: String(row?.size_name || "").trim(),
+      detailSegments: buildStockLedgerDetailSegments(row),
       unitLabel:
         String(selectedUnitLabel || "").trim() ||
         String(row?.unit_code || row?.unit_name || "").trim() ||
@@ -5095,10 +5563,11 @@ const loadLedgerSelectedBaseUomId = async ({ stockType, stockItemId }) => {
 };
 
 const getInventoryStockLedgerReportPageData = async ({ req, input = {} }) => {
+  const canAllBranches = userCanFilterAllBranches(req, "stock_ledger");
   const filters = parseLedgerFilters({ req, input });
 
   const [branches, stockItemsByType, unitOptions] = await Promise.all([
-    loadBranchOptions(req),
+    loadBranchOptions(req, canAllBranches),
     loadLedgerStockItemsByType(filters.locale),
     loadUnitOptions(filters.stockType),
   ]);
@@ -5319,6 +5788,10 @@ const categoryLabelKey = (category) => {
 };
 
 const parseStockCountAccuracyFilters = ({ req, input = {} }) => {
+  const canAllBranches = userCanFilterAllBranches(
+    req,
+    "stock_count_accuracy",
+  );
   const { today, defaultFrom } = getDefaultStockCountAccuracyDateRange();
   const parsedFrom = parseDateFilter(
     input.from_date || input.fromDate,
@@ -5349,7 +5822,8 @@ const parseStockCountAccuracyFilters = ({ req, input = {} }) => {
     valueBasis: normalizeStockCountAccuracyBasis(
       input.value_basis || input.valueBasis,
     ),
-    branchIds: normalizeBranchFilter({ req, input }),
+    branchIds: normalizeBranchFilter({ req, input, canAllBranches }),
+    canFilterAllBranches: canAllBranches,
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
     invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
     invalidDateRange,
@@ -5373,8 +5847,12 @@ const getInventoryStockCountAccuracyReportPageData = async ({
   req,
   input = {},
 }) => {
+  const canAllBranches = userCanFilterAllBranches(
+    req,
+    "stock_count_accuracy",
+  );
   const filters = parseStockCountAccuracyFilters({ req, input });
-  const branches = await loadBranchOptions(req);
+  const branches = await loadBranchOptions(req, canAllBranches);
 
   const options = {
     branches,
@@ -5619,4 +6097,8 @@ module.exports = {
   getInventoryStockTransferReportPageData,
   getInventoryDeadStockReportPageData,
   getInventoryStockCountAccuracyReportPageData,
+  __test: {
+    parseStockTransferReportFilters,
+    userCanFilterAllBranches,
+  },
 };

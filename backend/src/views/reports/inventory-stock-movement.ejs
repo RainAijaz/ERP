@@ -32,6 +32,7 @@
   const selectedStockItemIds = Array.isArray(filters?.stockItemIds)
     ? filters.stockItemIds
     : [];
+  const canUseBranchFilter = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
 
   const branchAllSelected = !selectedBranchIds.length;
   const groupAllSelected = !selectedGroupIds.length;
@@ -362,9 +363,9 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? tt("branches", "Branches") : tt("branch", "Branch") %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? tt("branches", "Branches") : tt("branch", "Branch") %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canUseBranchFilter) { %>
               <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
                 <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
                 <% (options?.branches || []).forEach((branch) => { %>
@@ -446,17 +447,17 @@
           <thead class="bg-slate-100 text-slate-700">
             <tr>
               <% if (stockType === "RM") { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("raw_material", "Raw Material") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("raw_material", "Raw Material") %></th>
               <% } else { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("article", "Article") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("sku", "SKU") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("article", "Article") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("sku", "SKU") %></th>
               <% } %>
               <% if (showMovementColorSizeColumns) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("color", "Color") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("size", "Size") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("color", "Color") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("size", "Size") %></th>
               <% } %>
               <% if (showMovementUnitColumn) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("unit", "Unit") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("unit", "Unit") %></th>
               <% } %>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("opening", "Opening")}${qtySuffix}` %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("production", "Production")}${qtySuffix}` %></th>
@@ -473,7 +474,7 @@
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("adjustment", "Adjustment")}${qtySuffix}` %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("closing", "Closing")}${qtySuffix}` %></th>
               <% if (includeBranchColumn) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("branch", "Branch") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("branch", "Branch") %></th>
               <% } %>
             </tr>
           </thead>
