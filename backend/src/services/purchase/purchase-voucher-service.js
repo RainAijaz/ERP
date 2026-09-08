@@ -4188,6 +4188,12 @@ const deletePurchaseVoucher = async ({
 };
 
 const loadPurchaseVoucherOptions = async (req) => {
+  const useUr = String(req?.locale || "en").toLowerCase() === "ur";
+  const getLocalizedName = (row, fallbackId) =>
+    useUr
+      ? String(row?.name_ur || row?.name || fallbackId || "").trim()
+      : String(row?.name || row?.name_ur || fallbackId || "").trim();
+
   let supplierQuery = knex("erp.parties as p")
     .select("p.id", "p.code", "p.name", "p.name_ur")
     .where({ "p.is_active": true })
@@ -4295,11 +4301,11 @@ const loadPurchaseVoucherOptions = async (req) => {
         .orderBy("asset_name", "asc");
     })(),
     knex("erp.colors as c")
-      .select("c.id", "c.name")
+      .select("c.id", "c.name", "c.name_ur")
       .where({ "c.is_active": true })
       .orderBy("c.name", "asc"),
     knex("erp.sizes as s")
-      .select("s.id", "s.name")
+      .select("s.id", "s.name", "s.name_ur")
       .where({ "s.is_active": true })
       .orderBy("s.name", "asc"),
     cashAccountQuery.orderBy("a.name", "asc"),
@@ -4315,8 +4321,10 @@ const loadPurchaseVoucherOptions = async (req) => {
         "r.rm_item_id",
         "r.color_id",
         "c.name as color_name",
+        "c.name_ur as color_name_ur",
         "r.size_id",
         "s.name as size_name",
+        "s.name_ur as size_name_ur",
         "r.purchase_rate",
       )
       .where({ "r.is_active": true, "i.is_active": true })
@@ -4337,8 +4345,10 @@ const loadPurchaseVoucherOptions = async (req) => {
         "v.item_id",
         "v.color_id",
         "c.name as color_name",
+        "c.name_ur as color_name_ur",
         "v.size_id",
         "s.name as size_name",
+        "s.name_ur as size_name_ur",
       )
       .whereRaw("upper(coalesce(i.item_type::text, '')) = 'SFG'")
       .where({ "v.is_active": true, "k.is_active": true, "i.is_active": true })
@@ -4346,10 +4356,10 @@ const loadPurchaseVoucherOptions = async (req) => {
   ]);
 
   const masterColorNameById = new Map(
-    (colors || []).map((row) => [Number(row.id), row.name || ""]),
+    (colors || []).map((row) => [Number(row.id), getLocalizedName(row, row.id)]),
   );
   const masterSizeNameById = new Map(
-    (sizes || []).map((row) => [Number(row.id), row.name || ""]),
+    (sizes || []).map((row) => [Number(row.id), getLocalizedName(row, row.id)]),
   );
   const rawMaterialColorPolicyByItem = {};
   const rawMaterialSizePolicyByItem = {};
@@ -4387,7 +4397,9 @@ const loadPurchaseVoucherOptions = async (req) => {
         rawMaterialColorPolicyByItem[key].colors.push({
           id: Number(colorId),
           name:
+            (useUr ? row.color_name_ur : row.color_name) ||
             row.color_name ||
+            row.color_name_ur ||
             masterColorNameById.get(Number(colorId)) ||
             String(colorId),
         });
@@ -4405,7 +4417,9 @@ const loadPurchaseVoucherOptions = async (req) => {
         rawMaterialSizePolicyByItem[key].sizes.push({
           id: Number(sizeId),
           name:
+            (useUr ? row.size_name_ur : row.size_name) ||
             row.size_name ||
+            row.size_name_ur ||
             masterSizeNameById.get(Number(sizeId)) ||
             String(sizeId),
         });
@@ -4458,7 +4472,11 @@ const loadPurchaseVoucherOptions = async (req) => {
         entry.colors.push({
           id: colorId,
           name:
-            row.color_name || masterColorNameById.get(colorId) || String(colorId),
+            (useUr ? row.color_name_ur : row.color_name) ||
+            row.color_name ||
+            row.color_name_ur ||
+            masterColorNameById.get(colorId) ||
+            String(colorId),
         });
       }
     } else {
@@ -4469,7 +4487,11 @@ const loadPurchaseVoucherOptions = async (req) => {
         entry.sizes.push({
           id: sizeId,
           name:
-            row.size_name || masterSizeNameById.get(sizeId) || String(sizeId),
+            (useUr ? row.size_name_ur : row.size_name) ||
+            row.size_name ||
+            row.size_name_ur ||
+            masterSizeNameById.get(sizeId) ||
+            String(sizeId),
         });
       }
     } else {
@@ -4495,10 +4517,16 @@ const loadPurchaseVoucherOptions = async (req) => {
     (rawMaterials || []).map((row) => [Number(row.id), row.name_ur || ""]),
   );
   const colorLabelById = new Map(
-    (colors || []).map((row) => [Number(row.id), row.name || ""]),
+    (colors || []).map((row) => [
+      Number(row.id),
+      useUr ? row.name_ur || row.name || "" : row.name || row.name_ur || "",
+    ]),
   );
   const sizeLabelById = new Map(
-    (sizes || []).map((row) => [Number(row.id), row.name || ""]),
+    (sizes || []).map((row) => [
+      Number(row.id),
+      useUr ? row.name_ur || row.name || "" : row.name || row.name_ur || "",
+    ]),
   );
   const assetLabelById = new Map(
     (assets || []).map((row) => [
@@ -4528,7 +4556,14 @@ const loadPurchaseVoucherOptions = async (req) => {
         expenseAccountNameById.get(Number(row.account_id)) ||
         `#${Number(row.account_id)}`
       );
-    return rawMaterialNameById.get(Number(row.item_id)) || `#${Number(row.item_id)}`;
+    return (
+      (useUr
+        ? rawMaterialNameUrById.get(Number(row.item_id))
+        : rawMaterialNameById.get(Number(row.item_id))) ||
+      rawMaterialNameById.get(Number(row.item_id)) ||
+      rawMaterialNameUrById.get(Number(row.item_id)) ||
+      `#${Number(row.item_id)}`
+    );
   };
   const grnHeaderMap = new Map();
   openGrnPool.forEach((row) => {
@@ -4812,15 +4847,29 @@ const loadPurchaseVoucherDetails = async ({
   const colorMap = colorIds.length
     ? new Map(
         (
-          await knex("erp.colors").select("id", "name").whereIn("id", colorIds)
-        ).map((row) => [Number(row.id), row.name]),
+          await knex("erp.colors")
+            .select("id", "name", "name_ur")
+            .whereIn("id", colorIds)
+        ).map((row) => [
+          Number(row.id),
+          useUr
+            ? String(row.name_ur || row.name || "").trim()
+            : String(row.name || row.name_ur || "").trim(),
+        ]),
       )
     : new Map();
   const sizeMap = sizeIds.length
     ? new Map(
         (
-          await knex("erp.sizes").select("id", "name").whereIn("id", sizeIds)
-        ).map((row) => [Number(row.id), row.name]),
+          await knex("erp.sizes")
+            .select("id", "name", "name_ur")
+            .whereIn("id", sizeIds)
+        ).map((row) => [
+          Number(row.id),
+          useUr
+            ? String(row.name_ur || row.name || "").trim()
+            : String(row.name || row.name_ur || "").trim(),
+        ]),
       )
     : new Map();
   const assetIds = [

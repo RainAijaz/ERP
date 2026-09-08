@@ -483,6 +483,12 @@
         : (value === null || value === undefined || value === "" ? fallback : String(Number(Number(value).toFixed(decimals))));
     const formatDisplayDate = (value, fallback = "-") =>
       window.erpDisplay?.formatDate ? window.erpDisplay.formatDate(value, fallback) : String(value || fallback || "");
+    const localizedName = (entry) => {
+      if (!entry) return "";
+      return currentLocale === "ur"
+        ? String(entry.name_ur || entry.name || "").trim()
+        : String(entry.name || entry.name_ur || "").trim();
+    };
     
     const linesBody = form.querySelector("[data-lines-body]");
     const addRowButton = form.querySelector("[data-add-row]");
@@ -538,8 +544,8 @@
     const accountById = new Map(
       (expenseAccounts || []).map((acc) => [Number(acc.id), { id: Number(acc.id), name: acc.name || "" }]),
     );
-    const colorNameById = new Map(colors.map((color) => [Number(color.id), color.name || ""]));
-    const sizeNameById = new Map(sizes.map((size) => [Number(size.id), size.name || ""]));
+    const colorNameById = new Map(colors.map((color) => [Number(color.id), localizedName(color)]));
+    const sizeNameById = new Map(sizes.map((size) => [Number(size.id), localizedName(size)]));
     
     const itemRows = Array.isArray(selectedVoucher?.lines) && selectedVoucher.lines.length
       ? selectedVoucher.lines.map((line) => ({
@@ -1036,7 +1042,7 @@
           });
         } else {
           rawMaterials.forEach((item) => {
-            const itemLabel = (currentLocale === "ur" && String(item.name_ur || "").trim()) ? item.name_ur : item.name;
+            const itemLabel = localizedName(item);
             itemSelect.appendChild(
               makeOption(
                 item.id,
@@ -1177,7 +1183,7 @@
           }
 
           allowedColors.forEach((color) => {
-            colorSelect.appendChild(makeOption(color.id, color.name, Number(row.color_id || 0) === Number(color.id)));
+            colorSelect.appendChild(makeOption(color.id, localizedName(color), Number(row.color_id || 0) === Number(color.id)));
           });
 
           if (row.color_id) {
@@ -1282,7 +1288,7 @@
           }
 
           allowedSizes.forEach((size) => {
-            sizeSelect.appendChild(makeOption(size.id, size.name, Number(row.size_id || 0) === Number(size.id)));
+            sizeSelect.appendChild(makeOption(size.id, localizedName(size), Number(row.size_id || 0) === Number(size.id)));
           });
 
           if (row.size_id) {
@@ -1713,8 +1719,8 @@
       if (isConsumablePurchase())
         return [row.department_name || noneText, row.description || ""];
       return [
-        String(row.color_name || "").trim() || noneText,
-        String(row.size_name || "").trim() || noneText,
+        String(row.color_name_ur || row.color_name || "").trim() || noneText,
+        String(row.size_name_ur || row.size_name || "").trim() || noneText,
       ];
     };
 
