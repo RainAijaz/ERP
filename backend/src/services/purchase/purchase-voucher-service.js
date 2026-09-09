@@ -5,6 +5,7 @@ const {
   logVoucherApprovalWriteTx,
 } = require("../../utils/approval-activity-log");
 const { toLocalDateOnly } = require("../../utils/date-only");
+const { resolveLocale } = require("../../utils/localized-name");
 const {
   resolveVoucherApprovalRequiredTx,
 } = require("../../utils/voucher-approval-policy");
@@ -4188,7 +4189,7 @@ const deletePurchaseVoucher = async ({
 };
 
 const loadPurchaseVoucherOptions = async (req) => {
-  const useUr = String(req?.locale || "en").toLowerCase() === "ur";
+  const useUr = resolveLocale(req?.locale || req?.res?.locals?.locale) === "ur";
   const getLocalizedName = (row, fallbackId) =>
     useUr
       ? String(row?.name_ur || row?.name || fallbackId || "").trim()
@@ -4755,6 +4756,7 @@ const loadPurchaseVoucherDetails = async ({
   voucherTypeCode,
   voucherNo,
 }) => {
+  const useUr = resolveLocale(req?.locale || req?.res?.locals?.locale) === "ur";
   const targetNo = parseVoucherNo(voucherNo);
   if (!targetNo) return null;
 
