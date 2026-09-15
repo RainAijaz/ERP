@@ -362,6 +362,7 @@ const createProductionVoucherRouter = ({
         loss_type: req.body?.loss_type,
         dept_id: req.body?.dept_id,
         labour_id: req.body?.labour_id,
+        bill_book_no: req.body?.bill_book_no,
         stage_id: req.body?.stage_id,
         // A DCV can complete several departments at once, each with its own labour.
         // dept_id/labour_id above stay as the first pair so single-department posts

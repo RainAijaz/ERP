@@ -100,7 +100,8 @@ CREATE INDEX IF NOT EXISTS idx_wip_dept_ledger_branch_dept_sku_date
 CREATE TABLE IF NOT EXISTS erp.dcv_header (
   voucher_id bigint PRIMARY KEY REFERENCES erp.voucher_header(id) ON DELETE CASCADE,
   dept_id    bigint NOT NULL REFERENCES erp.departments(id) ON DELETE RESTRICT,
-  labour_id  bigint REFERENCES erp.labours(id) ON DELETE RESTRICT
+  labour_id  bigint REFERENCES erp.labours(id) ON DELETE RESTRICT,
+  bill_book_no text
 );
 
 -- NOTE: a DCV may complete several departments in one voucher, each worked by a

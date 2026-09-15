@@ -73,7 +73,9 @@ let approvalRequestHasVoucherTypeCodeColumn;
 let productionStagesTableSupport;
 let productionLineStageColumnSupport;
 let dcvHeaderStageColumnSupport;
+let dcvHeaderBillBookNoColumnSupport;
 let dcvLineTableSupport;
+let dcvLineBillBookNoColumnSupport;
 let abnormalLossStageColumnSupport;
 let bomStageRoutingTableSupport;
 let bomSfgLineTableSupport;
@@ -353,10 +355,34 @@ const hasDcvHeaderStageColumnTx = async (trx) => {
   return dcvHeaderStageColumnSupport;
 };
 
+const hasDcvHeaderBillBookNoColumnTx = async (trx) => {
+  if (typeof dcvHeaderBillBookNoColumnSupport === "boolean")
+    return dcvHeaderBillBookNoColumnSupport;
+  dcvHeaderBillBookNoColumnSupport = await hasColumnTx(
+    trx,
+    "erp",
+    "dcv_header",
+    "bill_book_no",
+  );
+  return dcvHeaderBillBookNoColumnSupport;
+};
+
 const hasDcvLineTableTx = async (trx) => {
   if (typeof dcvLineTableSupport === "boolean") return dcvLineTableSupport;
   dcvLineTableSupport = await tableExistsTx(trx, "erp.dcv_line");
   return dcvLineTableSupport;
+};
+
+const hasDcvLineBillBookNoColumnTx = async (trx) => {
+  if (typeof dcvLineBillBookNoColumnSupport === "boolean")
+    return dcvLineBillBookNoColumnSupport;
+  dcvLineBillBookNoColumnSupport = await hasColumnTx(
+    trx,
+    "erp",
+    "dcv_line",
+    "bill_book_no",
+  );
+  return dcvLineBillBookNoColumnSupport;
 };
 
 const hasAbnormalLossStageColumnTx = async (trx) => {
@@ -1477,6 +1503,7 @@ const validateDcvStagePairsTx = async ({
   rawStages,
   fallbackDeptId,
   fallbackLabourId,
+  fallbackBillBookNo,
   skuIds = [],
 }) => {
   const supportsDcvStage = await hasDcvHeaderStageColumnTx(trx);
@@ -1486,15 +1513,29 @@ const validateDcvStagePairsTx = async ({
   // fall back to the flat dept_id/labour_id so nothing that works today breaks.
   const candidates = rawList.length
     ? rawList
-    : [{ dept_id: fallbackDeptId, labour_id: fallbackLabourId }];
+    : [
+        {
+          dept_id: fallbackDeptId,
+          labour_id: fallbackLabourId,
+          bill_book_no: fallbackBillBookNo,
+        },
+      ];
 
   const pairs = [];
   const seenDeptIds = new Set();
+  const t = req?.res?.locals?.t;
+  const billBookRequiredMessage =
+    (typeof t === "function" && t("bill_book_no_required")) ||
+    "Bill Book No is required.";
   for (const candidate of candidates) {
     const rawDeptId = toPositiveInt(
       candidate?.dept_id ?? candidate?.department_id,
     );
     const rawLabourId = toPositiveInt(candidate?.labour_id);
+    const billBookNo = normalizeText(
+      candidate?.bill_book_no ?? candidate?.billBookNo,
+      120,
+    );
     // A department with nobody against it has no one to pay, so it cannot post.
     if (!rawDeptId) throw new HttpError(400, "Department is required");
     if (!rawLabourId) {
@@ -1502,6 +1543,9 @@ const validateDcvStagePairsTx = async ({
         400,
         "Select a labour for every department on this voucher",
       );
+    }
+    if (!billBookNo) {
+      throw new HttpError(400, billBookRequiredMessage);
     }
 
     const labourId = await validateLabourTx({
@@ -1540,7 +1584,12 @@ const validateDcvStagePairsTx = async ({
           allowNull: !supportsDcvStage,
         });
 
-    pairs.push({ dept_id: deptId, labour_id: labourId, stage_id: stageId });
+    pairs.push({
+      dept_id: deptId,
+      labour_id: labourId,
+      stage_id: stageId,
+      bill_book_no: billBookNo,
+    });
   }
 
   if (pairs.length < 2) return pairs;
@@ -1923,6 +1972,7 @@ const validateDcvLinesTx = async ({
         dcv_dept_id: Number(stage.dept_id),
         dcv_labour_id: Number(stage.labour_id),
         dcv_stage_id: toPositiveInt(stage.stage_id),
+        dcv_bill_book_no: stage.bill_book_no || null,
       };
     }),
   );
@@ -2761,6 +2811,8 @@ const normalizeAndValidatePayloadTx = async ({
       rawStages: payload?.dcv_stages,
       fallbackDeptId: payload?.dept_id || payload?.department_id,
       fallbackLabourId: payload?.labour_id,
+      fallbackBillBookNo:
+        payload?.bill_book_no || payload?.billBookNo || referenceNo,
       skuIds: dcvRawLines
         .map((line) => toPositiveInt(line?.sku_id || line?.skuId))
         .filter(Boolean),
@@ -2771,6 +2823,7 @@ const normalizeAndValidatePayloadTx = async ({
     const deptId = primaryStage.dept_id;
     const labourId = primaryStage.labour_id;
     const stageId = primaryStage.stage_id;
+    const dcvReferenceNo = primaryStage.bill_book_no || referenceNo;
 
     const lines = await validateDcvLinesTx({
       trx,
@@ -2805,7 +2858,7 @@ const normalizeAndValidatePayloadTx = async ({
     return {
       voucherDate,
       remarks,
-      referenceNo,
+      referenceNo: dcvReferenceNo,
       lines,
       deptId,
       labourId,
@@ -2916,6 +2969,8 @@ const upsertVoucherExtensionsTx = async ({
     (insertedLines || []).map((row) => [Number(row.line_no), Number(row.id)]),
   );
   const supportsDcvStage = await hasDcvHeaderStageColumnTx(trx);
+  const supportsDcvHeaderBillBookNo =
+    await hasDcvHeaderBillBookNoColumnTx(trx);
   const supportsProductionStage = await hasProductionLineStageColumnTx(trx);
   const supportsLossStage = await hasAbnormalLossStageColumnTx(trx);
 
@@ -2927,19 +2982,30 @@ const upsertVoucherExtensionsTx = async ({
     };
     if (supportsDcvStage)
       dcvPayload.stage_id = toPositiveInt(validated.stageId);
+    if (supportsDcvHeaderBillBookNo) {
+      dcvPayload.bill_book_no = normalizeText(
+        validated.dcvStages?.[0]?.bill_book_no || validated.referenceNo,
+        120,
+      );
+    }
     await trx("erp.dcv_header")
       .insert(dcvPayload)
       .onConflict("voucher_id")
       .merge(
-        supportsDcvStage
-          ? ["dept_id", "labour_id", "stage_id"]
-          : ["dept_id", "labour_id"],
+        [
+          "dept_id",
+          "labour_id",
+          ...(supportsDcvStage ? ["stage_id"] : []),
+          ...(supportsDcvHeaderBillBookNo ? ["bill_book_no"] : []),
+        ],
       );
 
     // Per-line department/labour. dcv_header above keeps the first pair so older
     // single-department queries stay correct; these rows are what the labour ledger
     // and the WIP posting read when a voucher spans several departments.
     if (await hasDcvLineTableTx(trx)) {
+      const supportsDcvLineBillBookNo =
+        await hasDcvLineBillBookNoColumnTx(trx);
       const dcvLineRows = (validated.lines || [])
         .map((line) => {
           const voucherLineId = lineByNo.get(Number(line.line_no));
@@ -2951,6 +3017,9 @@ const upsertVoucherExtensionsTx = async ({
             dept_id: deptId,
             labour_id: labourId,
             stage_id: toPositiveInt(line.dcv_stage_id),
+            ...(supportsDcvLineBillBookNo
+              ? { bill_book_no: normalizeText(line.dcv_bill_book_no, 120) }
+              : {}),
           };
         })
         .filter(Boolean);
@@ -2958,7 +3027,12 @@ const upsertVoucherExtensionsTx = async ({
         await trx("erp.dcv_line")
           .insert(dcvLineRows)
           .onConflict("voucher_line_id")
-          .merge(["dept_id", "labour_id", "stage_id"]);
+          .merge([
+            "dept_id",
+            "labour_id",
+            "stage_id",
+            ...(supportsDcvLineBillBookNo ? ["bill_book_no"] : []),
+          ]);
       }
     }
     return;
@@ -6907,16 +6981,30 @@ const loadProductionVoucherDetails = async ({
   let dcvStages = [];
 
   if (voucherTypeCode === PRODUCTION_VOUCHER_TYPES.departmentCompletion) {
+    const supportsDcvHeaderBillBookNo =
+      await hasDcvHeaderBillBookNoColumnTx(knex);
     dcvHeader = await knex("erp.dcv_header")
-      .select("dept_id", "labour_id", ...(supportsDcvStage ? ["stage_id"] : []))
+      .select(
+        "dept_id",
+        "labour_id",
+        ...(supportsDcvStage ? ["stage_id"] : []),
+        ...(supportsDcvHeaderBillBookNo ? ["bill_book_no"] : []),
+      )
       .where({ voucher_id: header.id })
       .first();
     // Every department/labour on the voucher, in saved line order, so reopening a
     // multi-department voucher shows the pairs it was posted with.
     if (await hasDcvLineTableTx(knex)) {
+      const supportsDcvLineBillBookNo =
+        await hasDcvLineBillBookNoColumnTx(knex);
       const dcvLineRows = await knex("erp.dcv_line as dl")
         .join("erp.voucher_line as vl", "vl.id", "dl.voucher_line_id")
-        .select("dl.dept_id", "dl.labour_id", "dl.stage_id")
+        .select(
+          "dl.dept_id",
+          "dl.labour_id",
+          "dl.stage_id",
+          ...(supportsDcvLineBillBookNo ? ["dl.bill_book_no"] : []),
+        )
         .where({ "vl.voucher_header_id": header.id })
         .orderBy("vl.line_no", "asc");
       const seenDeptIds = new Set();
@@ -6931,7 +7019,23 @@ const loadProductionVoucherDetails = async ({
           dept_id: Number(row.dept_id),
           labour_id: Number(row.labour_id),
           stage_id: toPositiveInt(row.stage_id),
+          bill_book_no:
+            normalizeText(row.bill_book_no, 120) ||
+            normalizeText(dcvHeader?.bill_book_no, 120) ||
+            normalizeText(header.book_no, 120),
         }));
+    }
+    if (!dcvStages.length && toPositiveInt(dcvHeader?.dept_id)) {
+      dcvStages = [
+        {
+          dept_id: toPositiveInt(dcvHeader?.dept_id),
+          labour_id: toPositiveInt(dcvHeader?.labour_id),
+          stage_id: toPositiveInt(dcvHeader?.stage_id),
+          bill_book_no:
+            normalizeText(dcvHeader?.bill_book_no, 120) ||
+            normalizeText(header.book_no, 120),
+        },
+      ];
     }
   } else if (voucherTypeCode === PRODUCTION_VOUCHER_TYPES.productionPlan) {
     planHeader = await knex("erp.production_plan_header")

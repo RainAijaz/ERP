@@ -101,8 +101,10 @@ CREATE TABLE IF NOT EXISTS erp.dcv_line (
   voucher_line_id bigint PRIMARY KEY REFERENCES erp.voucher_line(id) ON DELETE CASCADE,
   dept_id         bigint NOT NULL REFERENCES erp.departments(id) ON DELETE RESTRICT,
   labour_id       bigint NOT NULL REFERENCES erp.labours(id) ON DELETE RESTRICT,
-  stage_id        bigint REFERENCES erp.production_stages(id) ON DELETE RESTRICT
+  stage_id        bigint REFERENCES erp.production_stages(id) ON DELETE RESTRICT,
+  bill_book_no    text
 );
 
 CREATE INDEX IF NOT EXISTS idx_dcv_line_labour ON erp.dcv_line(labour_id);
 CREATE INDEX IF NOT EXISTS idx_dcv_line_dept   ON erp.dcv_line(dept_id);
+CREATE INDEX IF NOT EXISTS idx_dcv_line_bill_book_no ON erp.dcv_line(bill_book_no);

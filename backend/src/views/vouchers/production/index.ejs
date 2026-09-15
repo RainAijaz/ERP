@@ -71,7 +71,7 @@
   const initialDcvStages = Array.isArray(selectedVoucher?.dcv_stages) && selectedVoucher.dcv_stages.length
     ? selectedVoucher.dcv_stages
     : (selectedVoucher?.dept_id
-      ? [{ dept_id: selectedVoucher.dept_id, labour_id: selectedVoucher.labour_id }]
+      ? [{ dept_id: selectedVoucher.dept_id, labour_id: selectedVoucher.labour_id, bill_book_no: selectedVoucher.reference_no || "" }]
       : []);
   const consumptionDepartmentDisplay = (() => {
     if (!isConsumption || !selectedVoucher) return "";
@@ -259,6 +259,7 @@
           <input type="hidden" name="dcv_stages_json" data-dcv-stages-json value="">
           <input type="hidden" name="dept_id" data-dcv-department value="<%= selectedVoucher?.dept_id || '' %>">
           <input type="hidden" name="labour_id" data-dcv-labour value="<%= selectedVoucher?.labour_id || '' %>">
+          <input type="hidden" name="bill_book_no" data-dcv-bill-book value="<%= selectedVoucher?.reference_no || '' %>">
         <% } %>
 
         <% if (isLoss) { %>
@@ -408,6 +409,7 @@
     const totalDozensInput = form.querySelector("[data-total-dozens]");
     const dcvLabourSelect = form.querySelector("[data-dcv-labour]");
     const dcvDepartmentSelect = form.querySelector("[data-dcv-department]");
+    const dcvBillBookInput = form.querySelector("[data-dcv-bill-book]");
     const dcvStageList = form.querySelector("[data-dcv-stage-list]");
     const dcvStageHint = form.querySelector("[data-dcv-stage-hint]");
     const dcvStagesJsonInput = form.querySelector("[data-dcv-stages-json]");
@@ -607,8 +609,17 @@
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
 
-    // Department is picked first and the labour list narrows to whoever works there --
-    // the order the shop floor actually thinks in ("PACKING finished; Nadeem did it").
+    const getAllowedDepartmentsForLabour = (labourId) => {
+      const normalizedLabourId = toPositiveInt(labourId);
+      if (!normalizedLabourId) return [];
+      const allowedDeptIds = labourDeptMap.get(normalizedLabourId);
+      if (!(allowedDeptIds instanceof Set) || !allowedDeptIds.size) return [];
+      return allDepartments.filter(
+        (department) =>
+          department.isProduction && allowedDeptIds.has(Number(department.id)),
+      );
+    };
+
     const getAllowedLaboursForDepartment = (deptId) => {
       const normalizedDeptId = toPositiveInt(deptId);
       if (!normalizedDeptId) return [];
@@ -624,14 +635,22 @@
     // Row indexes whose per-department rate split is expanded.
     const dcvOpenRateBreakdowns = new Set();
 
-    const getCompleteDcvPairs = () =>
+    const getSelectedDcvPairs = () =>
       dcvStagePairs.filter(
         (pair) => toPositiveInt(pair?.dept_id) && toPositiveInt(pair?.labour_id),
       );
 
+    const getCompleteDcvPairs = () =>
+      dcvStagePairs.filter(
+        (pair) =>
+          toPositiveInt(pair?.dept_id) &&
+          toPositiveInt(pair?.labour_id) &&
+          String(pair?.bill_book_no || "").trim(),
+      );
+
     const renderDcvStagePairs = () => {
       if (!isDcv || !dcvStageList) return;
-      if (!dcvStagePairs.length) dcvStagePairs.push({ dept_id: null, labour_id: null });
+      if (!dcvStagePairs.length) dcvStagePairs.push({ dept_id: null, labour_id: null, bill_book_no: "" });
 
       const takenDeptIds = new Set(
         dcvStagePairs.map((pair) => toPositiveInt(pair?.dept_id)).filter(Boolean),
@@ -644,13 +663,13 @@
         .map((pair, index) => {
           const deptId = toPositiveInt(pair?.dept_id);
           const labourId = toPositiveInt(pair?.labour_id);
+          const billBookNo = String(pair?.bill_book_no || "").trim();
           // A department already used on another row cannot be picked twice.
-          const departmentChoices = allDepartments.filter(
+          const departmentChoices = getAllowedDepartmentsForLabour(labourId).filter(
             (department) =>
-              department.isProduction &&
               (Number(department.id) === Number(deptId) || !takenDeptIds.has(Number(department.id))),
           );
-          const labourChoices = getAllowedLaboursForDepartment(deptId);
+          const labourChoices = Array.isArray(options.labours) ? options.labours : [];
           const departmentOptions = [`<option value="">${<%- JSON.stringify(t("select_department")) %>}</option>`]
             .concat(
               departmentChoices.map(
@@ -684,13 +703,14 @@
             : "";
           return `
             <div class="flex flex-col gap-2 sm:flex-row sm:items-center" data-dcv-stage-row data-stage-index="${index}">
-              <select data-stage-field="dept_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm sm:flex-1" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
-                ${departmentOptions}
-              </select>
-              <span class="hidden shrink-0 text-slate-400 sm:inline">&rarr;</span>
-              <select data-stage-field="labour_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm sm:flex-1" data-searchable-select="true" data-searchable-variant="unified" ${canSave && deptId ? "" : "disabled"}>
+              <select data-stage-field="labour_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm sm:flex-1" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
                 ${labourOptions}
               </select>
+              <span class="hidden shrink-0 text-slate-400 sm:inline">&rarr;</span>
+              <select data-stage-field="dept_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm sm:flex-1" data-searchable-select="true" data-searchable-variant="unified" ${canSave && labourId ? "" : "disabled"}>
+                ${departmentOptions}
+              </select>
+              <input type="text" data-stage-field="bill_book_no" data-stage-index="${index}" value="${escapeHtml(billBookNo)}" maxlength="120" placeholder="${escapeHtml(<%- JSON.stringify(t("bill_book_no")) %>)}" aria-label="${escapeHtml(<%- JSON.stringify(t("bill_book_no")) %>)}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm sm:flex-1" ${canSave ? "required" : "readonly"}>
               ${actionSlot}
             </div>
           `;
@@ -713,12 +733,14 @@
       const [firstPair] = completePairs;
       if (dcvDepartmentSelect) dcvDepartmentSelect.value = firstPair ? String(firstPair.dept_id) : "";
       if (dcvLabourSelect) dcvLabourSelect.value = firstPair ? String(firstPair.labour_id) : "";
+      if (dcvBillBookInput) dcvBillBookInput.value = firstPair ? String(firstPair.bill_book_no || "") : "";
       if (dcvStagesJsonInput) {
         dcvStagesJsonInput.value = completePairs.length
           ? JSON.stringify(
               completePairs.map((pair) => ({
                 dept_id: Number(pair.dept_id),
                 labour_id: Number(pair.labour_id),
+                bill_book_no: String(pair.bill_book_no || "").trim(),
               })),
             )
           : "";
@@ -812,7 +834,7 @@
 
     const refreshDcvRatedSkuFilter = async ({ clearUnrated = false } = {}) => {
       if (!isDcv) return;
-      const pairs = getCompleteDcvPairs();
+      const pairs = getSelectedDcvPairs();
       if (!pairs.length) {
         setDcvStageHint("");
         if (dcvRatedSkuIds === null) return;
@@ -1566,7 +1588,7 @@
       const rowIndex = Number(rowEl.getAttribute("data-row-index") || -1);
       if (rowIndex < 0 || !rowsState[rowIndex]) return;
 
-      const pairs = getCompleteDcvPairs();
+      const pairs = getSelectedDcvPairs();
       const skuId = toPositiveInt(rowEl.querySelector('[data-field="sku_id"]')?.value);
       const unit = String(rowEl.querySelector('[data-field="unit"]')?.value || rowsState[rowIndex].unit || defaultDcvUnitCode || "PAIR").toUpperCase();
       if (!pairs.length || !skuId || !unit) return;
@@ -2003,6 +2025,7 @@
         dcvStagePairs.push({
           dept_id: deptId,
           labour_id: toPositiveInt(pair?.labour_id),
+          bill_book_no: String(pair?.bill_book_no || "").trim(),
         });
       });
       renderDcvStagePairs();
@@ -2019,24 +2042,40 @@
         const index = Number(event.target.getAttribute("data-stage-index") || -1);
         if (index < 0 || !dcvStagePairs[index]) return;
         const value = toPositiveInt(event.target.value);
-        if (field === "dept_id") {
+        if (field === "labour_id") {
+          dcvStagePairs[index].labour_id = value;
+          const stillAllowed = getAllowedDepartmentsForLabour(value).some(
+            (department) => Number(department.id) === Number(dcvStagePairs[index].dept_id),
+          );
+          if (!stillAllowed) dcvStagePairs[index].dept_id = null;
+        } else if (field === "dept_id") {
           dcvStagePairs[index].dept_id = value;
-          // Whoever was selected may not work in the newly chosen department.
           const stillAllowed = getAllowedLaboursForDepartment(value).some(
             (labour) => Number(labour.id) === Number(dcvStagePairs[index].labour_id),
           );
           if (!stillAllowed) dcvStagePairs[index].labour_id = null;
-        } else if (field === "labour_id") {
-          dcvStagePairs[index].labour_id = value;
+        } else if (field === "bill_book_no") {
+          dcvStagePairs[index].bill_book_no = String(event.target.value || "").trim();
+          syncDcvStageHiddenInputs();
+          return;
         }
         renderDcvStagePairs();
         await refreshDcvLineDependencies({ clearUnrated: true });
       });
 
+      dcvStageList.addEventListener("input", (event) => {
+        const field = event.target?.getAttribute?.("data-stage-field");
+        if (field !== "bill_book_no") return;
+        const index = Number(event.target.getAttribute("data-stage-index") || -1);
+        if (index < 0 || !dcvStagePairs[index]) return;
+        dcvStagePairs[index].bill_book_no = String(event.target.value || "").trim();
+        syncDcvStageHiddenInputs();
+      });
+
       // Both row actions are rebuilt on every render, so they are delegated.
       dcvStageList.addEventListener("click", async (event) => {
         if (event.target?.closest?.("[data-dcv-stage-add]")) {
-          dcvStagePairs.push({ dept_id: null, labour_id: null });
+          dcvStagePairs.push({ dept_id: null, labour_id: null, bill_book_no: "" });
           renderDcvStagePairs();
           return;
         }
@@ -2191,23 +2230,37 @@
       if (isDcv) {
         syncDcvStageHiddenInputs();
         const completePairs = getCompleteDcvPairs();
-        if (!completePairs.length) {
+        const incompleteLabour = dcvStagePairs.find(
+          (pair) => toPositiveInt(pair?.dept_id) && !toPositiveInt(pair?.labour_id),
+        );
+        if (incompleteLabour) {
+          showError(
+            String(<%- JSON.stringify(t("dcv_labour_required_for_department")) %>).replace(
+              "{department}",
+              departmentNameById.get(Number(incompleteLabour.dept_id)) || "",
+            ),
+          );
+          event.preventDefault();
+          return;
+        }
+        const incompleteDepartment = dcvStagePairs.find(
+          (pair) => toPositiveInt(pair?.labour_id) && !toPositiveInt(pair?.dept_id),
+        );
+        if (incompleteDepartment) {
           showError(`${<%- JSON.stringify(t("department")) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
           event.preventDefault();
           return;
         }
-        // A department with nobody against it has no one to pay. Blocking here is
-        // clearer than letting the server reject the whole voucher.
-        const incompletePair = dcvStagePairs.find(
-          (pair) => toPositiveInt(pair?.dept_id) && !toPositiveInt(pair?.labour_id),
+        const incompleteBillBook = dcvStagePairs.find(
+          (pair) => toPositiveInt(pair?.dept_id) && toPositiveInt(pair?.labour_id) && !String(pair?.bill_book_no || "").trim(),
         );
-        if (incompletePair) {
-          showError(
-            String(<%- JSON.stringify(t("dcv_labour_required_for_department")) %>).replace(
-              "{department}",
-              departmentNameById.get(Number(incompletePair.dept_id)) || "",
-            ),
-          );
+        if (incompleteBillBook) {
+          showError(<%- JSON.stringify(t("bill_book_no_required")) %>);
+          event.preventDefault();
+          return;
+        }
+        if (!completePairs.length) {
+          showError(`${<%- JSON.stringify(t("labour")) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
           event.preventDefault();
           return;
         }
