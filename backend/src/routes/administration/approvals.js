@@ -2644,13 +2644,17 @@ router.post(
         requestSnapshot?.new_value?.notify_payees === true
       ) {
         const voucherId = appliedEntityId || requestSnapshot.entity_id;
+        const recipientKinds =
+          requestSnapshot.new_value.notify_payee_kinds === undefined
+            ? true
+            : requestSnapshot.new_value.notify_payee_kinds;
         // Fire-and-observe (not awaited): the notifier paces itself across
         // payees to avoid WhatsApp throttling, which for a many-payee voucher
         // can take several seconds — that must never hold up the approval
         // response. It re-validates state and never throws; failures are logged
         // to erp.whatsapp_notification_log and surface on the dashboard alert.
-        sendVoucherPaymentNotifications({ knex, voucherId }).catch((e) =>
-          console.error("[WhatsApp] payment notify error:", e?.message || e),
+        sendVoucherPaymentNotifications({ knex, voucherId, recipientKinds }).catch(
+          (e) => console.error("[WhatsApp] payment notify error:", e?.message || e),
         );
       }
 

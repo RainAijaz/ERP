@@ -4409,6 +4409,12 @@ Object.assign(translations.en, {
   notify_payees_on_approval: "Notify parties on approval (WhatsApp)",
   notify_payees_on_approval_hint:
     "When approved, WhatsApp each supplier, labour, or employee paid on this voucher.",
+  notify_suppliers_on_approval: "Suppliers",
+  notify_suppliers_on_approval_hint: "Notify supplier payees.",
+  notify_labours_on_approval: "Labours",
+  notify_labours_on_approval_hint: "Notify labour payees.",
+  notify_employees_on_approval: "Employees",
+  notify_employees_on_approval_hint: "Notify employee payees.",
   whatsapp_notification_failures: "WhatsApp Notification Failures",
   whatsapp_notification_failures_description:
     "Payment notifications that could not be delivered — wrong number or send failure.",
@@ -4681,6 +4687,12 @@ Object.assign(translations.ur, {
   notify_payees_on_approval: "منظوری پر فریقین کو اطلاع دیں (واٹس ایپ)",
   notify_payees_on_approval_hint:
     "منظوری پر اس واؤچر میں ادائیگی پانے والے ہر سپلائر، لیبر یا ملازم کو واٹس ایپ پیغام بھیجا جائے گا۔",
+  notify_suppliers_on_approval: "سپلائرز",
+  notify_suppliers_on_approval_hint: "سپلائر وصول کنندگان کو اطلاع دیں۔",
+  notify_labours_on_approval: "لیبرز",
+  notify_labours_on_approval_hint: "لیبر وصول کنندگان کو اطلاع دیں۔",
+  notify_employees_on_approval: "ملازمین",
+  notify_employees_on_approval_hint: "ملازم وصول کنندگان کو اطلاع دیں۔",
   whatsapp_notification_failures: "واٹس ایپ اطلاعات کی ناکامیاں",
   whatsapp_notification_failures_description:
     "ادائیگی کی اطلاعات جو نہیں پہنچ سکیں — غلط نمبر یا بھیجنے میں ناکامی۔",

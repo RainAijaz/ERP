@@ -17,6 +17,8 @@ const {
 const { normalizePkMobileToChatId } = require("./phone-format");
 
 const TARGET_VOUCHER_TYPES = new Set(["CASH_VOUCHER", "JOURNAL_VOUCHER"]);
+const RECIPIENT_KINDS = ["SUPPLIER", "LABOUR", "EMPLOYEE"];
+const RECIPIENT_KIND_SET = new Set(RECIPIENT_KINDS);
 
 // Saved contacts get a suffix so an ERP-created contact is recognisable in the
 // phone book and doesn't get confused with a personal contact of the same name.
@@ -111,6 +113,34 @@ const toNumber = (value) => {
 const getLineMeta = (line) =>
   line && line.meta && typeof line.meta === "object" ? line.meta : {};
 
+const normalizeRecipientKinds = (value) => {
+  if (value === true) return [...RECIPIENT_KINDS];
+
+  let raw = value;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) raw = [];
+    else if (trimmed === "1" || trimmed.toLowerCase() === "true") raw = [...RECIPIENT_KINDS];
+    else {
+      try {
+        const parsed = JSON.parse(trimmed);
+        raw = Array.isArray(parsed) ? parsed : [trimmed];
+      } catch (err) {
+        raw = trimmed.split(",");
+      }
+    }
+  }
+
+  const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  return [
+    ...new Set(
+      values
+        .map((kind) => String(kind || "").trim().toUpperCase())
+        .filter((kind) => RECIPIENT_KIND_SET.has(kind)),
+    ),
+  ];
+};
+
 // Combine the English and Urdu names as "English (اردو)". When only one side
 // exists, use whichever is present; never emit an empty "()".
 const buildDisplayName = (name, nameUr) => {
@@ -162,10 +192,12 @@ const buildMessage = ({ name, total, details, voucherDate }) => {
 // Resolve the payee master info for the lines of one recipient kind and message
 // each payee, logging SENT/FAILED. `rows` are the paid lines for that kind,
 // already grouped by recipient id downstream.
-const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
+const sendVoucherPaymentNotifications = async ({ knex, voucherId, recipientKinds = true }) => {
   try {
     const id = Number(voucherId);
     if (!Number.isInteger(id) || id <= 0) return;
+    const allowedKinds = new Set(normalizeRecipientKinds(recipientKinds));
+    if (!allowedKinds.size) return;
 
     const header = await knex("erp.voucher_header")
       .select(
@@ -212,6 +244,7 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
         recipientId = Number(line.employee_id);
       }
       if (!kind || !recipientId) continue;
+      if (!allowedKinds.has(kind)) continue;
 
       const key = `${kind}:${recipientId}`;
       const entry = groups.get(key) || { kind, id: recipientId, details: [], total: 0 };
@@ -425,6 +458,8 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
 module.exports = {
   sendVoucherPaymentNotifications,
   resolveChatIdForPayee,
+  RECIPIENT_KINDS,
+  normalizeRecipientKinds,
   PERMANENT_REASONS,
   NON_ATTEMPT_REASONS,
   isRetryable,

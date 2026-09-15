@@ -11,6 +11,31 @@ const {
   updateVoucher,
   deleteVoucher,
 } = require("../../services/financial/voucher-service");
+const {
+  RECIPIENT_KINDS: NOTIFY_PAYEE_KINDS,
+  normalizeRecipientKinds,
+} = require("../../utils/payment-notification");
+
+const NOTIFY_PAYEE_PERMISSION_BY_KIND = {
+  SUPPLIER: {
+    scopeType: "SCREEN",
+    scopeKey: "financial.whatsapp_notify_suppliers",
+    labelKey: "notify_suppliers_on_approval",
+    hintKey: "notify_suppliers_on_approval_hint",
+  },
+  LABOUR: {
+    scopeType: "SCREEN",
+    scopeKey: "financial.whatsapp_notify_labours",
+    labelKey: "notify_labours_on_approval",
+    hintKey: "notify_labours_on_approval_hint",
+  },
+  EMPLOYEE: {
+    scopeType: "SCREEN",
+    scopeKey: "financial.whatsapp_notify_employees",
+    labelKey: "notify_employees_on_approval",
+    hintKey: "notify_employees_on_approval_hint",
+  },
+};
 
 // Emit COALESCE(alias.name_ur, alias.name) as `as` for Urdu, plain name otherwise.
 // accounts/parties/labours/employees/departments all carry a name_ur column.
@@ -66,6 +91,38 @@ const setNotice = (res, message, sticky = false) => {
 const canVoucherAction = (res, scopeKey, action) => {
   if (typeof res?.locals?.can !== "function") return false;
   return res.locals.can("VOUCHER", scopeKey, action);
+};
+
+const canNotifyPayeeKind = (res, kind) => {
+  const permission = NOTIFY_PAYEE_PERMISSION_BY_KIND[kind];
+  if (!permission || typeof res?.locals?.can !== "function") return false;
+  return res.locals.can(permission.scopeType, permission.scopeKey, "approve");
+};
+
+const buildNotifyPayeePermissions = (res) =>
+  NOTIFY_PAYEE_KINDS.map((kind) => ({
+    kind,
+    labelKey: NOTIFY_PAYEE_PERMISSION_BY_KIND[kind].labelKey,
+    hintKey: NOTIFY_PAYEE_PERMISSION_BY_KIND[kind].hintKey,
+    allowed: canNotifyPayeeKind(res, kind),
+  }));
+
+const parseNotifyPayeeKinds = (req, res) => {
+  if (String(req.body?.notify_payees_present || "") !== "1") return [];
+
+  const allowedKinds = new Set(
+    NOTIFY_PAYEE_KINDS.filter((kind) => canNotifyPayeeKind(res, kind)),
+  );
+  if (!allowedKinds.size) return [];
+
+  const requested =
+    req.body?.notify_payee_kinds !== undefined
+      ? normalizeRecipientKinds(req.body.notify_payee_kinds)
+      : String(req.body?.notify_payees || "") === "1"
+        ? [...NOTIFY_PAYEE_KINDS]
+        : [];
+
+  return requested.filter((kind) => allowedKinds.has(kind));
 };
 
 const actionDeniedMessage = (res) =>
@@ -698,6 +755,7 @@ const createFinancialVoucherRouter = ({
         const allowCreate = canVoucherAction(res, scopeKey, "create");
         const allowEdit = canVoucherAction(res, scopeKey, "edit");
         const allowDelete = canVoucherAction(res, scopeKey, "hard_delete");
+        const notifyPayeePermissions = buildNotifyPayeePermissions(res);
 
         return res.render("base/layouts/main", {
           title: `${res.locals.t(titleKey)} - ${res.locals.t("financial")}`,
@@ -726,6 +784,7 @@ const createFinancialVoucherRouter = ({
           allowCreate,
           allowEdit,
           allowDelete,
+          notifyPayeePermissions,
         });
       } catch (err) {
         console.error("Error in FinancialVoucherPageService:", err);
@@ -787,10 +846,8 @@ const createFinancialVoucherRouter = ({
       // voucher. A hidden marker field is always submitted so an unchecked
       // checkbox (which sends nothing) is distinguishable from an older form that
       // lacks the control entirely; both now mean "do not notify".
-      const notifyPayees =
-        String(req.body?.notify_payees_present || "") === "1"
-          ? String(req.body?.notify_payees || "") === "1"
-          : false;
+      const notifyPayeeKinds = parseNotifyPayeeKinds(req, res);
+      const notifyPayees = notifyPayeeKinds.length > 0;
       if (!voucherDate) {
         setNotice(res, res.locals.t("error_required_fields"), true);
         return res.redirect(req.baseUrl);
@@ -808,6 +865,7 @@ const createFinancialVoucherRouter = ({
             headerAccountId,
             linkedSalesOrderId,
             notifyPayees,
+            notifyPayeeKinds,
           })
         : await createVoucher({
             req,
@@ -819,6 +877,7 @@ const createFinancialVoucherRouter = ({
             headerAccountId,
             linkedSalesOrderId,
             notifyPayees,
+            notifyPayeeKinds,
           });
 
       if (saved.queuedForApproval) {

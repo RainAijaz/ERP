@@ -15,6 +15,7 @@ const {
 } = require("./gl-posting-service");
 const {
   sendVoucherPaymentNotifications,
+  normalizeRecipientKinds,
 } = require("../../utils/payment-notification");
 const {
   findPendingVoucherApprovalTx,
@@ -31,16 +32,24 @@ const VOUCHER_TYPES = {
 // (no maker-checker step), so the approval-endpoint hook never runs for them.
 // Fire the per-person WhatsApp payment notification here in that case. The
 // notifier re-validates type/status and never throws.
-const maybeNotifyPayeesPostCommit = ({ result, notifyPayees }) => {
+const normalizeNotifyPayeeKinds = ({ notifyPayees, notifyPayeeKinds }) => {
+  if (notifyPayeeKinds !== undefined) return normalizeRecipientKinds(notifyPayeeKinds);
+  return notifyPayees === true ? normalizeRecipientKinds(true) : [];
+};
+
+const maybeNotifyPayeesPostCommit = ({ result, notifyPayees, notifyPayeeKinds }) => {
   if (!result || result.queuedForApproval) return;
   if (String(result.status).toUpperCase() !== "APPROVED") return;
   // Opt-in: only an explicit true notifies. Anything else (unticked box, caller
   // that never passed the flag) stays silent.
-  if (notifyPayees !== true) return;
+  const recipientKinds = normalizeNotifyPayeeKinds({ notifyPayees, notifyPayeeKinds });
+  if (!recipientKinds.length) return;
   if (process.env.WHATSAPP_PAYMENT_NOTIFY_ENABLED === "0") return;
-  sendVoucherPaymentNotifications({ knex, voucherId: result.id }).catch((e) =>
-    console.error("[WhatsApp] payment notify error:", e?.message || e),
-  );
+  sendVoucherPaymentNotifications({
+    knex,
+    voucherId: result.id,
+    recipientKinds,
+  }).catch((e) => console.error("[WhatsApp] payment notify error:", e?.message || e));
 };
 const AUTO_BANK_SETTLEMENT_PREFIX = "[AUTO_BANK_SETTLEMENT]";
 const URDU_REGEX = /[\u0600-\u06FF]/;
@@ -1060,12 +1069,17 @@ const createVoucher = async ({
   headerAccountId = null,
   linkedSalesOrderId = null,
   notifyPayees = false,
+  notifyPayeeKinds,
 }) => {
   if (!req?.user?.id) throw new HttpError(401, "Not authenticated");
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
 
   const canCreate = canDo(req, "VOUCHER", scopeKey, "create");
   const canApprove = canApproveVoucherAction(req, scopeKey);
+  const normalizedNotifyPayeeKinds = normalizeNotifyPayeeKinds({
+    notifyPayees,
+    notifyPayeeKinds,
+  });
   const [hasRemarksUrColumn, hasLinkedSoIdColumn] = await Promise.all([
     hasVoucherHeaderRemarksUrColumn(),
     hasVoucherHeaderLinkedSoIdColumn(),
@@ -1172,7 +1186,8 @@ const createVoucher = async ({
           total_credit: validated.totalCredit,
           header_account_id: validHeaderAccountId,
           permission_reroute: !canCreate,
-          notify_payees: notifyPayees === true,
+          notify_payees: normalizedNotifyPayeeKinds.length > 0,
+          notify_payee_kinds: normalizedNotifyPayeeKinds,
         },
       });
     }
@@ -1203,7 +1218,11 @@ const createVoucher = async ({
     },
   });
 
-  maybeNotifyPayeesPostCommit({ result, notifyPayees });
+  maybeNotifyPayeesPostCommit({
+    result,
+    notifyPayees,
+    notifyPayeeKinds: normalizedNotifyPayeeKinds,
+  });
 
   return result;
 };
@@ -1219,6 +1238,7 @@ const updateVoucher = async ({
   headerAccountId = null,
   linkedSalesOrderId = null,
   notifyPayees = false,
+  notifyPayeeKinds,
 }) => {
   if (!req?.user?.id) throw new HttpError(401, "Not authenticated");
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
@@ -1230,6 +1250,10 @@ const updateVoucher = async ({
 
   const canEdit = canDo(req, "VOUCHER", scopeKey, "edit");
   const canApprove = canApproveVoucherAction(req, scopeKey);
+  const normalizedNotifyPayeeKinds = normalizeNotifyPayeeKinds({
+    notifyPayees,
+    notifyPayeeKinds,
+  });
   const [hasRemarksUrColumn, hasLinkedSoIdColumn] = await Promise.all([
     hasVoucherHeaderRemarksUrColumn(),
     hasVoucherHeaderLinkedSoIdColumn(),
@@ -1312,7 +1336,8 @@ const updateVoucher = async ({
       total_credit: validated.totalCredit,
       header_account_id: validHeaderAccountId,
       permission_reroute: !canEdit,
-      notify_payees: notifyPayees === true,
+      notify_payees: normalizedNotifyPayeeKinds.length > 0,
+      notify_payee_kinds: normalizedNotifyPayeeKinds,
     };
 
     if (queuedForApproval) {
@@ -1428,7 +1453,11 @@ const updateVoucher = async ({
     },
   });
 
-  maybeNotifyPayeesPostCommit({ result, notifyPayees });
+  maybeNotifyPayeesPostCommit({
+    result,
+    notifyPayees,
+    notifyPayeeKinds: normalizedNotifyPayeeKinds,
+  });
 
   return result;
 };

@@ -282,7 +282,10 @@ VALUES
   ('SCREEN','hr_payroll.labour_allowances','Labour Allowances', 'HR & Payroll'),
 
   -- Financial
-  ('SCREEN','financial.period_control','Audit Freeze / Period Control', 'Financial')
+  ('SCREEN','financial.period_control','Audit Freeze / Period Control', 'Financial'),
+  ('SCREEN','financial.whatsapp_notify_suppliers','WhatsApp Supplier Payment Notifications', 'Financial'),
+  ('SCREEN','financial.whatsapp_notify_labours','WhatsApp Labour Payment Notifications', 'Financial'),
+  ('SCREEN','financial.whatsapp_notify_employees','WhatsApp Employee Payment Notifications', 'Financial')
 ON CONFLICT (scope_type, scope_key) DO NOTHING;
 
 -- =====================================================================
