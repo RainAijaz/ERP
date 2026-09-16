@@ -692,7 +692,7 @@
           // a spacer holding that slot open on the rows above it.
           const isLastStage = index === dcvStagePairs.length - 1;
           const actionSlot = canSave
-            ? `<div class="flex shrink-0 items-center gap-2 self-start">
+            ? `<div class="flex shrink-0 items-center gap-2 self-start sm:pt-4">
                 <button type="button" data-dcv-stage-remove data-stage-index="${index}" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-base font-semibold leading-none text-slate-500 hover:bg-slate-50 disabled:opacity-40" ${dcvStagePairs.length > 1 ? "" : "disabled"} title="${removeStageLabel}" aria-label="${removeStageLabel}">&times;</button>
                 ${
                   isLastStage
@@ -702,15 +702,22 @@
               </div>`
             : "";
           return `
-            <div class="flex flex-col gap-2 sm:flex-row sm:items-center" data-dcv-stage-row data-stage-index="${index}">
-              <select data-stage-field="labour_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm sm:flex-1" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
-                ${labourOptions}
-              </select>
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-start" data-dcv-stage-row data-stage-index="${index}">
+              <div class="min-w-0 sm:w-[15rem] sm:shrink">
+                <select data-stage-field="labour_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
+                  ${labourOptions}
+                </select>
+              </div>
               <span class="hidden shrink-0 text-slate-400 sm:inline">&rarr;</span>
-              <select data-stage-field="dept_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm sm:flex-1" data-searchable-select="true" data-searchable-variant="unified" ${canSave && labourId ? "" : "disabled"}>
-                ${departmentOptions}
-              </select>
-              <input type="text" data-stage-field="bill_book_no" data-stage-index="${index}" value="${escapeHtml(billBookNo)}" maxlength="120" placeholder="${escapeHtml(<%- JSON.stringify(t("bill_book_no")) %>)}" aria-label="${escapeHtml(<%- JSON.stringify(t("bill_book_no")) %>)}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm sm:flex-1" ${canSave ? "required" : "readonly"}>
+              <div class="min-w-0 sm:w-[15rem] sm:shrink">
+                <select data-stage-field="dept_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified" ${canSave && labourId ? "" : "disabled"}>
+                  ${departmentOptions}
+                </select>
+              </div>
+              <label class="min-w-0 sm:w-[22rem] sm:shrink-0">
+                <span class="mb-1 block text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-600">${escapeHtml(<%- JSON.stringify(t("bill_book_no")) %>)}</span>
+                <input type="text" data-stage-field="bill_book_no" data-stage-index="${index}" value="${escapeHtml(billBookNo)}" maxlength="120" placeholder="${escapeHtml(<%- JSON.stringify(t("bill_book_no")) %>)}" aria-label="${escapeHtml(<%- JSON.stringify(t("bill_book_no")) %>)}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" ${canSave ? "required" : "readonly"}>
+              </label>
               ${actionSlot}
             </div>
           `;
