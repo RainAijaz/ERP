@@ -548,6 +548,24 @@ const loadUnitOptionsByBaseUomIdTx = async ({ trx, baseUomIds = [] }) => {
   return optionsByBase;
 };
 
+const filterRawMaterialUnitOptions = (unitOptions = [], baseUomId) => {
+  const normalizedBaseUomId = toPositiveInt(baseUomId);
+  if (!normalizedBaseUomId) return [];
+  const list = Array.isArray(unitOptions) ? unitOptions : [];
+  const baseOption = list.find(
+    (entry) => Number(entry?.id || 0) === Number(normalizedBaseUomId),
+  );
+  if (!baseOption) return [];
+  return [
+    {
+      ...baseOption,
+      id: Number(normalizedBaseUomId),
+      factor_to_base: 1,
+      is_base: true,
+    },
+  ];
+};
+
 const buildRmStockIdentity = ({
   branchId,
   stockState = "ON_HAND",
@@ -2228,7 +2246,10 @@ const validateTransferOutPayloadTx = async ({
         throw new HttpError(400, `Line ${lineNo}: raw material is required`);
       const item = itemMap.get(Number(itemId));
       const baseUomId = toPositiveInt(item?.base_uom_id);
-      const unitOptions = unitOptionsByBase.get(Number(baseUomId || 0)) || [];
+      const unitOptions = filterRawMaterialUnitOptions(
+        unitOptionsByBase.get(Number(baseUomId || 0)) || [],
+        baseUomId,
+      );
       const selectedUomId = toPositiveInt(raw?.uom_id) || baseUomId;
       const selectedUnit = unitOptions.find(
         (entry) => Number(entry.id) === Number(selectedUomId),
@@ -4849,7 +4870,10 @@ const loadStockTransferVoucherOptions = async ({
       name: String(row.name || ""),
       rate_rows: rmRateRowsByItem.get(Number(row.id)) || [],
       base_uom_id: toPositiveInt(row.base_uom_id),
-      unit_options: unitOptionsByBase.get(Number(row.base_uom_id || 0)) || [],
+      unit_options: filterRawMaterialUnitOptions(
+        unitOptionsByBase.get(Number(row.base_uom_id || 0)) || [],
+        row.base_uom_id,
+      ),
     })),
     colors: (colors || []).map((row) => ({
       id: Number(row.id),

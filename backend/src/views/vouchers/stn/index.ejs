@@ -482,7 +482,9 @@
     const getDefaultUnitId = (row, stockType) => {
       const optionsList = getOutUnitOptions(row, stockType);
       if (!optionsList.length) return null;
-      const preferred = optionsList.find((entry) => entry.is_base !== true) || optionsList[0];
+      const preferred = stockType === 'RM'
+        ? (optionsList.find((entry) => entry.is_base === true) || optionsList[0])
+        : (optionsList.find((entry) => entry.is_base !== true) || optionsList[0]);
       return toInt(preferred?.id);
     };
 
@@ -535,6 +537,8 @@
       color_id: null,
       size_id: null,
       uom_id: null,
+      uom_factor_to_base: 1,
+      transfer_qty_base: 0,
       available_qty: 0,
       transfer_qty: 0,
       unit_cost: 0,
@@ -547,6 +551,8 @@
       color_id: toInt(line?.color_id),
       size_id: toInt(line?.size_id),
       uom_id: toInt(line?.uom_id),
+      uom_factor_to_base: Number(line?.uom_factor_to_base || 1) > 0 ? Number(line.uom_factor_to_base || 1) : 1,
+      transfer_qty_base: qty3(line?.transfer_qty_base),
       available_qty: qty3(line?.available_qty),
       transfer_qty: qty3(line?.transfer_qty ?? line?.qty),
       unit_cost: cost1(line?.unit_cost ?? line?.rate),
@@ -753,8 +759,21 @@
       const stockType = activeStockType;
       const unitOptions = getOutUnitOptions(next, stockType);
       if (!next.uom_id) next.uom_id = getDefaultUnitId(next, stockType);
-      const selectedUnit = unitOptions.find((entry) => Number(entry.id) === Number(next.uom_id || 0));
+      let selectedUnit = unitOptions.find((entry) => Number(entry.id) === Number(next.uom_id || 0));
+      if (!selectedUnit) {
+        if (stockType === 'RM') {
+          const previousFactorToBase = Number(next.uom_factor_to_base || 1) > 0 ? Number(next.uom_factor_to_base || 1) : 1;
+          const previousBaseQty = Number(next.transfer_qty_base || 0) > 0
+            ? Number(next.transfer_qty_base || 0)
+            : Number(next.transfer_qty || 0) * previousFactorToBase;
+          if (previousBaseQty > 0) next.transfer_qty = qty3(previousBaseQty);
+        }
+        next.uom_id = getDefaultUnitId(next, stockType);
+        selectedUnit = unitOptions.find((entry) => Number(entry.id) === Number(next.uom_id || 0));
+      }
       const factorToBase = Number(selectedUnit?.factor_to_base || 0) || 1;
+      next.uom_factor_to_base = factorToBase;
+      next.transfer_qty_base = qty3(Number(next.transfer_qty || 0) * Number(factorToBase || 1));
 
       if (isWipActive() && stockType !== 'RM') {
         // The pool is stored as whole pairs at one department, but the floor counts in dozens,
