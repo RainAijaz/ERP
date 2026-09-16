@@ -872,10 +872,10 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({
                 : Math.max(availableValue - value, 0),
             );
       const normalizedValue = normalizedQty === 0 ? 0 : nextValueRaw;
-      const normalizedWac =
-        normalizedQty !== 0
-          ? roundUnitCost6(normalizedValue / normalizedQty)
-          : 0;
+      const normalizedWac = computeNonNegativeWac(
+        normalizedQty,
+        normalizedValue,
+      );
       const updateQuery = trx("erp.stock_balance_rm").update({
         qty: normalizedQty,
         value: normalizedValue,
@@ -1101,8 +1101,7 @@ const moveRmStockTx = async ({
   const nextFromQty = Math.abs(nextFromQtyRaw) <= 0.0005 ? 0 : nextFromQtyRaw;
   const nextFromValueRaw = roundCost2(Number(fromRow?.value || 0) - value);
   const nextFromValue = nextFromQty === 0 ? 0 : nextFromValueRaw;
-  const nextFromWac =
-    nextFromQty !== 0 ? roundUnitCost6(nextFromValue / nextFromQty) : 0;
+  const nextFromWac = computeNonNegativeWac(nextFromQty, nextFromValue);
 
   const fromUpdate = trx("erp.stock_balance_rm").update({
     qty: nextFromQty,
@@ -1119,7 +1118,7 @@ const moveRmStockTx = async ({
 
   const nextToQty = roundQty3(Number(toRow?.qty || 0) + normalizedQty);
   const nextToValue = roundCost2(Number(toRow?.value || 0) + value);
-  const nextToWac = nextToQty > 0 ? roundUnitCost6(nextToValue / nextToQty) : 0;
+  const nextToWac = computeNonNegativeWac(nextToQty, nextToValue);
   const toUpdate = trx("erp.stock_balance_rm").update({
     qty: nextToQty,
     value: nextToValue,
