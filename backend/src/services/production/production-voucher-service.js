@@ -3029,18 +3029,25 @@ const applyRmStockOutTx = async ({
   if (normalizedColorId || normalizedSizeId) {
     const hasRmPurchaseRates = await hasRmPurchaseRatesTableTx(trx);
     if (hasRmPurchaseRates) {
-      const variantExists = await trx("erp.rm_purchase_rates as r")
-        .select("r.id")
+      const variantRateRows = await trx("erp.rm_purchase_rates as r")
+        .select(
+          "r.rm_item_id",
+          "r.color_id",
+          "r.size_id",
+          "r.avg_purchase_rate",
+          "r.purchase_rate",
+        )
         .where({
           "r.rm_item_id": normalizedItemId,
           "r.is_active": true,
-        })
-        .whereRaw("COALESCE(r.color_id, 0) = ?", [
-          Number(normalizedColorId || 0),
-        ])
-        .whereRaw("COALESCE(r.size_id, 0) = ?", [Number(normalizedSizeId || 0)])
-        .first();
-      if (!variantExists) {
+        });
+      const variantRate = resolveRmRateFromRows({
+        rows: variantRateRows,
+        itemId: normalizedItemId,
+        colorId: normalizedColorId,
+        sizeId: normalizedSizeId,
+      });
+      if (!(variantRate > 0)) {
         throw new HttpError(
           400,
           `RM loss variant is invalid for item ${normalizedItemId}`,
