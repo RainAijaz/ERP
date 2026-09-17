@@ -325,7 +325,7 @@
       <div class="grid gap-3 sm:grid-cols-3">
         <label class="block text-xs font-semibold text-slate-600">
           <span><%= lrcTx("labour_rate_copy_source", "Copy FROM labour") %></span>
-          <select data-lrc-source class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+          <select data-lrc-source data-searchable-select="true" data-searchable-variant="unified" data-searchable-menu-z-index="2600" class="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
             <option value=""><%= lrcTx("select", "Select") %></option>
             <% lrcLabours.forEach(function (option) { %>
               <option value="<%= option.value %>"><%= option.label %></option>
@@ -334,15 +334,14 @@
         </label>
         <label class="block text-xs font-semibold text-slate-600">
           <span><%= lrcTx("departments", "Department") %></span>
-          <select data-lrc-dept class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" disabled>
+          <select data-lrc-dept data-searchable-select="true" data-searchable-variant="unified" data-searchable-menu-z-index="2600" class="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700" disabled>
             <option value=""><%= lrcTx("labour_rate_copy_select_source_first", "Select a source labour first") %></option>
           </select>
         </label>
-        <div class="block text-xs font-semibold text-slate-600">
+        <label class="block text-xs font-semibold text-slate-600">
           <span><%= lrcTx("labour_rate_copy_targets", "Copy TO labour(s)") %></span>
-          <input type="search" data-lrc-target-search class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-normal text-slate-700" placeholder="<%= lrcTx('search', 'Search') %>" />
-          <select data-lrc-targets multiple size="5" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-2 py-1 text-sm font-normal text-slate-700" disabled></select>
-        </div>
+          <select data-lrc-targets multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-searchable-menu-z-index="2600" class="mt-1 min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-700" disabled></select>
+        </label>
       </div>
 
       <p class="hidden rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-lrc-blocked></p>
@@ -359,15 +358,15 @@
           </div>
           <label class="block text-xs font-semibold text-slate-600">
             <span><%= lrcTx("product_groups", "Groups") %></span>
-            <select data-lrc-groups multiple size="3" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-normal text-slate-700"></select>
+            <select data-lrc-groups multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-searchable-menu-z-index="2600" class="mt-1 min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal text-slate-700"></select>
           </label>
           <label class="block text-xs font-semibold text-slate-600">
             <span><%= lrcTx("product_subgroups", "Subgroups") %></span>
-            <select data-lrc-subgroups multiple size="3" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-normal text-slate-700"></select>
+            <select data-lrc-subgroups multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-searchable-menu-z-index="2600" class="mt-1 min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal text-slate-700"></select>
           </label>
           <label class="block text-xs font-semibold text-slate-600">
             <span><%= lrcTx("articles", "Articles") %></span>
-            <select data-lrc-articles multiple size="3" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-normal text-slate-700"></select>
+            <select data-lrc-articles multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-searchable-menu-z-index="2600" class="mt-1 min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal text-slate-700"></select>
           </label>
           <div class="sm:col-span-2">
             <button type="button" data-lrc-filters-clear class="text-xs font-semibold text-slate-500 underline"><%= lrcTx("labour_rate_copy_clear_filters", "Clear filters") %></button>
@@ -469,7 +468,6 @@
     const sourceSel = el("[data-lrc-source]");
     const deptSel = el("[data-lrc-dept]");
     const targetSel = el("[data-lrc-targets]");
-    const targetSearch = el("[data-lrc-target-search]");
     const groupSel = el("[data-lrc-groups]");
     const subgroupSel = el("[data-lrc-subgroups]");
     const articleSel = el("[data-lrc-articles]");
@@ -510,6 +508,11 @@
     const money = (value) => (value == null ? "—" : Number(value).toFixed(2));
     const selectedValues = (select) =>
       Array.from(select?.selectedOptions || []).map((opt) => Number(opt.value)).filter(Boolean);
+    const refreshSearchableControls = (root) => {
+      const scope = root || modal;
+      if (typeof window.initSearchableSelects === "function") window.initSearchableSelects(scope);
+      if (typeof window.refreshSearchableSelects === "function") window.refreshSearchableSelects(scope);
+    };
 
     const currentFilters = () => ({
       articleType: (articleTypeWrap.querySelector("input:checked") || {}).value || "BOTH",
@@ -679,6 +682,7 @@
         '<label class="flex items-center gap-1"><input type="radio" name="lrc_article_type" value="' + option.value + '"' +
         (option.value === current ? " checked" : "") + ' class="h-3.5 w-3.5 border-slate-300" /><span>' +
         esc(option.label) + (option.count == null ? "" : " (" + option.count + ")") + "</span></label>").join("");
+      refreshSearchableControls(filtersBody);
     };
 
     // ---- data ------------------------------------------------------------
@@ -686,8 +690,10 @@
       const source = Number(sourceSel.value || 0);
       deptSel.innerHTML = '<option value="">' + esc(TXT.loading) + "</option>";
       deptSel.disabled = true;
+      refreshSearchableControls(deptSel.parentElement || modal);
       if (!source) {
         deptSel.innerHTML = '<option value="">' + esc(TXT.select) + "</option>";
+        refreshSearchableControls(deptSel.parentElement || modal);
         return;
       }
       try {
@@ -699,14 +705,17 @@
         const departments = payload.departments || [];
         if (!departments.length) {
           deptSel.innerHTML = '<option value="">' + esc(TXT.noneDept) + "</option>";
+          refreshSearchableControls(deptSel.parentElement || modal);
           return;
         }
         deptSel.innerHTML = '<option value="">' + esc(TXT.select) + "</option>" +
           departments.map((entry) =>
             '<option value="' + entry.dept_id + '">' + esc(entry.dept_name) + " — " + entry.rule_count + "</option>").join("");
         deptSel.disabled = false;
+        refreshSearchableControls(deptSel.parentElement || modal);
         if (departments.length === 1) {
           deptSel.value = String(departments[0].dept_id);
+          refreshSearchableControls(deptSel.parentElement || modal);
           onScopeChange();
         }
       } catch (err) {
@@ -789,14 +798,13 @@
     const syncTargetOptions = () => {
       const source = Number(sourceSel.value || 0);
       const chosen = new Set(selectedValues(targetSel));
-      const term = String(targetSearch.value || "").trim().toLowerCase();
       targetSel.innerHTML = labours
         .filter((option) => Number(option.value) !== source)
-        .filter((option) => !term || String(option.label).toLowerCase().includes(term))
         .map((option) =>
           '<option value="' + option.value + '"' + (chosen.has(Number(option.value)) ? " selected" : "") + ">" +
           esc(option.label) + "</option>").join("");
       targetSel.disabled = !source;
+      refreshSearchableControls(targetSel.parentElement || modal);
     };
 
     const onScopeChange = () => { schedulePreview(); };
@@ -809,7 +817,6 @@
     });
     deptSel.addEventListener("change", onScopeChange);
     targetSel.addEventListener("change", onScopeChange);
-    targetSearch.addEventListener("input", syncTargetOptions);
 
     // Filter and conflict changes re-render from memory — no network call.
     [groupSel, subgroupSel, articleSel].forEach((select) => {
@@ -839,6 +846,7 @@
       });
       const both = articleTypeWrap.querySelector('input[value="BOTH"]');
       if (both) both.checked = true;
+      refreshSearchableControls(filtersBody);
       if (state.serverFiltered) schedulePreview();
       else render();
     });
@@ -855,6 +863,7 @@
       modal.classList.add("flex");
       setStep("select");
       syncTargetOptions();
+      refreshSearchableControls(modal);
     };
     const close = () => {
       modal.classList.add("hidden");

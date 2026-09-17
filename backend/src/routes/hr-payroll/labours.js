@@ -1537,7 +1537,11 @@ ratesRouter.post(
 const parseCopyRequest = (payload = {}) => ({
   sourceLabourId: copyService.toPositiveIntOrNull(payload.source_labour_id),
   deptId: copyService.toPositiveIntOrNull(payload.dept_id),
-  targetLabourIds: copyService.toPositiveIntArray(payload.target_labour_ids),
+  targetLabourIds: copyService.toPositiveIntArray(
+    payload.target_labour_ids ??
+      payload["target_labour_ids[]"] ??
+      payload.target_labour_id,
+  ),
   conflictMode: copyService.normalizeConflictMode(payload.conflict_mode),
   filters: {
     articleType: copyService.normalizeArticleTypeFilter(payload.article_type),
