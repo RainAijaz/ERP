@@ -45,6 +45,7 @@
   const includeBranchColumn = canUseBranchFilter && selectedBranchIds.length !== 1;
   const detailTotalsLabelSpan = 1
     + (showVoucherColumn ? 1 : 0)
+    + 1
     + (showSkuColumn ? 1 : 0)
     + (showDepartmentColumn ? 1 : 0)
     + (showLabourColumn ? 1 : 0)
@@ -374,13 +375,14 @@
     <% } else { %>
       <% if (selectedReportType === "details") { %>
         <div class="relative mt-4 overflow-x-auto rounded-2xl border border-slate-200">
-          <table class="min-w-[1120px] w-full text-sm tabular-nums" data-table data-report-table>
+          <table class="min-w-[1200px] w-full text-sm tabular-nums" data-table data-report-table>
             <thead class="bg-slate-100 text-slate-700">
               <tr>
                 <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="date"><%= t("date") %></th>
                 <% if (showVoucherColumn) { %>
                   <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="voucher_no"><%= t("voucher_no") %></th>
                 <% } %>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="bill_book_no"><%= t("bill_book_no") %></th>
                 <% if (showSkuColumn) { %>
                   <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="sku_code"><%= t("sku") %></th>
                 <% } %>
@@ -442,6 +444,7 @@
                     <% if (showVoucherColumn) { %>
                       <td class="px-3 py-2"><%= row.voucher_no || "-" %></td>
                     <% } %>
+                    <td class="px-3 py-2"><%= row.bill_book_no || "-" %></td>
                     <% if (showSkuColumn) { %>
                       <td class="px-3 py-2"><%= row.sku_code || "-" %></td>
                     <% } %>

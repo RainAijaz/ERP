@@ -434,6 +434,9 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     dcvHasDeptId,
     dcvHasStageId,
     dcvHasLabourId,
+    dcvHeaderHasBillBookNo,
+    dcvLineHasBillBookNo,
+    voucherHeaderHasBookNo,
     productionLineHasStageId,
     productionLineHasIsPacked,
     lossLineHasDeptId,
@@ -447,6 +450,9 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     hasTableColumn("dcv_header", "dept_id"),
     hasTableColumn("dcv_header", "stage_id"),
     hasTableColumn("dcv_header", "labour_id"),
+    hasTableColumn("dcv_header", "bill_book_no"),
+    hasTableColumn("dcv_line", "bill_book_no"),
+    hasTableColumn("voucher_header", "book_no"),
     hasTableColumn("production_line", "stage_id"),
     hasTableColumn("production_line", "is_packed"),
     hasTableColumn("abnormal_loss_line", "dept_id"),
@@ -487,16 +493,32 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     ? `coalesce(${labourExprParts.join(", ")})`
     : "null::bigint";
 
+  const billBookExprParts = [];
+  if (dcvLineHasBillBookNo)
+    billBookExprParts.push("nullif(trim(dcvl.bill_book_no), '')");
+  if (dcvHeaderHasBillBookNo)
+    billBookExprParts.push("nullif(trim(dh.bill_book_no), '')");
+  if (voucherHeaderHasBookNo)
+    billBookExprParts.push("nullif(trim(vh.book_no), '')");
+  const billBookExpr = billBookExprParts.length
+    ? `coalesce(${billBookExprParts.join(", ")})`
+    : "null::text";
+
   let query = knex("erp.voucher_header as vh").join(
     "erp.voucher_line as vl",
     "vl.voucher_header_id",
     "vh.id",
   );
 
-  if (dcvHasDeptId || dcvHasStageId || dcvHasLabourId) {
+  if (
+    dcvHasDeptId ||
+    dcvHasStageId ||
+    dcvHasLabourId ||
+    dcvHeaderHasBillBookNo
+  ) {
     query = query.leftJoin("erp.dcv_header as dh", "dh.voucher_id", "vh.id");
   }
-  if (dcvLineHasDeptId) {
+  if (dcvLineHasDeptId || dcvLineHasBillBookNo) {
     query = query.leftJoin(
       "erp.dcv_line as dcvl",
       "dcvl.voucher_line_id",
@@ -535,6 +557,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       "vh.voucher_no",
       "vh.voucher_date",
       "vh.branch_id",
+      knex.raw(`${billBookExpr} as bill_book_no`),
       localizedNameSelect("b", "branch_name", locale),
       "vh.remarks as header_remarks",
       "vl.id as line_id",
@@ -654,6 +677,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       line_id: Number(row.line_id),
       date: row.voucher_date,
       voucher_no: Number(row.voucher_no || 0),
+      bill_book_no: String(row.bill_book_no || "").trim() || "-",
       branch_name: String(row.branch_name || "-"),
       department_name: String(row.dept_name || "-"),
       labour_name: String(row.labour_name || "-"),
