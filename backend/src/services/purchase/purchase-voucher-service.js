@@ -1192,7 +1192,7 @@ const removeRmStockFromLedgerTx = async ({ trx, row, allowNegative = false }) =>
     : nextQty > 0
       ? Math.max(nextValueRaw, 0)
       : 0;
-  const nextWac = nextQty > 0 ? roundUnitCost6(nextValue / nextQty) : 0;
+  const nextWac = computeNonNegativeWac(nextQty, nextValue);
 
   const updateQuery = trx("erp.stock_balance_rm").update({
     qty: nextQty,
@@ -1427,7 +1427,7 @@ const applyPurchaseVoucherStockInTx = async ({
 
     const nextQty = roundQty3(Number(existing?.qty || 0) + qtyIn);
     const nextValue = roundCost2(Number(existing?.value || 0) + valueIn);
-    const nextWac = nextQty > 0 ? roundUnitCost6(nextValue / nextQty) : 0;
+    const nextWac = computeNonNegativeWac(nextQty, nextValue);
 
     const updateQuery = trx("erp.stock_balance_rm").update({
       qty: nextQty,
