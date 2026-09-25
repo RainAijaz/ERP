@@ -2881,7 +2881,7 @@ const loadRmSystemSnapshotByKeyTx = async ({
   rows.forEach((row) => {
     const qty = roundQty3(Number(row?.qty || 0));
     const value = roundCost2(Number(row?.value || 0));
-    const wac = qty > 0 ? roundUnitCost6(value / qty) : 0;
+    const wac = computeNonNegativeWac(qty, value);
     const key = buildRmSnapshotKey({
       itemId: row?.item_id,
       colorId: hasVariantDimensions ? row?.color_id : null,
@@ -2943,7 +2943,7 @@ const loadRmSystemSnapshotByKeyTx = async ({
         ...current,
         qty: nextQty,
         value: nextValue,
-        wac: nextQty > 0 ? roundUnitCost6(nextValue / nextQty) : 0,
+        wac: computeNonNegativeWac(nextQty, nextValue),
       });
     });
   }

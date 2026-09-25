@@ -3121,6 +3121,13 @@ const upsertVoucherExtensionsTx = async ({
 const roundQty3 = (value) => Number(Number(value || 0).toFixed(3));
 const roundCost2 = (value) => Number(Number(value || 0).toFixed(2));
 const roundUnitCost6 = (value) => Number(Number(value || 0).toFixed(6));
+const computeNonNegativeWac = (qty, value) => {
+  const numericQty = Number(qty || 0);
+  const numericValue = Number(value || 0);
+  if (!Number.isFinite(numericQty) || Math.abs(numericQty) <= 0.0005) return 0;
+  if (!Number.isFinite(numericValue)) return 0;
+  return roundUnitCost6(Math.abs(numericValue) / Math.abs(numericQty));
+};
 
 const resolveUnitCost = ({ qty = 0, value = 0, wac = 0 }) => {
   const normalizedQty = Number(qty || 0);
@@ -3421,7 +3428,7 @@ const applyRmStockOutTx = async ({
     : nextQty > 0
       ? Math.max(roundCost2(nextValueRaw), 0)
       : 0;
-  const nextWac = nextQty !== 0 ? roundUnitCost6(nextValue / nextQty) : 0;
+  const nextWac = computeNonNegativeWac(nextQty, nextValue);
 
   const updateQuery = trx("erp.stock_balance_rm").update({
     qty: nextQty,
@@ -3588,8 +3595,7 @@ const applySkuStockOutTx = async ({
     const nextQtyPairs = Math.max(Number(nextQtyPairsRaw || 0), 0);
     const nextValue =
       nextQtyPairs > 0 ? Math.max(roundCost2(nextValueRaw), 0) : 0;
-    const nextWac =
-      nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+    const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
     const bucketKey = row.is_packed === true ? "true" : "false";
 
     await trx("erp.stock_balance_sku")
@@ -3773,8 +3779,7 @@ const applySkuStockInTx = async ({
 
   const nextQtyPairs = Number(row?.qty_pairs || 0) + normalizedQtyPairsIn;
   const nextValue = roundCost2(Number(row?.value || 0) + normalizedValueIn);
-  const nextWac =
-    nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+  const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
 
   await trx("erp.stock_balance_sku")
     .where({
@@ -3856,7 +3861,7 @@ const addBackRmStockFromLedgerTx = async ({ trx, row }) => {
   const existing = await existingQuery.first();
   const nextQty = roundQty3(Number(existing?.qty || 0) + qty);
   const nextValue = roundCost2(Number(existing?.value || 0) + value);
-  const nextWac = nextQty > 0 ? roundUnitCost6(nextValue / nextQty) : 0;
+  const nextWac = computeNonNegativeWac(nextQty, nextValue);
 
   const updateQuery = trx("erp.stock_balance_rm").update({
     qty: nextQty,
@@ -3928,8 +3933,7 @@ const addBackSkuStockFromLedgerTx = async ({ trx, row }) => {
 
   const nextQtyPairs = Number(target.qty_pairs || 0) + Number(qtyPairs || 0);
   const nextValue = roundCost2(Number(target.value || 0) + value);
-  const nextWac =
-    nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+  const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
 
   await trx("erp.stock_balance_sku")
     .where({

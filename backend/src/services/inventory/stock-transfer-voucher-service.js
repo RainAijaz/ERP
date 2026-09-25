@@ -3165,7 +3165,7 @@ const consumeInTransitRemainderTx = async ({
       nextQty > 0
         ? Math.max(roundCost2(Number(source?.value || 0) - remainderValue), 0)
         : 0;
-    const nextWac = nextQty > 0 ? roundUnitCost6(nextValue / nextQty) : 0;
+    const nextWac = computeNonNegativeWac(nextQty, nextValue);
     const updateQuery = trx("erp.stock_balance_rm").update({
       qty: nextQty,
       value: nextValue,
