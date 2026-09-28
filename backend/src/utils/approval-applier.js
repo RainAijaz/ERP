@@ -33,6 +33,9 @@ const {
   applyItemLifecycleToggleTx,
 } = require("../services/products/item-lifecycle-service");
 const {
+  cascadeSizeRenameToSkuCodes,
+} = require("../services/master-data/size-rename-service");
+const {
   RECALC_APPROVAL_MODE,
   applyCommissionRecalcApproval,
 } = require("./commission-recalc-approval");
@@ -912,6 +915,14 @@ const applyBasicInfoChange = async (
     return { applied: true, entityId: String(newId) };
   }
 
+  const existing =
+    entityType === "SIZE"
+      ? await trx(table)
+          .select("name")
+          .where({ id: Number(entityId) })
+          .first()
+      : null;
+
   await trx(table)
     .where({ id: Number(entityId) })
     .update({
@@ -931,6 +942,19 @@ const applyBasicInfoChange = async (
         item_type: itemType,
       })),
     );
+  }
+  if (
+    entityType === "SIZE" &&
+    existing &&
+    String(existing.name || "").trim() !== String(values.name || "").trim()
+  ) {
+    await cascadeSizeRenameToSkuCodes({
+      trx,
+      sizeId: Number(entityId),
+      oldName: existing.name,
+      newName: values.name,
+      userId,
+    });
   }
   return true;
 };

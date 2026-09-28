@@ -21,6 +21,9 @@ const {
 const { queueAuditLog } = require("../../../utils/audit-log");
 const { generateUniqueCode } = require("../../../utils/entity-code");
 const { buildAuditChangeSet } = require("../../../utils/audit-diff");
+const {
+  cascadeSizeRenameToSkuCodes,
+} = require("../../../services/master-data/size-rename-service");
 
 const router = express.Router();
 
@@ -1467,6 +1470,18 @@ const updateHandler = (type) => async (req, res, next) => {
               item_type: itemType,
             })),
           );
+        }
+        if (
+          type === "sizes" &&
+          String(existingRow.name || "").trim() !== String(rest.name || "").trim()
+        ) {
+          await cascadeSizeRenameToSkuCodes({
+            trx,
+            sizeId: id,
+            oldName: existingRow.name,
+            newName: rest.name,
+            userId: req.user ? req.user.id : null,
+          });
         }
         queueAuditLog(req, {
           entityType: getBasicInfoEntityType(type),
