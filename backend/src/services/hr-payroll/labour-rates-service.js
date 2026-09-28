@@ -108,6 +108,7 @@ const normalizeApplyOn = (value) => {
     .trim()
     .toUpperCase();
   if (raw === APPLY_ON.ARTICLE) return APPLY_ON.ARTICLE;
+  if (raw === APPLY_ON.SKU) return APPLY_ON.SKU;
   if (raw === APPLY_ON.SUBGROUP) return APPLY_ON.SUBGROUP;
   if (raw === APPLY_ON.GROUP) return APPLY_ON.GROUP;
   return APPLY_ON.ARTICLE;
@@ -630,6 +631,7 @@ const applyBulkSkuRateUpsert = async ({
   rateType,
   status,
   rows,
+  appliesToAllLabours = false,
   debugLog,
 }) => {
   const stage = async (name, fn) => {
@@ -667,17 +669,16 @@ const applyBulkSkuRateUpsert = async ({
     return { created: 0, updated: 0 };
   }
 
-  await stage("delete_all_labours_rules", async () => {
-    await trx("erp.labour_rate_rules")
-      .where({
-        applies_to_all_labours: true,
-        dept_id: deptId,
-      })
-      .whereNull("labour_id")
-      .whereIn("sku_id", skuIds)
-      .timeout(10000, { cancel: true })
-      .del();
-  });
+  if (appliesToAllLabours) {
+    await stage("delete_all_labours_rules", async () => {
+      await trx("erp.labour_rate_rules")
+        .where({ applies_to_all_labours: true, dept_id: deptId })
+        .whereNull("labour_id")
+        .whereIn("sku_id", skuIds)
+        .timeout(10000, { cancel: true })
+        .del();
+    });
+  }
 
   const existing = await stage("select_existing_rules", async () =>
     trx("erp.labour_rate_rules")
@@ -749,6 +750,30 @@ const applyBulkSkuRateUpsert = async ({
             persistedApplyOn === APPLY_ON.GROUP
               ? row.groupId || groupId || null
               : null,
+          rate_type: rateType,
+          rate_value: row.rate,
+          status,
+        });
+      created += 1;
+    }
+  }
+
+  // Keep the department choice available to workers assigned after this save.
+  // Current workers retain their own rows so existing overrides still win.
+  if (appliesToAllLabours) {
+    for (const row of rows) {
+      await trx("erp.labour_rate_rules")
+        .timeout(10000, { cancel: true })
+        .insert({
+          applies_to_all_labours: true,
+          labour_id: null,
+          dept_id: deptId,
+          apply_on: persistedApplyOn,
+          sku_id: row.skuId,
+          subgroup_id: persistedApplyOn === APPLY_ON.SUBGROUP
+            ? row.subgroupId || subgroupId || null : null,
+          group_id: persistedApplyOn === APPLY_ON.GROUP
+            ? row.groupId || groupId || null : null,
           rate_type: rateType,
           rate_value: row.rate,
           status,

@@ -7698,6 +7698,7 @@ const resolveDcvRateForSku = async ({
   let rulesQuery = knex("erp.labour_rate_rules as r")
     .select(
       "r.id",
+      "r.labour_id",
       "r.apply_on",
       "r.sku_id",
       "r.subgroup_id",
@@ -7705,10 +7706,12 @@ const resolveDcvRateForSku = async ({
       "r.rate_type",
       "r.rate_value",
     )
-    .where({
-      "r.labour_id": normalizedLabourId,
-      "r.dept_id": normalizedDeptId,
-      "r.applies_to_all_labours": false,
+    .where("r.dept_id", normalizedDeptId)
+    .where(function eligibleWorkerRule() {
+      this.where({ "r.labour_id": normalizedLabourId, "r.applies_to_all_labours": false })
+        .orWhere(function departmentDefaultRule() {
+          this.whereNull("r.labour_id").where("r.applies_to_all_labours", true);
+        });
     })
     // Use the same status semantics as the Labour Rates listing/validation
     // (lower(trim(...))). An exact "active" match silently dropped rules stored
@@ -7765,11 +7768,15 @@ const resolveDcvRateForSku = async ({
   };
 
   let matchedRule = null;
-  for (const scope of ["SKU", "SUBGROUP", "GROUP"]) {
-    matchedRule =
-      (rules || []).find(
-        (row) => matchesArticleType(row, scope) && matchesScope(row, scope),
-      ) || null;
+  for (const workerSpecific of [true, false]) {
+    for (const scope of ["SKU", "SUBGROUP", "GROUP"]) {
+      matchedRule =
+        (rules || []).find((row) =>
+          Boolean(row.labour_id) === workerSpecific &&
+          matchesArticleType(row, scope) && matchesScope(row, scope),
+        ) || null;
+      if (matchedRule) break;
+    }
     if (matchedRule) break;
   }
   if (!matchedRule) {
@@ -7855,9 +7862,11 @@ const loadDcvRatedSkuIdsForLabour = async ({ req, labourId, deptId }) => {
     await hasLabourRateRulesArticleTypeColumnTx(knex);
   let rulesQuery = knex("erp.labour_rate_rules as r")
     .select("r.apply_on", "r.sku_id", "r.subgroup_id", "r.group_id")
-    .where({
-      "r.labour_id": normalizedLabourId,
-      "r.applies_to_all_labours": false,
+    .where(function eligibleWorkerRule() {
+      this.where({ "r.labour_id": normalizedLabourId, "r.applies_to_all_labours": false })
+        .orWhere(function departmentDefaultRule() {
+          this.whereNull("r.labour_id").where("r.applies_to_all_labours", true);
+        });
     })
     .whereRaw("lower(trim(coalesce(r.status, ''))) = 'active'")
     .whereIn(knex.raw("upper(trim(coalesce(r.apply_on::text, '')))"), [

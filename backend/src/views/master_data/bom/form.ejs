@@ -8,8 +8,10 @@
     (options?.itemOutputUomMap && Array.isArray(options.itemOutputUomMap[String(selectedItemId)]))
       ? options.itemOutputUomMap[String(selectedItemId)]
       : (options?.uoms || []);
-  const isDraft = !header.status || header.status === "DRAFT";
-  const isEditable = !isEdit || isDraft || Boolean(user?.isAdmin);
+  const statusUpper = String(header.status || "").toUpperCase();
+  const isDraft = !statusUpper || statusUpper === "DRAFT";
+  const isPendingAdmin = isEdit && Boolean(user?.isAdmin) && statusUpper === "PENDING";
+  const isEditable = !isEdit || isDraft || isPendingAdmin;
   const submitPath = isEdit ? `${basePath}/${header.id}/save-draft` : `${basePath}/save-draft`;
   const tx = (key, fallback) => {
     const value = typeof t === "function" ? t(key) : "";
@@ -53,6 +55,7 @@
   #bom-stage { order: 25; }
   #bom-sfg { order: 30; }
   #bom-rm { order: 40; }
+  #bom-labour { order: 50; }
   #bom-form [data-bom-save-wrap] { order: 60; }
 </style>
 
@@ -94,7 +97,6 @@
             </button>
           </form>
         <% } %>
-        <% const isPendingAdmin = isEdit && Boolean(user?.isAdmin) && String(header.status || '').toUpperCase() === 'PENDING'; %>
         <% if (isDraft || isPendingAdmin) { %>
           <button
             type="submit"
@@ -128,11 +130,19 @@
     <input type="hidden" name="switch_item_id" value="" data-bom-switch-item-id>
     <input type="hidden" name="switch_output_qty" value="" data-bom-switch-output-qty>
     <input type="hidden" name="switch_output_uom_id" value="" data-bom-switch-output-uom-id>
-    <input type="hidden" name="rm_lines_json" value="<%- JSON.stringify(formState?.rm_lines || []) %>" data-lines-json="rm_lines">
+    <%/* Escaped output tag, not raw: JSON.stringify emits double quotes, which
+         in a raw tag terminate the value="" attribute and turn the rest of the
+         payload into stray attributes. It only ever "worked" because the submit
+         handler rewrites these inputs before posting.
+         NB: do not name the raw/escaped tags literally in here -- an EJS
+         comment is still scanned for delimiters, so an inner opening tag makes
+         the whole template fail to compile ("Could not find matching close
+         tag"), which 500s every BOM form page. */%>
+    <input type="hidden" name="rm_lines_json" value="<%= JSON.stringify(formState?.rm_lines || []) %>" data-lines-json="rm_lines">
     <input type="hidden" name="sku_rules_json" value="[]" data-lines-json="sku_rules">
-    <input type="hidden" name="sfg_lines_json" value="<%- JSON.stringify(formState?.sfg_lines || []) %>" data-lines-json="sfg_lines">
-    <input type="hidden" name="labour_lines_json" value="<%- JSON.stringify(formState?.labour_lines || []) %>" data-lines-json="labour_lines">
-    <input type="hidden" name="stage_routes_json" value="<%- JSON.stringify(formState?.stage_routes || []) %>" data-lines-json="stage_routes">
+    <input type="hidden" name="sfg_lines_json" value="<%= JSON.stringify(formState?.sfg_lines || []) %>" data-lines-json="sfg_lines">
+    <input type="hidden" name="labour_lines_json" value="<%= JSON.stringify(formState?.labour_lines || []) %>" data-lines-json="labour_lines">
+    <input type="hidden" name="stage_routes_json" value="<%= JSON.stringify(formState?.stage_routes || []) %>" data-lines-json="stage_routes">
     <input type="hidden" name="copied_from_bom_id" value="<%= header.copied_from_bom_id || '' %>" data-bom-copied-from>
 
     <section id="bom-header" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24">
@@ -365,7 +375,13 @@
       </div>
     </section>
 
-    <!-- Labour rates layout removed; underlying logic retained intentionally. -->
+    <section id="bom-labour" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_labour") %></h2>
+        <span class="text-xs text-slate-500"><%= t("bom_labour_optional_hint") %></span>
+      </div>
+      <div class="space-y-4" data-bom-department-rates></div>
+    </section>
 
 
     <% if (isEditable) { %>
@@ -413,7 +429,7 @@
       </button>
       <div class="pr-10">
         <div class="text-sm font-semibold text-slate-700" id="bom-copy-title"><%= tx("bom_copy_title", "Copy from approved BOM") %></div>
-        <p class="mt-1 text-xs text-slate-500"><%= tx("bom_copy_subtitle", "Pick another article's approved BOM to pre-fill this draft. Labour is never copied.") %></p>
+        <p class="mt-1 text-xs text-slate-500"><%= t("bom_copy_subtitle") %></p>
       </div>
     </div>
     <div class="space-y-4 px-6 py-5" data-bom-copy-step="select">
@@ -439,6 +455,10 @@
         <label class="flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" data-bom-copy-section="sfg" class="h-4 w-4 rounded border-slate-300">
           <span><%= tx("bom_copy_section_sfg", "Semi-finished (SFG) lines") %></span>
+        </label>
+        <label class="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" data-bom-copy-section="labour_rates" checked class="h-4 w-4 rounded border-slate-300">
+          <span><%= t("bom_copy_section_labour_rates") %></span>
         </label>
         <p class="text-xs text-amber-700"><%= tx("bom_copy_sfg_hint", "Off by default — semi-finished inputs usually differ between articles. Review carefully if you turn this on.") %></p>
       </div>
@@ -548,6 +568,7 @@
 <script>
   (function () {
     const editable = <%- JSON.stringify(Boolean(isEditable)) %>;
+    const editingExistingBom = <%- JSON.stringify(Boolean(isEdit)) %>;
     const options = <%- JSON.stringify(options || {}) %>;
     const state = {
       rm: <%- JSON.stringify(formState?.rm_lines || []) %>,
@@ -559,9 +580,15 @@
       labourRuleLockedMap: {},
       labourRuleOpenSkuId: "",
       labourRuleOpenFallbackSizeId: null,
+      departmentRates: <%- JSON.stringify(departmentRates || []) %>,
       sku_override: <%- JSON.stringify(formState?.sku_overrides || []) %>,
       skuRuleOpenSkuId: "",
     };
+    let stageTouchedByUser = false;
+    document.getElementById("bom-stage")?.addEventListener("change", () => { stageTouchedByUser = true; });
+    document.getElementById("bom-stage")?.addEventListener("click", (event) => {
+      if (event.target.closest("[data-add-after], [data-remove-row]")) stageTouchedByUser = true;
+    });
     // Expose state for E2E test instrumentation (no-op in production)
     window.__bomState = state;
     const labels = {
@@ -1094,6 +1121,112 @@
       const rows = options.itemSkuMap && Array.isArray(options.itemSkuMap[itemId]) ? options.itemSkuMap[itemId] : [];
       return rows;
     };
+    const departmentRateHost = document.querySelector("[data-bom-department-rates]");
+    const departmentRateDirty = new Set();
+    let departmentRateLoadVersion = 0;
+    let rateSubmitResuming = false;
+    const departmentRateKey = (deptId, skuId) => `${deptId}:${skuId}`;
+    const findDepartmentRate = (deptId, skuId) =>
+      (state.departmentRates || []).find((row) =>
+        String(row.dept_id) === String(deptId) && String(row.sku_id) === String(skuId));
+    const setDepartmentRate = (deptId, skuId, change) => {
+      let row = findDepartmentRate(deptId, skuId);
+      if (!row) {
+        row = { dept_id: Number(deptId), sku_id: Number(skuId), rate_type: "PER_PAIR", rate_value: "" };
+        state.departmentRates.push(row);
+      }
+      Object.assign(row, change, { mixed: false });
+      departmentRateDirty.add(departmentRateKey(deptId, skuId));
+    };
+    const renderDepartmentRates = () => {
+      if (!(departmentRateHost instanceof HTMLElement)) return;
+      const skuRows = getHeaderSkuOptions();
+      const deptIds = [...getSelectedStageDepartmentIdSet()];
+      if (!deptIds.length) {
+        departmentRateHost.innerHTML = `<p class="text-sm text-slate-500"><%= t("bom_labour_no_stages") %></p>`;
+        return;
+      }
+      if (!skuRows.length) {
+        departmentRateHost.innerHTML = `<p class="text-sm text-slate-500"><%= t("bom_no_sku_available") %></p>`;
+        return;
+      }
+      departmentRateHost.innerHTML = deptIds.map((deptId) => {
+        const deptName = departmentNameById.get(String(deptId)) || deptId;
+        const rows = skuRows.map((sku) => {
+          const rate = findDepartmentRate(deptId, sku.id) || {};
+          const rateType = String(rate.rate_type || "PER_PAIR").toUpperCase();
+          return `<tr class="border-b border-slate-100" data-bom-rate-row data-dept-id="${esc(deptId)}" data-sku-id="${esc(sku.id)}">
+            <td class="px-3 py-2 text-slate-700">${esc(sku.sku_code || sku.id)}</td>
+            <td class="px-3 py-2"><select data-bom-rate-type data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}>
+              <option value="PER_PAIR" ${rateType === "PER_PAIR" ? "selected" : ""}>${esc(rateTypeLabel.PER_PAIR)}</option>
+              <option value="PER_DOZEN" ${rateType === "PER_DOZEN" ? "selected" : ""}>${esc(rateTypeLabel.PER_DOZEN)}</option>
+            </select></td>
+            <td class="px-3 py-2"><input data-bom-rate-value type="number" min="0" max="99999999.99" step="0.01" data-no-stepper="true" value="${esc(rate.rate_value ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}>
+              ${rate.mixed ? `<p class="mt-1 text-xs text-amber-700"><%= t("bom_labour_mixed_rates") %></p>` : ""}
+            </td>
+          </tr>`;
+        }).join("");
+        return `<div class="rounded-xl border border-slate-200 p-3" data-bom-rate-dept="${esc(deptId)}">
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h3 class="text-sm font-semibold text-slate-700">${esc(deptName)}</h3>
+          </div>
+          ${editable ? `<div class="mb-3 grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+            <select data-bom-all-rate-type data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="PER_PAIR">${esc(rateTypeLabel.PER_PAIR)}</option><option value="PER_DOZEN">${esc(rateTypeLabel.PER_DOZEN)}</option></select>
+            <input data-bom-all-rate-value type="number" min="0" max="99999999.99" step="0.01" data-no-stepper="true" placeholder="<%= t("bom_labour_all_skus_rate") %>" aria-label="<%= t("bom_labour_all_skus_rate") %>" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+            <button type="button" data-bom-apply-all-rate class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:border-slate-400"><%= t("bom_labour_apply_all_skus") %></button>
+          </div>` : ""}
+          <div class="overflow-x-auto" data-searchable-boundary><table class="min-w-full text-sm"><thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500"><tr><th class="px-3 py-2 text-left"><%= t("sku") %></th><th class="px-3 py-2 text-left"><%= t("rate_type") %></th><th class="px-3 py-2 text-left"><%= t("bom_labour_col_rate") %></th></tr></thead><tbody>${rows}</tbody></table></div>
+        </div>`;
+      }).join("");
+      if (typeof window.initSearchableSelects === "function") window.initSearchableSelects(departmentRateHost);
+    };
+    const loadDepartmentRatesForItem = async () => {
+      const itemId = String(headerItemSelect?.value || "").trim();
+      const version = ++departmentRateLoadVersion;
+      state.departmentRates = [];
+      departmentRateDirty.clear();
+      renderDepartmentRates();
+      if (!itemId) return;
+      try {
+        const response = await fetch(`${basePath}/labour-rates?item_id=${encodeURIComponent(itemId)}`);
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.message);
+        if (version !== departmentRateLoadVersion) return;
+        state.departmentRates = Array.isArray(data.rows) ? data.rows : [];
+        renderDepartmentRates();
+      } catch (err) {
+        if (version === departmentRateLoadVersion) showErrorModal(err?.message || "<%= t("generic_error") %>");
+      }
+    };
+    departmentRateHost?.addEventListener("input", (event) => {
+      const input = event.target.closest("[data-bom-rate-value]");
+      const row = input?.closest("[data-bom-rate-row]");
+      if (!row) return;
+      setDepartmentRate(row.dataset.deptId, row.dataset.skuId, { rate_value: input.value });
+    });
+    departmentRateHost?.addEventListener("change", (event) => {
+      const select = event.target.closest("[data-bom-rate-type]");
+      const row = select?.closest("[data-bom-rate-row]");
+      if (!row) return;
+      setDepartmentRate(row.dataset.deptId, row.dataset.skuId, { rate_type: select.value });
+    });
+    departmentRateHost?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-bom-apply-all-rate]");
+      const card = button?.closest("[data-bom-rate-dept]");
+      if (!card) return;
+      const value = String(card.querySelector("[data-bom-all-rate-value]")?.value || "").trim();
+      if (value === "" || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 99999999.99) {
+        showErrorModal("<%= t("error_invalid_rate_value") %>");
+        return;
+      }
+      const rateType = card.querySelector("[data-bom-all-rate-type]")?.value || "PER_PAIR";
+      getHeaderSkuOptions().forEach((sku) => setDepartmentRate(card.dataset.bomRateDept, sku.id, {
+        rate_type: rateType,
+        rate_value: value,
+      }));
+      renderDepartmentRates();
+    });
+    headerItemSelect?.addEventListener("change", () => { void loadDepartmentRatesForItem(); });
     const findHeaderSkuById = (skuId) =>
       getHeaderSkuOptions().find((row) => String(row.id || "") === String(skuId || "")) || null;
     const findHeaderSkuBySizeId = (sizeId) =>
@@ -2360,6 +2493,7 @@
           `;
         })
         .join("");
+      renderDepartmentRates();
     };
 
     const renderLabourSelection = () => {
@@ -2522,6 +2656,7 @@
       renderSfg();
       renderLabourSelection();
       renderLabourRules();
+      renderDepartmentRates();
       if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
     };
     const renderRmWithSkuRules = () => {
@@ -3197,6 +3332,54 @@
       }
     };
 
+    const saveDepartmentRateChanges = async () => {
+      const itemId = String(headerItemSelect?.value || "").trim();
+      const articleType = String(headerLevelSelect?.value || "").toUpperCase() === "SEMI_FINISHED" ? "SFG" : "FG";
+      const selectedDeptIds = getSelectedStageDepartmentIdSet();
+      const groups = new Map();
+      for (const key of departmentRateDirty) {
+        const [deptId, skuId] = key.split(":");
+        if (!selectedDeptIds.has(deptId)) continue;
+        const row = findDepartmentRate(deptId, skuId);
+        const raw = String(row?.rate_value ?? "").trim();
+        if (!raw) continue;
+        const value = Number(raw);
+        if (!Number.isFinite(value) || value < 0 || value > 99999999.99 || !/^\d+(?:\.\d{1,2})?$/.test(raw)) {
+          throw new Error("<%= t("error_invalid_rate_value") %>");
+        }
+        const type = String(row?.rate_type || "PER_PAIR").toUpperCase();
+        const groupKey = `${deptId}:${type}`;
+        if (!groups.has(groupKey)) groups.set(groupKey, { deptId, type, rows: [], keys: [] });
+        groups.get(groupKey).rows.push({ sku_id: Number(skuId), new_rate: value });
+        groups.get(groupKey).keys.push(key);
+      }
+      if (!groups.size) return;
+      if (!itemId) throw new Error("<%= t("bom_error_item_required") %>");
+      for (const group of groups.values()) {
+        const payload = {
+          _csrf: <%- JSON.stringify(csrfToken) %>,
+          labour_id: "ALL",
+          dept_id: Number(group.deptId),
+          apply_on: "SKU",
+          sku_ids: group.rows.map((row) => row.sku_id),
+          article_type: articleType,
+          rate_type: group.type,
+          status: "active",
+          rows: group.rows,
+        };
+        const response = await fetch("/hr-payroll/labours/rates/bulk-upsert", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-csrf-token": <%- JSON.stringify(csrfToken) %> },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || (!data.queued && data.ok === false)) {
+          throw new Error(data.message || "<%= t("bom_labour_rate_save_failed") %>");
+        }
+        group.keys.forEach((key) => departmentRateDirty.delete(key));
+      }
+    };
+
     document.getElementById("bom-form")?.addEventListener("submit", (event) => {
       const submitter = event.submitter;
       const isApproveNow = submitter instanceof HTMLElement && submitter.matches("[data-bom-approve-now='1']");
@@ -3208,6 +3391,18 @@
         event.preventDefault();
         return;
       }
+      if (!rateSubmitResuming && departmentRateDirty.size) {
+        event.preventDefault();
+        const originalSubmitter = submitter;
+        saveDepartmentRateChanges()
+          .then(() => {
+            rateSubmitResuming = true;
+            bomForm.requestSubmit(originalSubmitter instanceof HTMLElement ? originalSubmitter : undefined);
+          })
+          .catch((err) => showErrorModal(err?.message || "<%= t("bom_labour_rate_save_failed") %>"));
+        return;
+      }
+      rateSubmitResuming = false;
       allowBomSubmit = false;
       syncStateFromDom();
       syncSkuRulesFromDom();
@@ -3329,6 +3524,7 @@
       sku_overrides: "<%= tx('bom_copy_section_sku_overrides_short', 'SKU rules') %>",
       stage_routes: "<%= tx('bom_copy_section_stage_routes', 'Production stages') %>",
       sfg: "<%= tx('bom_copy_section_sfg_short', 'SFG lines') %>",
+      labour_rates: "<%= t('bom_copy_section_labour_rates') %>",
     };
     const copyRuntimeLabels = {
       copiedOfTotal: "<%= tx('bom_copy_copied_of_total', 'copied') %>",
@@ -3394,6 +3590,7 @@
       const skuCheckbox = copyModal?.querySelector('[data-bom-copy-section="sku_overrides"]');
       const stageCheckbox = copyModal?.querySelector('[data-bom-copy-section="stage_routes"]');
       const sfgCheckbox = copyModal?.querySelector('[data-bom-copy-section="sfg"]');
+      const labourCheckbox = copyModal?.querySelector('[data-bom-copy-section="labour_rates"]');
       if (skuCheckbox instanceof HTMLInputElement && rmCheckbox instanceof HTMLInputElement) {
         skuCheckbox.disabled = !rmCheckbox.checked;
         if (!rmCheckbox.checked) skuCheckbox.checked = false;
@@ -3401,6 +3598,10 @@
       if (sfgCheckbox instanceof HTMLInputElement && stageCheckbox instanceof HTMLInputElement) {
         sfgCheckbox.disabled = !stageCheckbox.checked;
         if (!stageCheckbox.checked) sfgCheckbox.checked = false;
+      }
+      if (labourCheckbox instanceof HTMLInputElement && stageCheckbox instanceof HTMLInputElement) {
+        labourCheckbox.disabled = !stageCheckbox.checked;
+        if (!stageCheckbox.checked) labourCheckbox.checked = false;
       }
     };
 
@@ -3457,8 +3658,8 @@
       if (source) {
         blocks.push(`<p class="text-slate-600">${esc(copyRuntimeLabels.reportFromPrefix)} ${esc(source.bom_no)} V${esc(source.version_no)} (${esc(source.item_name || "")})</p>`);
       }
-      const sectionOrder = ["rm", "sku_overrides", "stage_routes", "sfg"];
-      const reportKeyBySection = { rm: "rm_lines", sku_overrides: "sku_overrides", stage_routes: "stage_routes", sfg: "sfg_lines" };
+      const sectionOrder = ["rm", "sku_overrides", "stage_routes", "sfg", "labour_rates"];
+      const reportKeyBySection = { rm: "rm_lines", sku_overrides: "sku_overrides", stage_routes: "stage_routes", sfg: "sfg_lines", labour_rates: "labour_rates" };
       sectionOrder.forEach((sectionKey) => {
         const sectionReport = report?.[reportKeyBySection[sectionKey]];
         if (!sectionReport) return;
@@ -3485,8 +3686,9 @@
       const hasExistingData =
         (sections.includes("rm") && (state.rm || []).some((row) => String(row?.rm_item_id || "").trim()))
         || (sections.includes("sku_overrides") && (state.sku_override || []).length > 0)
-        || (sections.includes("stage_routes") && (state.stage_routes || []).some((row) => String(row?.dept_id || "").trim()))
-        || (sections.includes("sfg") && (state.sfg || []).some((row) => String(row?.sfg_sku_id || "").trim()));
+        || (sections.includes("stage_routes") && (editingExistingBom || stageTouchedByUser) && (state.stage_routes || []).some((row) => String(row?.dept_id || "").trim()))
+        || (sections.includes("sfg") && (state.sfg || []).some((row) => String(row?.sfg_sku_id || "").trim()))
+        || (sections.includes("labour_rates") && departmentRateDirty.size > 0);
 
       if (hasExistingData && typeof window.showUiConfirmModal === "function") {
         const confirmed = await window.showUiConfirmModal({
@@ -3513,6 +3715,12 @@
         if (sections.includes("sku_overrides")) state.sku_override = (data.lines?.sku_overrides || []).map((row) => ({ ...row }));
         if (sections.includes("stage_routes")) state.stage_routes = (data.lines?.stage_routes || []).map((row) => ({ ...row }));
         if (sections.includes("sfg")) state.sfg = (data.lines?.sfg_lines || []).map((row) => ({ ...row }));
+        if (sections.includes("labour_rates")) {
+          departmentRateLoadVersion += 1;
+          state.departmentRates = (data.lines?.labour_rates || []).map((row) => ({ ...row }));
+          departmentRateDirty.clear();
+          state.departmentRates.forEach((row) => departmentRateDirty.add(departmentRateKey(row.dept_id, row.sku_id)));
+        }
 
         if (copiedFromBomIdInput) copiedFromBomIdInput.value = String(data.source?.bom_id || "");
         state.skuRuleOpenSkuId = "";

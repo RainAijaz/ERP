@@ -15,6 +15,7 @@ const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { queueAuditLog } = require("../../../utils/audit-log");
 const bomService = require("../../../services/bom/service");
 const bomCopyService = require("../../../services/bom/copy-service");
+const { loadArticleDepartmentRates } = require("../../../services/bom/labour-rate-service");
 const bomReportsRoutes = require("./reports");
 const bomCascadeRoutes = require("./cascade");
 
@@ -112,6 +113,10 @@ const renderForm = async (req, res, params = {}) => {
     includeItemId: formState?.header?.item_id || null,
     requesterUserId: req.user?.id || null,
   });
+  const departmentRates = await loadArticleDepartmentRates(
+    knex,
+    formState?.header?.item_id,
+  );
   const errors = params.errors || [];
   const errorMessage = params.errorMessage || null;
   return renderPage(
@@ -123,6 +128,7 @@ const renderForm = async (req, res, params = {}) => {
       : res.locals.t("bom_new_title"),
     {
       options,
+      departmentRates,
       formState,
       formMode,
       errors,
@@ -376,6 +382,24 @@ router.get(
 
 router.use("/reports", bomReportsRoutes);
 router.use("/cascade", bomCascadeRoutes);
+
+router.get(
+  "/labour-rates",
+  requirePermission("SCREEN", BOM_SCOPE, "view"),
+  async (req, res) => {
+    try {
+      const itemId = Number(req.query.item_id);
+      if (!Number.isInteger(itemId) || itemId <= 0) {
+        return res.status(400).json({ ok: false, message: res.locals.t("bom_error_item_required") });
+      }
+      const rows = await loadArticleDepartmentRates(knex, itemId);
+      return res.json({ ok: true, rows });
+    } catch (err) {
+      console.error("Error in BomLabourRateService:", err);
+      return res.status(500).json({ ok: false, message: res.locals.t("generic_error") });
+    }
+  },
+);
 
 router.get(
   "/copy-sources",

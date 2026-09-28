@@ -1,8 +1,9 @@
 const bomService = require("./service");
 const { keysBySection } = require("../../utils/bom-change-log");
+const { loadArticleDepartmentRates } = require("./labour-rate-service");
 
 const BOM_LEVELS = new Set(["FINISHED", "SEMI_FINISHED"]);
-const COPY_SECTIONS = new Set(["rm", "sku_overrides", "stage_routes", "sfg"]);
+const COPY_SECTIONS = new Set(["rm", "sku_overrides", "stage_routes", "sfg", "labour_rates"]);
 
 const toNumberOrNull = (value) => {
   if (value === null || typeof value === "undefined" || value === "")
@@ -244,6 +245,8 @@ const skipReasonLabel = (t, entry) => {
       return `${entry.label || ""}: ${resolveText(t, "bom_copy_skip_no_sfg_link", "this article has no linked semi-finished item")}`;
     case "no_matching_sfg_sku":
       return `${entry.label || ""}: ${resolveText(t, "bom_copy_skip_no_sfg_sku", "no semi-finished SKU with the same size was found for this article")}`;
+    case "mixed_labour_rates":
+      return `${entry.sku_code || ""}${variant}: ${resolveText(t, "bom_copy_skip_mixed_labour_rates", "labourers have different rates; set this rate manually")}`;
     default:
       return `${entry.sku_code || entry.label || ""}`.trim() || "-";
   }
@@ -503,7 +506,7 @@ const buildCopyPayload = async (
       .orderBy("id", "asc"),
   ]);
 
-  const lines = { rm_lines: [], sku_overrides: [], sfg_lines: [], stage_routes: [] };
+  const lines = { rm_lines: [], sku_overrides: [], sfg_lines: [], stage_routes: [], labour_rates: [] };
   const report = {};
   const makeSectionReport = (total, copiedRows, skippedEntries) => ({
     total,
@@ -600,6 +603,63 @@ const buildCopyPayload = async (
     });
     lines.sfg_lines = mapped;
     report.sfg_lines = makeSectionReport(sfgLines.length, mapped, skipped);
+  }
+
+  if (normalizedSections.has("labour_rates")) {
+    const [sourceRates, skuAttrMap] = await Promise.all([
+      loadArticleDepartmentRates(knex, source.item_id),
+      loadSkuVariantAttrs(knex, [source.item_id, targetId], locale),
+    ]);
+    const sourceStageDeptIds = new Set(stageRoutes.map((stage) => Number(stage.dept_id)));
+    const eligibleRates = sourceRates.filter((rate) => sourceStageDeptIds.has(Number(rate.dept_id)));
+    const sourceById = new Map(
+      (skuAttrMap.get(toNumberOrNull(source.item_id)) || [])
+        .map((sku) => [toNumberOrNull(sku.sku_id), sku]),
+    );
+    const targetsByKey = new Map();
+    (skuAttrMap.get(targetId) || []).forEach((sku) => {
+      const key = skuVariantKey(sku);
+      if (!targetsByKey.has(key)) targetsByKey.set(key, []);
+      targetsByKey.get(key).push(sku);
+    });
+    const skipped = [];
+    const seen = new Set();
+    eligibleRates.forEach((rate) => {
+      const sourceSku = sourceById.get(toNumberOrNull(rate.sku_id));
+      const entry = {
+        sku_code: sourceSku?.sku_code || `SKU ${rate.sku_id}`,
+        variant_label: sourceSku ? skuVariantLabel(sourceSku) : "",
+      };
+      if (!sourceSku) {
+        skipped.push({ ...entry, reason: "no_matching_sku" });
+        return;
+      }
+      if (rate.mixed) {
+        skipped.push({ ...entry, reason: "mixed_labour_rates" });
+        return;
+      }
+      const candidates = targetsByKey.get(skuVariantKey(sourceSku)) || [];
+      if (candidates.length !== 1) {
+        skipped.push({
+          ...entry,
+          reason: candidates.length ? "multiple_matching_skus" : "no_matching_sku",
+        });
+        return;
+      }
+      const key = `${rate.dept_id}:${candidates[0].sku_id}`;
+      if (seen.has(key)) {
+        skipped.push({ ...entry, reason: "duplicate_after_mapping" });
+        return;
+      }
+      seen.add(key);
+      lines.labour_rates.push({
+        dept_id: Number(rate.dept_id),
+        sku_id: Number(candidates[0].sku_id),
+        rate_type: rate.rate_type,
+        rate_value: rate.rate_value,
+      });
+    });
+    report.labour_rates = makeSectionReport(eligibleRates.length, lines.labour_rates, skipped);
   }
 
   return {

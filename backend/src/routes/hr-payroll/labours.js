@@ -1255,7 +1255,9 @@ ratesRouter.get(
 
 ratesRouter.post(
   "/bulk-upsert",
-  requirePermission("SCREEN", labourRatesPage.scopeKey, "create"),
+  // Rate edits without create rights are routed to approval by
+  // handleScreenApproval below. View access is enough to submit a proposal.
+  requirePermission("SCREEN", labourRatesPage.scopeKey, "view"),
   async (req, res) => {
     const traceId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const startedAt = Date.now();
@@ -1476,6 +1478,7 @@ ratesRouter.post(
           rateType: normalized.rateType,
           status: normalized.status,
           rows: normalizedRowsForSave,
+          appliesToAllLabours: normalized.labourSelection?.all === true,
           debugLog: (stage, details = {}) =>
             logLabourRateSaveDebug(req, `bulk_upsert:service_${stage}`, {
               traceId,
