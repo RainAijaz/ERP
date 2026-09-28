@@ -36,12 +36,13 @@ const CREDIT_META_SQL = "COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0)";
 const RESOLVED_DEBIT_SQL = `CASE WHEN ${DEBIT_META_SQL} = 0 AND ${CREDIT_META_SQL} = 0 THEN COALESCE(vl.amount, 0) ELSE ${DEBIT_META_SQL} END`;
 const RESOLVED_CREDIT_SQL = `CASE WHEN ${DEBIT_META_SQL} = 0 AND ${CREDIT_META_SQL} = 0 THEN 0 ELSE ${CREDIT_META_SQL} END`;
 const DIR_VERSION_SQL = "COALESCE(NULLIF(vl.meta->>'direction_version','')::int, 1)";
+const USE_EXPLICIT_DIRECTION_SQL = `(${DIR_VERSION_SQL} = 2 OR vh.voucher_type_code = 'JOURNAL_VOUCHER')`;
 // HR ledgers are payable-oriented: payment = debit, payable increase = credit.
-// direction_version=2 (cash/bank vouchers): meta.debit/credit carry explicit direction — use directly.
-// direction_version=1 or legacy (sales vouchers, old data): amount lives in vl.amount → RESOLVED_DEBIT;
+// Explicit-direction vouchers use meta.debit/meta.credit directly; legacy voucher
+// rows continue through the old amount-as-credit fallback below.
 // the old convention treats that amount as a credit to the employee's account.
-const LEDGER_DEBIT_SQL = `CASE WHEN ${DIR_VERSION_SQL} = 2 THEN ${DEBIT_META_SQL} ELSE ${CREDIT_META_SQL} END`;
-const LEDGER_CREDIT_SQL = `CASE WHEN ${DIR_VERSION_SQL} = 2 THEN ${CREDIT_META_SQL} ELSE ${RESOLVED_DEBIT_SQL} END`;
+const LEDGER_DEBIT_SQL = `CASE WHEN ${USE_EXPLICIT_DIRECTION_SQL} THEN ${DEBIT_META_SQL} ELSE ${CREDIT_META_SQL} END`;
+const LEDGER_CREDIT_SQL = `CASE WHEN ${USE_EXPLICIT_DIRECTION_SQL} THEN ${CREDIT_META_SQL} ELSE ${RESOLVED_DEBIT_SQL} END`;
 const LEDGER_NET_SQL = `(${LEDGER_CREDIT_SQL}) - (${LEDGER_DEBIT_SQL})`;
 // Salesman's Sale commission is posted as a plain EMPLOYEE voucher_line row on the
 // sale itself (never through erp.commission_ledger — see commission-service.js /

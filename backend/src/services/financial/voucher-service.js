@@ -432,7 +432,8 @@ const validateLines = async ({
             : undefined,
         direction_version:
           voucherTypeCode === VOUCHER_TYPES.cash ||
-          voucherTypeCode === VOUCHER_TYPES.bank
+          voucherTypeCode === VOUCHER_TYPES.bank ||
+          voucherTypeCode === VOUCHER_TYPES.journal
             ? 2
             : undefined,
         source_voucher_id:

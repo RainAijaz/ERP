@@ -3,7 +3,7 @@
   const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
   const groups = Array.isArray(reportData?.groups) ? reportData.groups : [];
   const summaryRows = Array.isArray(reportData?.summaryRows) ? reportData.summaryRows : [];
-  const selectedOrderBy = ["voucher", "sku", "department"].includes(String(filters?.orderBy || "").toLowerCase())
+  const selectedOrderBy = ["voucher", "date", "sku", "department"].includes(String(filters?.orderBy || "").toLowerCase())
     ? String(filters.orderBy).toLowerCase()
     : "department";
   const selectedReportType = ["details", "summary"].includes(String(filters?.reportType || "").toLowerCase())
@@ -31,6 +31,8 @@
   const articleAllSelected = !selectedArticleIds.length;
   const summaryGroupLabel = selectedOrderBy === "sku"
     ? t("sku")
+    : selectedOrderBy === "date"
+      ? t("date")
     : selectedOrderBy === "department"
       ? t("department")
       : t("voucher_no");
@@ -62,11 +64,7 @@
   const finalStageOnlyLabel = (() => { const value = t("final_stage_only"); return value && value !== "final_stage_only" ? value : "Final Stage Only"; })();
   const advancedFiltersLabel = (() => { const value = t("advanced_filters"); return value && value !== "advanced_filters" ? value : "Advanced Filters"; })();
   const advancedFilterEntries = [
-    selectedProductGroupIds.length ? t("product_groups") : "",
-    selectedProductSubgroupIds.length ? t("product_subgroups") : "",
     selectedArticleIds.length ? articlesLabel : "",
-    selectedLabourIds.length ? t("labours") : "",
-    selectedDepartmentIds.length ? t("departments") : "",
     selectedProductionType !== "ALL" ? t("production_type") : "",
     selectedSkuUnit !== "ALL" ? productionUnitLabel : "",
   ].filter(Boolean);
@@ -199,31 +197,55 @@
           </div>
         </div>
 
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("departments") %></label>
+          <div class="sm:col-span-9">
+            <select name="department_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value="<%= allMultiOptionValue %>" <%= departmentAllSelected ? "selected" : "" %>><%= t("all") %></option>
+              <% (options?.departments || []).forEach((department) => { %>
+                <option value="<%= department.id %>" <%= selectedDepartmentIds.includes(Number(department.id)) ? "selected" : "" %>><%= department.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("labours") %></label>
+          <div class="sm:col-span-9">
+            <select name="labour_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value="<%= allMultiOptionValue %>" <%= labourAllSelected ? "selected" : "" %>><%= t("all") %></option>
+              <% (options?.labours || []).forEach((labour) => { %>
+                <option value="<%= labour.id %>" <%= selectedLabourIds.includes(Number(labour.id)) ? "selected" : "" %>><%= labour.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("product_groups") %></label>
+          <div class="sm:col-span-9">
+            <select name="product_group_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value="<%= allMultiOptionValue %>" <%= groupAllSelected ? "selected" : "" %>><%= t("all") %></option>
+              <% (options?.productGroups || []).forEach((group) => { %>
+                <option value="<%= group.id %>" <%= selectedProductGroupIds.includes(Number(group.id)) ? "selected" : "" %>><%= group.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("product_subgroups") %></label>
+          <div class="sm:col-span-9">
+            <select name="product_subgroup_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value="<%= allMultiOptionValue %>" <%= subgroupAllSelected ? "selected" : "" %>><%= t("all") %></option>
+              <% (options?.productSubgroups || []).forEach((subgroup) => { %>
+                <option value="<%= subgroup.id %>" <%= selectedProductSubgroupIds.includes(Number(subgroup.id)) ? "selected" : "" %>><%= subgroup.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
         <div class="hidden space-y-3 rounded-2xl border border-slate-200/80 bg-white/70 p-3" data-advanced-filter-panel>
-          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-            <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("product_groups") %></label>
-            <div class="sm:col-span-9">
-              <select name="product_group_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
-                <option value="<%= allMultiOptionValue %>" <%= groupAllSelected ? "selected" : "" %>><%= t("all") %></option>
-                <% (options?.productGroups || []).forEach((group) => { %>
-                  <option value="<%= group.id %>" <%= selectedProductGroupIds.includes(Number(group.id)) ? "selected" : "" %>><%= group.name %></option>
-                <% }) %>
-              </select>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-            <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("product_subgroups") %></label>
-            <div class="sm:col-span-9">
-              <select name="product_subgroup_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
-                <option value="<%= allMultiOptionValue %>" <%= subgroupAllSelected ? "selected" : "" %>><%= t("all") %></option>
-                <% (options?.productSubgroups || []).forEach((subgroup) => { %>
-                  <option value="<%= subgroup.id %>" <%= selectedProductSubgroupIds.includes(Number(subgroup.id)) ? "selected" : "" %>><%= subgroup.name %></option>
-                <% }) %>
-              </select>
-            </div>
-          </div>
-
           <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
             <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= articlesLabel %></label>
             <div class="sm:col-span-9">
@@ -231,30 +253,6 @@
                 <option value="<%= allMultiOptionValue %>" <%= articleAllSelected ? "selected" : "" %>><%= t("all") %></option>
                 <% (options?.articles || []).forEach((article) => { %>
                   <option value="<%= article.id %>" <%= selectedArticleIds.includes(Number(article.id)) ? "selected" : "" %>><%= article.name %></option>
-                <% }) %>
-              </select>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-            <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("labours") %></label>
-            <div class="sm:col-span-9">
-              <select name="labour_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
-                <option value="<%= allMultiOptionValue %>" <%= labourAllSelected ? "selected" : "" %>><%= t("all") %></option>
-                <% (options?.labours || []).forEach((labour) => { %>
-                  <option value="<%= labour.id %>" <%= selectedLabourIds.includes(Number(labour.id)) ? "selected" : "" %>><%= labour.name %></option>
-                <% }) %>
-              </select>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-            <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("departments") %></label>
-            <div class="sm:col-span-9">
-              <select name="department_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
-                <option value="<%= allMultiOptionValue %>" <%= departmentAllSelected ? "selected" : "" %>><%= t("all") %></option>
-                <% (options?.departments || []).forEach((department) => { %>
-                  <option value="<%= department.id %>" <%= selectedDepartmentIds.includes(Number(department.id)) ? "selected" : "" %>><%= department.name %></option>
                 <% }) %>
               </select>
             </div>
@@ -318,6 +316,10 @@
               <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedOrderBy === 'voucher' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
                 <input type="radio" name="order_by" value="voucher" <%= selectedOrderBy === "voucher" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
                 <span><%= t("voucher_no") %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedOrderBy === 'date' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="order_by" value="date" <%= selectedOrderBy === "date" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("date") %></span>
               </label>
               <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedOrderBy === 'sku' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
                 <input type="radio" name="order_by" value="sku" <%= selectedOrderBy === "sku" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
@@ -418,9 +420,12 @@
                       <% if (selectedOrderBy === "voucher") { %>
                         <span class="inline-flex items-center rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white">VR. NO. <%= group.label || "-" %></span>
                       <% } else { %>
-                        <span class="inline-flex items-center rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= summaryGroupLabel %>: <%= group.label || "-" %></span>
+                        <span class="inline-flex items-center rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= summaryGroupLabel %>: <%= selectedOrderBy === "date" ? formatDate(group.label) : (group.label || "-") %></span>
                       <% } %>
                       <% if (selectedOrderBy === "voucher") { %>
+                        <% if (String(group.bill_book_label || "").trim() && group.bill_book_label !== "-") { %>
+                          <span class="inline-flex items-center rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= t("bill_book_no") %>: <%= group.bill_book_label %></span>
+                        <% } %>
                         <% if (String(group.department_label || "").trim() && group.department_label !== "-") { %>
                           <span class="inline-flex items-center rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= t("department") %>: <%= group.department_label %></span>
                         <% } %>
@@ -510,6 +515,7 @@
                 <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="group_label"><%= summaryGroupLabel %></th>
                 <% if (selectedOrderBy === "voucher") { %>
                   <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="date_from"><%= t("date") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="bill_book_label"><%= t("bill_book_no") %></th>
                   <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="department_label"><%= t("department") %></th>
                   <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="labour_label"><%= t("labour") %></th>
                   <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="production_type_label"><%= t("production_type") %></th>
@@ -539,9 +545,10 @@
             <tbody class="divide-y divide-slate-100" data-table-body>
               <% summaryRows.forEach((row) => { %>
                 <tr class="bg-slate-200/50 text-slate-700" data-row data-active="true">
-                  <td class="px-3 py-2"><%= row.group_label || "-" %></td>
+                  <td class="px-3 py-2"><%= selectedOrderBy === "date" ? formatDate(row.group_label) : (row.group_label || "-") %></td>
                   <% if (selectedOrderBy === "voucher") { %>
                     <td class="px-3 py-2"><%= formatDateRangeLabel(row.date_from, row.date_to) %></td>
+                    <td class="px-3 py-2"><%= row.bill_book_label || "-" %></td>
                     <td class="px-3 py-2"><%= row.department_label || "-" %></td>
                     <td class="px-3 py-2"><%= row.labour_label || "-" %></td>
                     <td class="px-3 py-2"><%= row.production_type_label || "-" %></td>
@@ -570,7 +577,7 @@
               <% }) %>
               <tr class="bg-rose-700 text-white" data-row data-active="true" data-report-grand-total>
                 <% if (selectedOrderBy === "voucher") { %>
-                  <td colspan="7" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
+                  <td colspan="8" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
                 <% } else { %>
                   <td colspan="6" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
                 <% } %>

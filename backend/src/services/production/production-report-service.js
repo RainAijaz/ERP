@@ -156,7 +156,8 @@ const normalizeProductionControlOrderBy = (value) => {
   const normalized = String(value || "department")
     .trim()
     .toLowerCase();
-  if (["voucher", "sku", "department"].includes(normalized)) return normalized;
+  if (["voucher", "date", "sku", "department"].includes(normalized))
+    return normalized;
   return "department";
 };
 
@@ -802,6 +803,13 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       if (byDate) return byDate;
       return Number(a.line_id || 0) - Number(b.line_id || 0);
     }
+    if (orderBy === "date") {
+      const byDate = compareText(a.date, b.date);
+      if (byDate) return byDate;
+      const byVoucher = Number(a.voucher_no || 0) - Number(b.voucher_no || 0);
+      if (byVoucher) return byVoucher;
+      return Number(a.line_id || 0) - Number(b.line_id || 0);
+    }
     if (orderBy === "sku") {
       const bySku = compareText(a.sku_code, b.sku_code);
       if (bySku) return bySku;
@@ -823,6 +831,13 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       return {
         key: `voucher:${voucherId || voucherNo}`,
         label: voucherNo ? String(voucherNo) : "-",
+      };
+    }
+    if (orderBy === "date") {
+      const date = String(row.date || "").trim();
+      return {
+        key: `date:${date || "-"}`,
+        label: date || "-",
       };
     }
     if (orderBy === "sku")
@@ -857,6 +872,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       unit_names: new Set(),
       product_group_names: new Set(),
       branch_names: new Set(),
+      bill_book_numbers: new Set(),
       qty: 0,
       packed_qty: 0,
       loose_qty: 0,
@@ -888,6 +904,12 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       );
     if (String(row.branch_name || "").trim())
       existing.branch_names.add(String(row.branch_name || "").trim());
+    if (
+      String(row.bill_book_no || "").trim() &&
+      String(row.bill_book_no || "").trim() !== "-"
+    ) {
+      existing.bill_book_numbers.add(String(row.bill_book_no || "").trim());
+    }
     existing.qty = Number(existing.qty || 0) + Number(row.qty || 0);
     if (
       String(row.sku_unit || "")
@@ -921,6 +943,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       unit_label: summarizeNameSet(group.unit_names),
       product_group_label: summarizeNameSet(group.product_group_names),
       branch_label: summarizeNameSet(group.branch_names),
+      bill_book_label: summarizeNameSet(group.bill_book_numbers),
       qty: Number(Number(group.qty || 0).toFixed(3)),
       packed_qty: Number(Number(group.packed_qty || 0).toFixed(3)),
       loose_qty: Number(Number(group.loose_qty || 0).toFixed(3)),
@@ -932,6 +955,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
         if (Number.isFinite(aNo) && Number.isFinite(bNo) && aNo !== bNo)
           return aNo - bNo;
       }
+      if (orderBy === "date") return compareText(a.label, b.label);
       return compareText(a.label, b.label);
     });
 
@@ -949,6 +973,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       unit_names: new Set(),
       product_group_names: new Set(),
       sku_codes: new Set(),
+      bill_book_numbers: new Set(),
       first_date: null,
       last_date: null,
       qty: 0,
@@ -999,6 +1024,12 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     if (String(row.sku_code || "").trim()) {
       existing.sku_codes.add(String(row.sku_code || "").trim());
     }
+    if (
+      String(row.bill_book_no || "").trim() &&
+      String(row.bill_book_no || "").trim() !== "-"
+    ) {
+      existing.bill_book_numbers.add(String(row.bill_book_no || "").trim());
+    }
     const rowDate = String(row.date || "").trim();
     if (rowDate) {
       if (!existing.first_date || rowDate < existing.first_date)
@@ -1045,6 +1076,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       unit_label: summarizeNameSet(row.unit_names),
       product_group_label: summarizeNameSet(row.product_group_names),
       sku_label: summarizeNameSet(row.sku_codes),
+      bill_book_label: summarizeNameSet(row.bill_book_numbers),
       date_from: row.first_date || null,
       date_to: row.last_date || null,
       qty: Number(Number(row.qty || 0).toFixed(3)),
@@ -1058,6 +1090,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
         if (Number.isFinite(aNo) && Number.isFinite(bNo) && aNo !== bNo)
           return aNo - bNo;
       }
+      if (orderBy === "date") return compareText(a.group_label, b.group_label);
       return compareText(a.group_label, b.group_label);
     });
 
