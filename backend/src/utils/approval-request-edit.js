@@ -30,6 +30,7 @@ const getEditableKeys = (request) => {
   if (action === "delete") return [];
   const current = safeJson(request?.new_value);
   if (!current || typeof current !== "object" || Array.isArray(current)) return [];
+  if (current.wip_count === true) return [];
   return Object.keys(current).filter((key) => !key.startsWith("_") && !SYSTEM_KEYS.has(key));
 };
 

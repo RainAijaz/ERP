@@ -85,6 +85,15 @@ CREATE INDEX IF NOT EXISTS idx_wip_dept_ledger_source_voucher
 CREATE INDEX IF NOT EXISTS idx_wip_dept_ledger_branch_dept_sku_date
   ON erp.wip_dept_ledger(branch_id, dept_id, sku_id, txn_date);
 
+-- Department WIP physical counts share the Stock Count voucher sequence.
+-- The SKU snapshots live on voucher_line.meta; posting writes wip_dept_ledger.
+CREATE TABLE IF NOT EXISTS erp.wip_count_header (
+  voucher_id     bigint PRIMARY KEY REFERENCES erp.voucher_header(id) ON DELETE CASCADE,
+  dept_id        bigint NOT NULL REFERENCES erp.departments(id) ON DELETE RESTRICT,
+  reason_code_id bigint NOT NULL REFERENCES erp.reason_codes(id) ON DELETE RESTRICT,
+  reason_notes   text NOT NULL CHECK (length(btrim(reason_notes)) > 0)
+);
+
 -- ---------------------------------------------------------------------
 -- DCV: Department Completion Voucher extension
 -- ---------------------------------------------------------------------

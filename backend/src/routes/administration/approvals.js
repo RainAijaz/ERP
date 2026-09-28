@@ -2711,6 +2711,8 @@ router.post(
         msg = res.locals.t("error_duplicate_name");
       } else if (err && err.code === "BOM_SNAPSHOT_MISMATCH") {
         msg = res.locals.t("bom_error_snapshot_mismatch");
+      } else if (err && String(err.message || "").startsWith("wip_count_")) {
+        msg = res.locals.t(err.message);
       } else if (err && err.message) {
         msg = err.message;
       }

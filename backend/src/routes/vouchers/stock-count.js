@@ -17,6 +17,7 @@ const {
   parseVoucherNo,
   INVENTORY_VOUCHER_TYPES,
 } = require("../../services/inventory/inventory-voucher-service");
+const { loadDepartmentWipCountArticles } = require("../../services/production/department-wip-count-service");
 
 const scopeKey = "STOCK_COUNT_ADJ";
 const voucherTypeCode = INVENTORY_VOUCHER_TYPES.stockCountAdjustment;
@@ -55,6 +56,20 @@ const canVoucherAction = (res, action) => {
 };
 
 const router = express.Router();
+
+router.get(
+  "/wip-articles",
+  requirePermission("VOUCHER", scopeKey, "view"),
+  async (req, res, next) => {
+    try {
+      const articles = await loadDepartmentWipCountArticles({ req, deptId: req.query.dept_id });
+      return res.json({ articles });
+    } catch (err) {
+      console.error("Error in DepartmentWipCountArticlesService:", err);
+      return next(err);
+    }
+  },
+);
 
 router.get(
   "/articles",
@@ -185,6 +200,7 @@ router.post("/", async (req, res, next) => {
     const payload = {
       voucher_date: req.body?.voucher_date,
       stock_type: req.body?.stock_type,
+      dept_id: req.body?.dept_id,
       remarks: req.body?.remarks,
       reason_code_id: req.body?.reason_code_id,
       reason_notes: req.body?.reason_notes,
@@ -232,6 +248,10 @@ router.post("/", async (req, res, next) => {
     return res.redirect(`${req.baseUrl}?new=1`);
   } catch (err) {
     console.error("Error in StockCountVoucherSaveService:", err);
+    if (String(err?.message || "").startsWith("wip_count_")) {
+      setNotice(res, res.locals.t(err.message), true);
+      return res.redirect(req.baseUrl);
+    }
     setNotice(res, res.locals.t("generic_error"), true);
     return next(err);
   }

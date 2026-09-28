@@ -1,4 +1,4 @@
-﻿const { parseCookies, setCookie } = require("../utils/cookies");
+const { parseCookies, setCookie } = require("../utils/cookies");
 
 const translations = {
   en: {
@@ -5282,6 +5282,62 @@ Object.assign(translations.en, {
 Object.assign(translations.ur, {
   line_total: "لائن کل",
   ledger_more_lines: "مزید",
+});
+
+Object.assign(translations.en, {
+  department_wip_reason: "Department WIP Physical Count",
+  wip_count_effect_title: "This adjusts department work in progress quantities",
+  wip_count_help: "Choose a production department, then enter the actual pairs for every listed article. Confirming adjusts that department's WIP balance to the counted quantities. It does not change FG, SFG, or RM warehouse stock.",
+  wip_count_today_explanation: "Record today's physical count. Approved changes post immediately; other changes wait for Administrator approval.",
+  wip_count_system_qty: "System Pairs",
+  wip_count_physical_qty: "Counted Pairs",
+  wip_count_variance: "Variance",
+  wip_count_selective_note: "Articles previously handled by this department load automatically. Enter a counted quantity for each; enter 0 when none are present.",
+  wip_count_empty_department: "No articles have been handled by this department yet.",
+  wip_count_load_failed: "Unable to load department articles. Check your connection and try again.",
+  wip_count_fill_all_quantities: "Enter a whole-number counted quantity for every article. Zero is valid.",
+  wip_count_too_many_articles: "This department has more than 500 articles. Contact an administrator before counting.",
+  wip_count_today_only: "Department WIP counts must use today's date.",
+  wip_count_use_reason_mode: "Select Department WIP Physical Count from the reason list to count department quantities.",
+  wip_count_immutable: "A posted or pending department WIP count cannot be edited or deleted. Create a new count to correct it.",
+  wip_count_submitted: "Change submitted for Administrator approval.",
+  wip_count_posted: "Department WIP count posted successfully.",
+  wip_count_invalid_department: "Select a valid production department.",
+  wip_count_invalid_voucher: "Department WIP count voucher is invalid.",
+  wip_count_lines_required: "Add at least one article.",
+  wip_count_invalid_input: "Enter a department, reason, notes, and counted articles.",
+  wip_count_invalid_line: "An article or quantity in the count is invalid.",
+  wip_count_stale_balance: "Department quantities changed since the count was loaded. Refresh and recount before posting.",
+  wip_count_missing_cost: "This article has no WIP cost history. Record its first production movement before adding it through a count.",
+  wip_count_no_variance: "Enter at least one counted quantity that differs from the system quantity.",
+});
+
+Object.assign(translations.ur, {
+  department_wip_reason: "شعبے کے زیرِ تکمیل مال کی حقیقی گنتی",
+  wip_count_effect_title: "یہ شعبے کے زیرِ تکمیل مال کی مقدار درست کرتا ہے",
+  wip_count_help: "پیداواری شعبہ منتخب کریں اور ہر آرٹیکل کے حقیقی جوڑے درج کریں۔ تصدیق پر اس شعبے کا زیرِ تکمیل بیلنس گنی ہوئی مقدار کے مطابق ہوگا۔ گودام کے FG، SFG یا RM اسٹاک میں تبدیلی نہیں ہوگی۔",
+  wip_count_today_explanation: "آج کی حقیقی گنتی درج کریں۔ منظور شدہ تبدیلی فوراً لاگو ہوگی؛ دیگر منظوری کے لیے جائیں گی۔",
+  wip_count_system_qty: "سسٹم کے جوڑے",
+  wip_count_physical_qty: "گنے ہوئے جوڑے",
+  wip_count_variance: "فرق",
+  wip_count_selective_note: "اس شعبے میں پہلے کام ہونے والے آرٹیکلز خودکار طور پر آتے ہیں۔ ہر ایک کی گنی ہوئی مقدار درج کریں؛ موجود نہ ہونے پر صفر لکھیں۔",
+  wip_count_empty_department: "اس شعبے میں ابھی کسی آرٹیکل پر کام نہیں ہوا۔",
+  wip_count_load_failed: "شعبے کے آرٹیکلز لوڈ نہیں ہو سکے۔ کنکشن چیک کرکے دوبارہ کوشش کریں۔",
+  wip_count_fill_all_quantities: "ہر آرٹیکل کے لیے مکمل عدد میں گنی ہوئی مقدار درج کریں۔ صفر درست ہے۔",
+  wip_count_too_many_articles: "اس شعبے میں 500 سے زیادہ آرٹیکلز ہیں۔ گنتی سے پہلے منتظم سے رابطہ کریں۔",
+  wip_count_today_only: "شعبے کے زیرِ تکمیل مال کی گنتی آج کی تاریخ پر ہونی چاہیے۔",
+  wip_count_use_reason_mode: "شعبے کی مقدار گننے کے لیے وجہ میں شعبے کے زیرِ تکمیل مال کی حقیقی گنتی منتخب کریں۔",
+  wip_count_immutable: "زیرِ التوا یا درج شدہ شعبے کی گنتی تبدیل یا حذف نہیں ہو سکتی۔ درستگی کے لیے نئی گنتی بنائیں۔",
+  wip_count_submitted: "تبدیلی منتظم کی منظوری کے لیے جمع کر دی گئی ہے۔",
+  wip_count_posted: "ڈیپارٹمنٹ کی گنتی کامیابی سے درج ہو گئی۔",
+  wip_count_invalid_department: "درست پیداواری شعبہ منتخب کریں۔",
+  wip_count_invalid_voucher: "ڈیپارٹمنٹ گنتی واؤچر درست نہیں ہے۔",
+  wip_count_lines_required: "کم از کم ایک آرٹیکل شامل کریں۔",
+  wip_count_invalid_input: "شعبہ، وجہ، تفصیل اور گنے ہوئے آرٹیکلز درج کریں۔",
+  wip_count_invalid_line: "گنتی میں آرٹیکل یا مقدار درست نہیں ہے۔",
+  wip_count_stale_balance: "گنتی کھولنے کے بعد شعبے کی مقدار بدل گئی ہے۔ دوبارہ تازہ کرکے گنتی درج کریں۔",
+  wip_count_missing_cost: "اس آرٹیکل کی زیرِ تکمیل لاگت موجود نہیں ہے۔ گنتی میں شامل کرنے سے پہلے اس کی پہلی پیداوار درج کریں۔",
+  wip_count_no_variance: "کم از کم ایک گنی ہوئی مقدار سسٹم کی مقدار سے مختلف درج کریں۔",
 });
 
 module.exports.translations = translations;

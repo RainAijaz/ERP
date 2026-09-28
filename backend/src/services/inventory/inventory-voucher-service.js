@@ -11,6 +11,13 @@ const {
 } = require("../../utils/voucher-approval-policy");
 const { syncVoucherGlPostingTx } = require("../financial/gl-posting-service");
 const {
+  loadDepartmentWipCountDepartments,
+  isDepartmentWipCountReasonTx,
+  loadDepartmentWipCountDetails,
+  createDepartmentWipCount,
+  applyDepartmentWipCountTx,
+} = require("../production/department-wip-count-service");
+const {
   resolveNegativeStockRoutingTx,
 } = require("./negative-stock-approval");
 const {
@@ -1854,6 +1861,7 @@ const validatePayloadTx = async ({ trx, payload }) => {
 };
 
 const getNextVoucherNoTx = async (trx, branchId, voucherTypeCode) => {
+  await trx.raw("SELECT pg_advisory_xact_lock(hashtext(?), ?::integer)", [voucherTypeCode, branchId]);
   const latest = await trx("erp.voucher_header")
     .where({ branch_id: branchId, voucher_type_code: voucherTypeCode })
     .max({ value: "voucher_no" })
@@ -2216,6 +2224,10 @@ const applyInventoryVoucherDeletePayloadTx = async ({
 }) => {
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) throw new HttpError(400, "Invalid voucher id");
+  if (String(voucherTypeCode || "").toUpperCase() === INVENTORY_VOUCHER_TYPES.stockCountAdjustment &&
+    await trx("erp.wip_count_header").where({ voucher_id: normalizedVoucherId }).first()) {
+    throw new HttpError(400, "wip_count_immutable");
+  }
 
   const existing = await trx("erp.voucher_header")
     .select("id", "status")
@@ -3009,6 +3021,9 @@ const validateStockCountAdjustmentPayloadTx = async ({
     reasonCodeId: payload?.reason_code_id,
     reasonNotes: payload?.reason_notes || payload?.notes,
   });
+  if (String(selectedReason?.code || "").toUpperCase() === "DEPT_WIP_COUNT") {
+    throw new HttpError(400, "wip_count_use_reason_mode");
+  }
   const usePhysicalCountField = PHYSICAL_COUNT_REASON_CODES.has(
     normalizeReasonCode(selectedReason?.code),
   );
@@ -3949,6 +3964,9 @@ const createStockCountAdjustmentVoucher = async ({
 }) => {
   if (!req?.user?.id) throw new HttpError(401, "Not authenticated");
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
+  if (await isDepartmentWipCountReasonTx(knex, payload?.reason_code_id)) {
+    return createDepartmentWipCount({ req, payload });
+  }
 
   const canCreate = canDo(req, "VOUCHER", scopeKey, "create");
   const canApprove = canApproveVoucherAction(req, scopeKey);
@@ -4087,6 +4105,9 @@ const updateStockCountAdjustmentVoucher = async ({
 
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) throw new HttpError(400, "Invalid voucher id");
+  if (await knex("erp.wip_count_header").where({ voucher_id: normalizedVoucherId }).first()) {
+    throw new HttpError(400, "wip_count_immutable");
+  }
 
   const canEdit = canDo(req, "VOUCHER", scopeKey, "edit");
   const canApprove = canApproveVoucherAction(req, scopeKey);
@@ -4323,6 +4344,9 @@ const deleteStockCountAdjustmentVoucher = async ({
 
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) throw new HttpError(400, "Invalid voucher id");
+  if (await knex("erp.wip_count_header").where({ voucher_id: normalizedVoucherId }).first()) {
+    throw new HttpError(400, "wip_count_immutable");
+  }
 
   const canDelete = canDo(req, "VOUCHER", scopeKey, "hard_delete");
   const canApprove = canApproveVoucherAction(req, scopeKey);
@@ -4597,7 +4621,7 @@ const loadStockCountGroupArticles = async ({
 const loadStockCountAdjustmentVoucherOptions = async (req) => {
   const baseOptions = await loadOpeningStockVoucherOptions(req);
 
-  const [reasonCodes, skuSnapshots, rmSnapshots, hasRmVariantDimensions] =
+  const [reasonCodes, skuSnapshots, rmSnapshots, hasRmVariantDimensions, wipDepartments] =
     await Promise.all([
       loadReasonCodesForVoucherTypeTx({
         trx: knex,
@@ -4614,6 +4638,7 @@ const loadStockCountAdjustmentVoucherOptions = async (req) => {
         itemIds: (baseOptions.rmItems || []).map((entry) => entry.id),
       }),
       hasStockBalanceRmVariantDimensionsTx(knex),
+      loadDepartmentWipCountDepartments(req),
     ]);
 
   const rmSnapshotByKey = {};
@@ -4630,6 +4655,7 @@ const loadStockCountAdjustmentVoucherOptions = async (req) => {
   return {
     ...baseOptions,
     reasonCodes,
+    wipDepartments,
     skus: (baseOptions.skus || []).map((entry) => {
       const snapshot = skuSnapshots.get(Number(entry.id)) || {
         qty_pairs: 0,
@@ -4689,6 +4715,19 @@ const loadStockCountAdjustmentVoucherDetails = async ({
     })
     .first();
   if (!header) return null;
+
+  const wipCount = await loadDepartmentWipCountDetails({ req, voucherId: header.id });
+  if (wipCount) {
+    return {
+      ...header,
+      stock_type: null,
+      reason_code_id: wipCount.reason_code_id,
+      reason_notes: wipCount.reason_notes,
+      dept_id: wipCount.dept_id,
+      is_wip_count: true,
+      lines: wipCount.lines,
+    };
+  }
 
   const lines = await knex("erp.voucher_line as vl")
     .leftJoin("erp.stock_count_line as scl", "scl.voucher_line_id", "vl.id")
@@ -4997,6 +5036,14 @@ const ensureInventoryVoucherDerivedDataTx = async ({
   if (
     normalizedVoucherTypeCode === INVENTORY_VOUCHER_TYPES.stockCountAdjustment
   ) {
+    const wipCount = await trx("erp.wip_count_header")
+      .select("voucher_id")
+      .where({ voucher_id: Number(voucherId) })
+      .first();
+    if (wipCount) {
+      await applyDepartmentWipCountTx({ trx, voucherId: Number(voucherId) });
+      return;
+    }
     await syncStockCountAdjustmentVoucherTx({
       trx,
       voucherId,
@@ -5019,6 +5066,9 @@ const applyInventoryVoucherUpdatePayloadTx = async ({
   if (
     normalizedVoucherTypeCode === INVENTORY_VOUCHER_TYPES.stockCountAdjustment
   ) {
+    const wipCount = await trx("erp.wip_count_header")
+      .where({ voucher_id: Number(voucherId) }).first();
+    if (wipCount) throw new HttpError(400, "wip_count_immutable");
     const existingHeader = await trx("erp.stock_count_header")
       .select("item_type_scope", "reason_code_id", "notes")
       .where({ voucher_id: Number(voucherId) })
