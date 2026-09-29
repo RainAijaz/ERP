@@ -108,6 +108,7 @@ const {
 } = require("../../services/hr-payroll/labour-rates-service");
 const bomService = require("../../services/bom/service");
 const bomCopyService = require("../../services/bom/copy-service");
+const { buildVersionChangeSummary } = require("../../services/bom/version-change-summary-service");
 
 const router = express.Router();
 
@@ -1740,6 +1741,7 @@ const buildPreviewPayload = async (req, res, request, side) => {
 
     let bomSnapshot = null;
     let bomComparison = null;
+    let bomVersionSummary = null;
     if (bomAction === "approve_draft" && payload.snapshot) {
       bomSnapshot = await bomCopyService.hydrateBomSnapshotForPreview(
         knex,
@@ -1748,6 +1750,14 @@ const buildPreviewPayload = async (req, res, request, side) => {
       );
       bomComparison = bomId
         ? await bomCopyService.buildCopyComparison(knex, { bomId, locale })
+        : null;
+      bomVersionSummary = bomId
+        ? await buildVersionChangeSummary(knex, {
+            bomId,
+            snapshot: payload.snapshot,
+            t: res.locals.t,
+            locale,
+          })
         : null;
     }
 
@@ -1759,6 +1769,8 @@ const buildPreviewPayload = async (req, res, request, side) => {
       bomAction,
       bomSnapshot,
       bomComparison,
+      bomVersionSummary,
+      bomId,
     };
   }
 

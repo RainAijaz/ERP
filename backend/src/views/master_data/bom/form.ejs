@@ -56,6 +56,10 @@
   #bom-sfg { order: 30; }
   #bom-rm { order: 40; }
   #bom-labour { order: 50; }
+  @media (max-width: 639px) {
+    #bom-labour [data-bom-rate-table-wrap] { overflow-x: auto; }
+    #bom-labour [data-bom-rate-table] { min-width: 520px; }
+  }
   #bom-form [data-bom-save-wrap] { order: 60; }
 </style>
 
@@ -1123,6 +1127,7 @@
     };
     const departmentRateHost = document.querySelector("[data-bom-department-rates]");
     const departmentRateDirty = new Set();
+    let departmentRateOpenDeptId = "";
     let departmentRateLoadVersion = 0;
     let rateSubmitResuming = false;
     const departmentRateKey = (deptId, skuId) => `${deptId}:${skuId}`;
@@ -1150,12 +1155,17 @@
         departmentRateHost.innerHTML = `<p class="text-sm text-slate-500"><%= t("bom_no_sku_available") %></p>`;
         return;
       }
-      departmentRateHost.innerHTML = deptIds.map((deptId) => {
+      if (!deptIds.includes(departmentRateOpenDeptId)) departmentRateOpenDeptId = deptIds[0];
+      const tabs = deptIds.map((deptId) => {
+        const active = deptId === departmentRateOpenDeptId;
         const deptName = departmentNameById.get(String(deptId)) || deptId;
-        const rows = skuRows.map((sku) => {
-          const rate = findDepartmentRate(deptId, sku.id) || {};
+        return `<button type="button" role="tab" aria-selected="${active ? "true" : "false"}" data-bom-rate-dept-tab="${esc(deptId)}" class="inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] transition ${active ? "border-slate-800 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}">${esc(deptName)}</button>`;
+      }).join("");
+      const deptName = departmentNameById.get(String(departmentRateOpenDeptId)) || departmentRateOpenDeptId;
+      const rows = skuRows.map((sku) => {
+          const rate = findDepartmentRate(departmentRateOpenDeptId, sku.id) || {};
           const rateType = String(rate.rate_type || "PER_PAIR").toUpperCase();
-          return `<tr class="border-b border-slate-100" data-bom-rate-row data-dept-id="${esc(deptId)}" data-sku-id="${esc(sku.id)}">
+          return `<tr class="border-b border-slate-100" data-bom-rate-row data-dept-id="${esc(departmentRateOpenDeptId)}" data-sku-id="${esc(sku.id)}">
             <td class="px-3 py-2 text-slate-700">${esc(sku.sku_code || sku.id)}</td>
             <td class="px-3 py-2"><select data-bom-rate-type data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}>
               <option value="PER_PAIR" ${rateType === "PER_PAIR" ? "selected" : ""}>${esc(rateTypeLabel.PER_PAIR)}</option>
@@ -1166,18 +1176,11 @@
             </td>
           </tr>`;
         }).join("");
-        return `<div class="rounded-xl border border-slate-200 p-3" data-bom-rate-dept="${esc(deptId)}">
-          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h3 class="text-sm font-semibold text-slate-700">${esc(deptName)}</h3>
-          </div>
-          ${editable ? `<div class="mb-3 grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-            <select data-bom-all-rate-type data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="PER_PAIR">${esc(rateTypeLabel.PER_PAIR)}</option><option value="PER_DOZEN">${esc(rateTypeLabel.PER_DOZEN)}</option></select>
-            <input data-bom-all-rate-value type="number" min="0" max="99999999.99" step="0.01" data-no-stepper="true" placeholder="<%= t("bom_labour_all_skus_rate") %>" aria-label="<%= t("bom_labour_all_skus_rate") %>" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-            <button type="button" data-bom-apply-all-rate class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:border-slate-400"><%= t("bom_labour_apply_all_skus") %></button>
-          </div>` : ""}
-          <div class="overflow-x-auto" data-searchable-boundary><table class="min-w-full text-sm"><thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500"><tr><th class="px-3 py-2 text-left"><%= t("sku") %></th><th class="px-3 py-2 text-left"><%= t("rate_type") %></th><th class="px-3 py-2 text-left"><%= t("bom_labour_col_rate") %></th></tr></thead><tbody>${rows}</tbody></table></div>
+      departmentRateHost.innerHTML = `<div class="flex flex-wrap items-center gap-2" role="tablist" aria-label="<%= t("bom_tab_labour") %>">${tabs}</div>
+        <div class="rounded-xl border border-slate-200 p-3" data-bom-rate-dept="${esc(departmentRateOpenDeptId)}">
+          <h3 class="mb-3 text-sm font-semibold text-slate-700">${esc(deptName)}</h3>
+          <div data-bom-rate-table-wrap data-searchable-boundary><table data-bom-rate-table class="w-full table-fixed text-sm"><thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500"><tr><th class="px-3 py-2 text-left" style="width:38%"><%= t("sku") %></th><th class="px-3 py-2 text-left" style="width:38%"><%= t("rate_type") %></th><th class="px-3 py-2 text-left" style="width:24%"><%= t("bom_labour_col_rate") %></th></tr></thead><tbody>${rows}</tbody></table></div>
         </div>`;
-      }).join("");
       if (typeof window.initSearchableSelects === "function") window.initSearchableSelects(departmentRateHost);
     };
     const loadDepartmentRatesForItem = async () => {
@@ -1211,20 +1214,30 @@
       setDepartmentRate(row.dataset.deptId, row.dataset.skuId, { rate_type: select.value });
     });
     departmentRateHost?.addEventListener("click", (event) => {
-      const button = event.target.closest("[data-bom-apply-all-rate]");
-      const card = button?.closest("[data-bom-rate-dept]");
-      if (!card) return;
-      const value = String(card.querySelector("[data-bom-all-rate-value]")?.value || "").trim();
-      if (value === "" || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 99999999.99) {
-        showErrorModal("<%= t("error_invalid_rate_value") %>");
-        return;
-      }
-      const rateType = card.querySelector("[data-bom-all-rate-type]")?.value || "PER_PAIR";
-      getHeaderSkuOptions().forEach((sku) => setDepartmentRate(card.dataset.bomRateDept, sku.id, {
-        rate_type: rateType,
-        rate_value: value,
-      }));
+      const tab = event.target.closest("[data-bom-rate-dept-tab]");
+      if (!tab) return;
+      departmentRateOpenDeptId = String(tab.dataset.bomRateDeptTab || "");
       renderDepartmentRates();
+    });
+    departmentRateHost?.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      const input = event.target;
+      if (!(input instanceof HTMLInputElement) || !input.matches("[data-bom-rate-value]")) return;
+      const row = input.closest("[data-bom-rate-row]");
+      const rows = Array.from(departmentRateHost.querySelectorAll("[data-bom-rate-row]"));
+      const index = rows.indexOf(row);
+      if (index < 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      for (let nextIndex = index + step; nextIndex >= 0 && nextIndex < rows.length; nextIndex += step) {
+        const next = rows[nextIndex].querySelector("[data-bom-rate-value]");
+        if (next instanceof HTMLInputElement && !next.disabled && !next.readOnly) {
+          next.focus();
+          next.select();
+          return;
+        }
+      }
     });
     headerItemSelect?.addEventListener("change", () => { void loadDepartmentRatesForItem(); });
     const findHeaderSkuById = (skuId) =>

@@ -2081,6 +2081,7 @@
         event.preventDefault();
         const key = String(header.dataset.groupKey || "").trim();
         if (!key) return;
+        if (header.dataset.groupToggling === "true") return;
         const isOpen = header.dataset.groupOpen === "true";
         const iconWrap = header.querySelector("[data-labour-group-icon-wrap]");
 
@@ -2135,15 +2136,14 @@
           }
         }
 
-        if (iconWrap && !isOpen) {
-          iconWrap.innerHTML = spinnerHtml;
-        }
+        header.dataset.groupToggling = "true";
+        if (iconWrap) iconWrap.innerHTML = spinnerHtml;
         window.setTimeout(() => {
           if (isOpen) labourGroupOpenKeys.delete(key);
           else labourGroupOpenKeys.add(key);
           applyLabourRatesGrouping(labourGroupVisibleRows);
           if (isCommissions) applyCommissionSubGrouping();
-        }, 0);
+        }, 80);
       });
     }
 

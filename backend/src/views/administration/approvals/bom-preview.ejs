@@ -5,6 +5,8 @@
   };
   const snapshot = (typeof bomSnapshot !== "undefined" && bomSnapshot) || null;
   const comparison = (typeof bomComparison !== "undefined" && bomComparison) || null;
+  const versionSummary = (typeof bomVersionSummary !== "undefined" && bomVersionSummary) || null;
+  const openBomId = typeof bomId !== "undefined" ? Number(bomId) : 0;
   const action = typeof bomAction !== "undefined" ? String(bomAction || "") : "";
 
   const originChip = (origin) => {
@@ -41,11 +43,40 @@
   };
 %>
 
-<% if (!snapshot) { %>
+<% if (openBomId) { %>
+  <a href="/master-data/bom/<%= openBomId %>" target="_blank" rel="noopener" class="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900" data-bom-open-link><%= t("bom_summary_open_bom") %></a>
+<% } %>
+
+<% if (versionSummary) { %>
+  <section class="rounded-xl border border-slate-200 bg-white" data-bom-version-summary>
+    <div class="border-b border-slate-200 px-4 py-3">
+      <div class="text-sm font-semibold text-slate-800"><%= t("bom_summary_title") %></div>
+      <p class="mt-1 text-xs text-slate-500"><%= t("bom_summary_intro") %> <%= versionSummary.previous.bom_no %> (V<%= versionSummary.previous.version_no %>) → <%= versionSummary.current.bom_no %> (V<%= versionSummary.current.version_no %>)</p>
+      <p class="mt-1 text-xs text-slate-500"><%= t("bom_summary_labour_rates_note") %></p>
+    </div>
+    <% if (versionSummary.changes.length) { %>
+      <div class="divide-y divide-slate-100">
+        <% versionSummary.changes.forEach(function (change) { %>
+          <div class="px-4 py-3" data-bom-change-row>
+            <p class="text-sm font-medium text-slate-800"><%= change.text %></p>
+            <div class="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+              <div class="rounded-lg bg-slate-50 px-3 py-2"><span class="block font-semibold uppercase tracking-wide text-slate-500"><%= t("before") %></span><span class="mt-1 block break-words text-slate-700" data-bom-change-before><%= change.before %></span></div>
+              <div class="rounded-lg bg-slate-50 px-3 py-2"><span class="block font-semibold uppercase tracking-wide text-slate-500"><%= t("after") %></span><span class="mt-1 block break-words text-slate-700" data-bom-change-after><%= change.after %></span></div>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+    <% } else { %>
+      <p class="px-4 py-3 text-sm text-slate-600"><%= t("bom_summary_no_changes") %></p>
+    <% } %>
+  </section>
+<% } %>
+
+<% if (!versionSummary && !snapshot) { %>
   <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
     <span class="font-semibold"><%= resolveText("action", "Action") %>:</span> <%= actionLabel(action) %>
   </div>
-<% } else { %>
+<% } else if (!versionSummary) { %>
   <% if (comparison?.source) { %>
     <div class="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
       <span class="font-semibold"><%= resolveText("bom_copied_from_badge", "Copied from") %>:</span>
