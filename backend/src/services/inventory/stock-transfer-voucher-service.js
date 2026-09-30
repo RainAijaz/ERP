@@ -35,6 +35,9 @@ const {
   resolveWipUnitCost,
   rollbackWipLedgerBySourceVoucherTx,
 } = require("../production/wip-pool");
+const {
+  resolveWipTransferStageTx,
+} = require("./wip-transfer-stage-service");
 
 const STOCK_TRANSFER_VOUCHER_TYPES = {
   out: "STN_OUT",
@@ -47,6 +50,7 @@ const TRANSFER_REASON_VALUES = ["REBALANCING", "DEMAND", "RETURN", "OTHER"];
 
 let approvalRequestHasVoucherTypeCodeColumn;
 let stockTransferOutHasWipColumns;
+let stockTransferOutHasNextStageColumns;
 let stockBalanceRmTableSupport;
 let stockBalanceSkuTableSupport;
 let stockLedgerTableSupport;
@@ -319,6 +323,19 @@ const hasStockTransferOutWipColumnsTx = async (trx) => {
   ]);
   stockTransferOutHasWipColumns = Boolean(hasFlag && hasStage);
   return stockTransferOutHasWipColumns;
+};
+
+const hasStockTransferOutNextStageColumnsTx = async (trx) => {
+  if (typeof stockTransferOutHasNextStageColumns === "boolean") {
+    return stockTransferOutHasNextStageColumns;
+  }
+  const columns = await Promise.all([
+    "next_stage_id",
+    "stage_dispute",
+    "stage_dispute_reason",
+  ].map((name) => hasColumnTx(trx, "erp", "stock_transfer_out_header", name)));
+  stockTransferOutHasNextStageColumns = columns.every(Boolean);
+  return stockTransferOutHasNextStageColumns;
 };
 
 const hasStockTransferOutStockTypeColumnTx = async (trx) => {
@@ -1364,6 +1381,7 @@ const fetchSkuMapTx = async ({
       "s.sku_code",
       "v.sale_rate",
       "i.name as item_name",
+      "i.id as item_id",
       "i.item_type",
       "i.base_uom_id",
       "u.code as base_uom_code",
@@ -2129,10 +2147,9 @@ const validateTransferOutPayloadTx = async ({
   });
 
   if (isWipTransfer) {
-    const stage = await resolveProductionStageTx({
-      trx,
-      stageId: payload?.stage_id,
-    });
+    if (!(await hasStockTransferOutNextStageColumnsTx(trx))) {
+      throw new HttpError(503, "WIP next-stage migration is required");
+    }
     const wipSkuIds = [
       ...new Set(
         rawLines.map((line) => toPositiveInt(line?.sku_id)).filter(Boolean),
@@ -2147,6 +2164,22 @@ const validateTransferOutPayloadTx = async ({
     const missingWipSku = wipSkuIds.find((id) => !wipSkuMap.has(Number(id)));
     if (missingWipSku)
       throw new HttpError(400, "Invalid item in voucher lines");
+
+    const stageSelection = await resolveWipTransferStageTx({
+      trx,
+      skuMap: wipSkuMap,
+      nextStageId: payload?.next_stage_id,
+      disputed: payload?.stage_dispute === true ||
+        String(payload?.stage_dispute || "").toLowerCase() === "true" ||
+        String(payload?.stage_dispute || "") === "1",
+      sourceStageId: payload?.stage_id,
+      disputeReason: payload?.stage_dispute_reason,
+      t: req?.res?.locals?.t,
+    });
+    const [stage, nextStage] = await Promise.all([
+      resolveProductionStageTx({ trx, stageId: stageSelection.sourceStageId }),
+      resolveProductionStageTx({ trx, stageId: stageSelection.nextStageId }),
+    ]);
 
     const wipUnitOptionsByBase = await loadUnitOptionsByBaseUomIdTx({
       trx,
@@ -2182,6 +2215,10 @@ const validateTransferOutPayloadTx = async ({
       stageId: stage.stageId,
       stageName: stage.stageName,
       stageDeptId: stage.deptId,
+      nextStageId: nextStage.stageId,
+      nextStageName: nextStage.stageName,
+      stageDispute: stageSelection.stageDispute,
+      stageDisputeReason: stageSelection.stageDisputeReason,
     };
   }
 
@@ -2555,6 +2592,49 @@ const stampTransferInShortfallsTx = async ({ trx, branchId, lines = [] }) => {
   return lines;
 };
 
+const previewWipTransferSourceStage = async ({
+  req,
+  nextStageId,
+  skuIds,
+  stockType,
+}) => {
+  try {
+    if (!req?.branchId) throw new HttpError(400, "Branch context is required");
+    const t = req?.res?.locals?.t;
+    const normalizedStockType = normalizeStockType(stockType);
+    if (normalizedStockType !== "FG" && normalizedStockType !== "SFG") {
+      throw new HttpError(400, t?.("wip_stock_type_invalid") || "Work-in-process requires FG or SFG");
+    }
+    const ids = [...new Set((skuIds || []).map(toPositiveInt).filter(Boolean))];
+    if (!ids.length || ids.length > 100) {
+      throw new HttpError(400, t?.("wip_preview_item_count") || "Select between 1 and 100 items");
+    }
+    const skuMap = await fetchSkuMapTx({
+      trx: knex,
+      skuIds: ids,
+      expectedStockType: normalizedStockType,
+    });
+    if (skuMap.size !== ids.length) {
+      throw new HttpError(400, t?.("wip_preview_item_invalid") || "Invalid item in voucher lines");
+    }
+    const selection = await resolveWipTransferStageTx({
+      trx: knex,
+      skuMap,
+      nextStageId,
+      disputed: false,
+      t,
+    });
+    const stage = await resolveProductionStageTx({
+      trx: knex,
+      stageId: selection.sourceStageId,
+    });
+    return { id: stage.stageId, name: stage.stageName, deptId: stage.deptId };
+  } catch (err) {
+    console.error("Error in WipTransferSourcePreviewService:", err);
+    throw err;
+  }
+};
+
 const validateTransferInPayloadTx = async ({
   trx,
   req,
@@ -2864,6 +2944,9 @@ const upsertStockTransferOutHeaderTx = async ({
   billBookNo,
   isWipTransfer = false,
   stageId = null,
+  nextStageId = null,
+  stageDispute = false,
+  stageDisputeReason = null,
 }) => {
   const payload = {
     voucher_id: Number(voucherId),
@@ -2898,6 +2981,14 @@ const upsertStockTransferOutHeaderTx = async ({
     payload.is_wip_transfer = isWipTransfer === true;
     payload.stage_id = isWipTransfer === true ? Number(stageId) || null : null;
     mergeColumns.push("is_wip_transfer", "stage_id");
+  }
+  if (await hasStockTransferOutNextStageColumnsTx(trx)) {
+    payload.next_stage_id = isWipTransfer ? Number(nextStageId) || null : null;
+    payload.stage_dispute = isWipTransfer && stageDispute === true;
+    payload.stage_dispute_reason = payload.stage_dispute
+      ? String(stageDisputeReason || "").trim()
+      : null;
+    mergeColumns.push("next_stage_id", "stage_dispute", "stage_dispute_reason");
   }
 
   try {
@@ -3851,6 +3942,9 @@ const toApprovalPayload = ({
   stock_type: validated.stockType || null,
   is_wip_transfer: validated.isWipTransfer === true,
   stage_id: validated.stageId || null,
+  next_stage_id: validated.nextStageId || null,
+  stage_dispute: validated.stageDispute === true,
+  stage_dispute_reason: validated.stageDisputeReason || null,
   destination_branch_id: validated.destinationBranchId || null,
   transfer_ref_no: validated.transferRefNo || null,
   transfer_reason: validated.transferReason || null,
@@ -4007,6 +4101,9 @@ const createStockTransferVoucher = async ({
         billBookNo: validated.billBookNo,
         isWipTransfer: validated.isWipTransfer === true,
         stageId: validated.stageId || null,
+        nextStageId: validated.nextStageId || null,
+        stageDispute: validated.stageDispute === true,
+        stageDisputeReason: validated.stageDisputeReason || null,
       });
     } else {
       await upsertGrnInHeaderTx({
@@ -4255,6 +4352,9 @@ const updateStockTransferVoucher = async ({
         billBookNo: validated.billBookNo,
         isWipTransfer: validated.isWipTransfer === true,
         stageId: validated.stageId || null,
+        nextStageId: validated.nextStageId || null,
+        stageDispute: validated.stageDispute === true,
+        stageDisputeReason: validated.stageDisputeReason || null,
       });
     } else {
       await upsertGrnInHeaderTx({
@@ -4506,6 +4606,8 @@ const loadPendingTransferInReferencesTx = async ({
   const hasTransferRef = await hasStockTransferOutTransferRefColumnTx(trx);
   const hasStockType = await hasStockTransferOutStockTypeColumnTx(trx);
   const hasBillBookNo = await hasStockTransferOutBillBookNoColumnTx(trx);
+  const hasWipColumns = await hasStockTransferOutWipColumnsTx(trx);
+  const hasNextStageColumns = await hasStockTransferOutNextStageColumnsTx(trx);
 
   const rows = await trx("erp.stock_transfer_out_header as sth")
     .join("erp.voucher_header as vh", "vh.id", "sth.voucher_id")
@@ -4534,6 +4636,12 @@ const loadPendingTransferInReferencesTx = async ({
       hasBillBookNo
         ? knex.raw("sth.bill_book_no as bill_book_no")
         : knex.raw("vh.book_no as bill_book_no"),
+      hasWipColumns
+        ? "sth.is_wip_transfer"
+        : knex.raw("false as is_wip_transfer"),
+      hasNextStageColumns
+        ? knex.raw("(select name from erp.production_stages where id = sth.next_stage_id) as next_stage_name")
+        : knex.raw("NULL::text as next_stage_name"),
     )
     .where({
       "vh.voucher_type_code": STOCK_TRANSFER_VOUCHER_TYPES.out,
@@ -4599,6 +4707,8 @@ const loadPendingTransferInReferencesTx = async ({
         stn_out_voucher_id: Number(row.voucher_id),
         transfer_ref_no: transferRefNo,
         stock_type: stockType,
+        is_wip_transfer: row.is_wip_transfer === true,
+        next_stage_name: String(row.next_stage_name || ""),
         source_branch_id: Number(row.source_branch_id),
         source_branch_name: row.source_branch_name || "",
         destination_branch_id: Number(row.dest_branch_id),
@@ -5026,6 +5136,7 @@ const loadStockTransferVoucherDetails = async ({
       await hasStockTransferOutTransporterNameColumnTx(knex);
     const hasBillBookNo = await hasStockTransferOutBillBookNoColumnTx(knex);
     const hasWipColumns = await hasStockTransferOutWipColumnsTx(knex);
+    const hasNextStageColumns = await hasStockTransferOutNextStageColumnsTx(knex);
     const ext = await knex("erp.stock_transfer_out_header as sth")
       .leftJoin("erp.branches as db", "db.id", "sth.dest_branch_id")
       .select(
@@ -5052,6 +5163,18 @@ const loadStockTransferVoucherDetails = async ({
         hasWipColumns
           ? "sth.stage_id"
           : knex.raw("NULL::bigint as stage_id"),
+        hasNextStageColumns
+          ? "sth.next_stage_id"
+          : knex.raw("NULL::bigint as next_stage_id"),
+        hasNextStageColumns
+          ? "sth.stage_dispute"
+          : knex.raw("false as stage_dispute"),
+        hasNextStageColumns
+          ? "sth.stage_dispute_reason"
+          : knex.raw("NULL::text as stage_dispute_reason"),
+        hasNextStageColumns
+          ? knex.raw("(select name from erp.production_stages where id = sth.next_stage_id) as next_stage_name")
+          : knex.raw("NULL::text as next_stage_name"),
       )
       .where({ "sth.voucher_id": header.id })
       .first();
@@ -5093,6 +5216,10 @@ const loadStockTransferVoucherDetails = async ({
       bill_book_no: normalizeText(ext?.bill_book_no, 120) || null,
       is_wip_transfer: ext?.is_wip_transfer === true,
       stage_id: toPositiveInt(ext?.stage_id),
+      next_stage_id: toPositiveInt(ext?.next_stage_id),
+      next_stage_name: String(ext?.next_stage_name || ""),
+      stage_dispute: ext?.stage_dispute === true,
+      stage_dispute_reason: String(ext?.stage_dispute_reason || ""),
       remarks: header.remarks || "",
       lines,
     };
@@ -5103,6 +5230,8 @@ const loadStockTransferVoucherDetails = async ({
   const hasTransferRef = await hasStockTransferOutTransferRefColumnTx(knex);
   const hasStockType = await hasStockTransferOutStockTypeColumnTx(knex);
   const hasBillBookNo = await hasStockTransferOutBillBookNoColumnTx(knex);
+  const hasWipColumns = await hasStockTransferOutWipColumnsTx(knex);
+  const hasNextStageColumns = await hasStockTransferOutNextStageColumnsTx(knex);
   const ext = await knex("erp.grn_in_header as gih")
     .join(
       "erp.stock_transfer_out_header as sth",
@@ -5138,6 +5267,12 @@ const loadStockTransferVoucherDetails = async ({
       hasBillBookNo
         ? knex.raw("sth.bill_book_no as bill_book_no")
         : knex.raw("stn.book_no as bill_book_no"),
+      hasWipColumns
+        ? "sth.is_wip_transfer"
+        : knex.raw("false as is_wip_transfer"),
+      hasNextStageColumns
+        ? knex.raw("(select name from erp.production_stages where id = sth.next_stage_id) as next_stage_name")
+        : knex.raw("NULL::text as next_stage_name"),
       hasReceivedBy
         ? "gih.received_by_user_id"
         : knex.raw("NULL::bigint as received_by_user_id"),
@@ -5175,6 +5310,8 @@ const loadStockTransferVoucherDetails = async ({
       normalizeStockType(ext?.stock_type) ||
       normalizeStockType(lines.find((line) => line.stock_type)?.stock_type) ||
       "FG",
+    is_wip_transfer: ext?.is_wip_transfer === true,
+    next_stage_name: String(ext?.next_stage_name || ""),
     transfer_ref_no:
       normalizeText(ext?.transfer_ref_no, 120) ||
       normalizeText(header.book_no, 120) ||
@@ -5298,6 +5435,9 @@ const applyStockTransferVoucherUpdatePayloadTx = async ({
       billBookNo: validated.billBookNo,
       isWipTransfer: validated.isWipTransfer === true,
       stageId: validated.stageId || null,
+      nextStageId: validated.nextStageId || null,
+      stageDispute: validated.stageDispute === true,
+      stageDisputeReason: validated.stageDisputeReason || null,
     });
   } else {
     await upsertGrnInHeaderTx({
@@ -5327,6 +5467,7 @@ module.exports = {
   updateStockTransferVoucher,
   deleteStockTransferVoucher,
   loadStockTransferVoucherOptions,
+  previewWipTransferSourceStage,
   loadRecentStockTransferVouchers,
   getStockTransferVoucherSeriesStats,
   getStockTransferVoucherNeighbours,

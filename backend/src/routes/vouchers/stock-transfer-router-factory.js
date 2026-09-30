@@ -9,6 +9,7 @@ const {
   updateStockTransferVoucher,
   deleteStockTransferVoucher,
   loadStockTransferVoucherOptions,
+  previewWipTransferSourceStage,
   loadRecentStockTransferVouchers,
   getStockTransferVoucherSeriesStats,
   getStockTransferVoucherNeighbours,
@@ -130,6 +131,8 @@ const createStockTransferVoucherRouter = ({
             transfer_ref_no: selectedVoucher.transfer_ref_no || "",
             bill_book_no: selectedVoucher.bill_book_no || "",
             stock_type: selectedVoucher.stock_type || "FG",
+            is_wip_transfer: selectedVoucher.is_wip_transfer === true,
+            next_stage_name: selectedVoucher.next_stage_name || "",
             source_branch_id:
               Number(selectedVoucher.source_branch_id || 0) || null,
             source_branch_name: selectedVoucher.source_branch_name || "",
@@ -193,6 +196,31 @@ const createStockTransferVoucherRouter = ({
   );
 
   router.get(
+    "/wip-stage-preview",
+    requirePermission("VOUCHER", scopeKey, "view"),
+    async (req, res) => {
+      try {
+        const stage = await previewWipTransferSourceStage({
+          req,
+          nextStageId: req.query?.next_stage_id,
+          skuIds: String(req.query?.sku_ids || "").split(","),
+          stockType: req.query?.stock_type,
+        });
+        res.set("Cache-Control", "no-store");
+        return res.json({ stage });
+      } catch (err) {
+        console.error("Error in WipTransferSourcePreviewService:", err);
+        const status = Number(err?.status);
+        return res.status(status >= 400 && status < 500 ? status : 500).json({
+          error: status >= 400 && status < 500
+            ? String(err.message || res.locals.t("generic_error"))
+            : res.locals.t("generic_error"),
+        });
+      }
+    },
+  );
+
+  router.get(
     "/gate-pass",
     requirePermission("VOUCHER", scopeKey, "print"),
     async (req, res, next) => {
@@ -241,6 +269,9 @@ const createStockTransferVoucherRouter = ({
           // transfer with no error anywhere.
           is_wip_transfer: req.body?.is_wip_transfer,
           stage_id: req.body?.stage_id,
+          next_stage_id: req.body?.next_stage_id,
+          stage_dispute: req.body?.stage_dispute,
+          stage_dispute_reason: req.body?.stage_dispute_reason,
           destination_branch_id: req.body?.destination_branch_id,
           transfer_ref_no: req.body?.transfer_ref_no,
           bill_book_no: req.body?.bill_book_no,

@@ -186,16 +186,41 @@
               <span><%= toFriendlyLabel('transfer_stage_output', 'Send part-finished pairs to another branch') %></span>
             </label>
           </div>
-          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3" data-wip-stage-label><%= toFriendlyLabel('production_stage', 'Production Stage') %></label>
-          <div class="lg:col-span-4 transition" data-wip-stage-wrap>
-            <select name="stage_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400" data-wip-stage <%= !canSaveVoucher ? 'disabled' : '' %>>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3" data-wip-next-stage-label><%= toFriendlyLabel('next_stage', 'Next Stage') %></label>
+          <div class="lg:col-span-4 transition">
+            <select name="next_stage_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400" data-wip-next-stage data-searchable-select="true" data-searchable-variant="unified" <%= !canSaveVoucher ? 'disabled' : '' %>>
+              <option value=""><%= toFriendlyLabel('select_stage', 'Select Stage') %></option>
+              <% (options.productionStages || []).forEach((stage) => { %>
+                <option value="<%= stage.id %>" <%= Number(selectedVoucher?.next_stage_id || 0) === Number(stage.id) ? 'selected' : '' %>><%= stage.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center" data-wip-source-row hidden>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel('current_stage', 'Current Stage') %></label>
+          <div class="lg:col-span-4">
+            <select name="stage_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400" data-wip-stage data-searchable-select="true" data-searchable-variant="unified" disabled>
               <option value=""><%= toFriendlyLabel('select_stage', 'Select Stage') %></option>
               <% (options.productionStages || []).forEach((stage) => { %>
                 <option value="<%= stage.id %>" data-dept-id="<%= stage.dept_id %>" <%= Number(selectedVoucher?.stage_id || 0) === Number(stage.id) ? 'selected' : '' %>><%= stage.name %></option>
               <% }) %>
             </select>
           </div>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel('stage_dispute', 'Dispute') %></label>
+          <div class="lg:col-span-4">
+            <label class="flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-snug text-slate-700">
+              <input type="checkbox" name="stage_dispute" value="true" class="h-4 w-4 shrink-0" data-wip-stage-dispute <%= selectedVoucher?.stage_dispute ? 'checked' : '' %> <%= !canSaveVoucher ? 'disabled' : '' %>>
+              <span><%= toFriendlyLabel('stage_dispute_override', 'Current stage differs') %></span>
+            </label>
+          </div>
         </div>
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center" data-wip-dispute-reason-row hidden>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel('stage_dispute_reason', 'Dispute Reason') %></label>
+          <div class="lg:col-span-10">
+            <input type="text" name="stage_dispute_reason" value="<%= selectedVoucher?.stage_dispute_reason || '' %>" maxlength="500" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-wip-dispute-reason <%= canSaveVoucher ? '' : 'readonly' %>>
+          </div>
+        </div>
+        <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800" data-wip-source-error hidden></div>
         <% } %>
 
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
@@ -213,6 +238,10 @@
                     <path d="M15.5 15.5l2-2a3 3 0 0 0-4.24-4.24l-1.06 1.06" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
                   </svg>
                 </button>
+              </div>
+              <div class="mt-1 flex flex-wrap items-center gap-2 text-xs" data-selected-transfer-type <%= selectedVoucher?.stn_out_voucher_id ? '' : 'hidden' %>>
+                <span class="rounded-full border px-2 py-0.5 font-semibold <%= selectedVoucher?.is_wip_transfer ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-slate-200 bg-slate-100 text-slate-700' %>" data-selected-transfer-badge><%= selectedVoucher?.is_wip_transfer ? toFriendlyLabel('wip_transfer_short', 'WIP') : toFriendlyLabel('regular_stock', 'Stock') %></span>
+                <span class="text-slate-600" data-selected-transfer-stage <%= selectedVoucher?.is_wip_transfer && selectedVoucher?.next_stage_name ? '' : 'hidden' %>><%= selectedVoucher?.is_wip_transfer && selectedVoucher?.next_stage_name ? `${toFriendlyLabel('next_stage', 'Next Stage')}: ${selectedVoucher.next_stage_name}` : '' %></span>
               </div>
             <% } %>
           </div>
@@ -285,7 +314,7 @@
         <% } %>
       </div>
 
-      <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800" data-wip-stage-hint hidden><%= toFriendlyLabel('wip_select_stage_first', 'Select a production stage first — available pairs are counted at that stage.') %></div>
+      <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800" data-wip-stage-hint hidden><%= toFriendlyLabel('wip_select_next_stage_first', 'Select the next stage first.') %></div>
       <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
           <table class="w-full min-w-[1160px] text-xs" data-lines-table>
@@ -339,6 +368,7 @@
                     <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel('transfer_ref_no', 'Transfer Ref No') %></th>
                     <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel('bill_book_no', 'Bill Book No') %></th>
                     <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel('stock_type', 'Stock Type') %></th>
+                    <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel('transfer_type', 'Transfer Type') %></th>
                     <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel('date', 'Date') %></th>
                     <th class="border-b border-slate-200 px-2 py-2 text-center"><%= toFriendlyLabel('select', 'Select') %></th>
                   </tr>
@@ -388,6 +418,9 @@
     const destinationBranchSelect = form.querySelector('[data-destination-branch]');
     const sourceBranchSelect = form.querySelector('[data-source-branch-select]');
     const transferRefTextInput = form.querySelector('[data-transfer-ref-text]');
+    const selectedTransferType = form.querySelector('[data-selected-transfer-type]');
+    const selectedTransferBadge = form.querySelector('[data-selected-transfer-badge]');
+    const selectedTransferStage = form.querySelector('[data-selected-transfer-stage]');
     const openStiTransferPickerButton = form.querySelector('[data-open-sti-transfer-picker]');
     const stiTransferPickerModal = document.querySelector('[data-sti-transfer-picker-modal]');
     const stiTransferPickerBody = stiTransferPickerModal?.querySelector('[data-sti-transfer-picker-body]');
@@ -459,6 +492,9 @@
     const deleteButtonTitle = <%- JSON.stringify(toFriendlyLabel('delete', 'Delete')) %>;
     const selectBranchMessage = <%- JSON.stringify(toFriendlyLabel('select_source_branch_first', 'Select source branch first.')) %>;
     const noPendingTransfersMessage = <%- JSON.stringify(toFriendlyLabel('no_pending_transfer_vouchers', 'No pending transfer vouchers found for selected source branch.')) %>;
+    const wipTransferLabel = <%- JSON.stringify(toFriendlyLabel('wip_transfer_short', 'WIP')) %>;
+    const regularStockLabel = <%- JSON.stringify(toFriendlyLabel('regular_stock', 'Stock')) %>;
+    const nextStageLabel = <%- JSON.stringify(toFriendlyLabel('next_stage', 'Next Stage')) %>;
 
     const stockMapKey = (itemId, colorId = null, sizeId = null) =>
       `${Number(itemId || 0)}|${Number(colorId || 0)}|${Number(sizeId || 0)}`;
@@ -653,6 +689,9 @@
       }
       if (mode === 'out') {
         push(stockTypeSelect);
+        push(wipNextStageSelect);
+        push(wipStageSelect);
+        push(wipDisputeReason);
         push(billBookNoInput);
         push(destinationBranchSelect);
         push(transferReasonSelect);
@@ -714,10 +753,16 @@
     // FG/SFG dispatch, so the stock type select is left exactly as it was.
     const wipRow = form.querySelector('[data-wip-row]');
     const wipToggle = form.querySelector('[data-wip-toggle]');
+    const wipNextStageSelect = form.querySelector('[data-wip-next-stage]');
     const wipStageSelect = form.querySelector('[data-wip-stage]');
-    const wipStageLabel = form.querySelector('[data-wip-stage-label]');
-    const wipStageWrap = form.querySelector('[data-wip-stage-wrap]');
+    const wipSourceRow = form.querySelector('[data-wip-source-row]');
+    const wipStageDispute = form.querySelector('[data-wip-stage-dispute]');
+    const wipDisputeReasonRow = form.querySelector('[data-wip-dispute-reason-row]');
+    const wipDisputeReason = form.querySelector('[data-wip-dispute-reason]');
     const wipStageHint = form.querySelector('[data-wip-stage-hint]');
+    const wipSourceError = form.querySelector('[data-wip-source-error]');
+    let sourcePreviewRequest = 0;
+    let navigatorReady = false;
     const wipPoolMap = new Map(
       (Array.isArray(options.wipPool) ? options.wipPool : []).map((row) => [
         `${Number(row.dept_id || 0)}:${Number(row.sku_id || 0)}`,
@@ -730,27 +775,74 @@
       Number(wipStageSelect?.selectedOptions?.[0]?.getAttribute('data-dept-id') || 0);
     const wipAvailablePairs = (skuId) =>
       Number(wipPoolMap.get(`${selectedStageDeptId()}:${Number(skuId || 0)}`) || 0);
-    // Availability is counted per stage, so a WIP dispatch with no stage picked reads as
-    // "nothing in stock" on every row. Gate the item picker until the stage is chosen.
-    const wipStageMissing = () => isWipActive() && !Number(wipStageSelect?.value || 0);
+    const wipStageMissing = () => isWipActive() && !Number(wipNextStageSelect?.value || 0);
+    const syncWipSourceStage = async () => {
+      const requestId = ++sourcePreviewRequest;
+      if (!canSave || !wipStageSelect || wipStageDispute?.checked) return;
+      if (wipSourceError) wipSourceError.hidden = true;
+      const nextStageId = Number(wipNextStageSelect?.value || 0);
+      const skuIds = [...new Set(outRows.map((row) => Number(row.sku_id || 0)).filter(Boolean))];
+      wipStageSelect.value = '';
+      if (!isWipActive() || !nextStageId || !skuIds.length) {
+        if (navigatorReady) {
+          outRows = outRows.map((row) => applyOutDerived(row));
+          renderRows();
+        }
+        return;
+      }
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+      try {
+        const query = new URLSearchParams({
+          next_stage_id: String(nextStageId),
+          sku_ids: skuIds.join(','),
+          stock_type: activeStockType,
+        });
+        const response = await fetch(`${basePath}/wip-stage-preview?${query}`, {
+          headers: { Accept: 'application/json' },
+          signal: controller.signal,
+        });
+        const result = await response.json();
+        if (requestId !== sourcePreviewRequest) return;
+        if (!response.ok || !Number(result?.stage?.id || 0)) {
+          throw new Error(String(result?.error || <%- JSON.stringify(toFriendlyLabel('wip_current_stage_required', 'Current stage could not be determined. Check the item and next stage.')) %>));
+        }
+        wipStageSelect.value = String(result.stage.id);
+      } catch (err) {
+        if (requestId !== sourcePreviewRequest) return;
+        wipStageSelect.value = '';
+        if (wipSourceError) {
+          wipSourceError.textContent = err?.name === 'AbortError'
+            ? <%- JSON.stringify(toFriendlyLabel('wip_stage_preview_timeout', 'Stage lookup timed out. Try again.')) %>
+            : String(err?.message || <%- JSON.stringify(toFriendlyLabel('generic_error', 'Something went wrong.')) %>);
+          wipSourceError.hidden = false;
+        }
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+      if (navigatorReady) {
+        outRows = outRows.map((row) => applyOutDerived(row));
+        renderRows();
+      }
+    };
     const syncWipVisibility = () => {
       if (!wipRow) return;
       const eligible = activeStockType === 'FG' || activeStockType === 'SFG';
       wipRow.hidden = !eligible;
       if (!eligible && wipToggle) wipToggle.checked = false;
       const on = isWipActive();
-      // The stage keeps its slot in the grid whether or not it applies. That half of the row
-      // is empty anyway, so ticking the box fills it instead of pushing the form down a line.
-      if (wipStageWrap) wipStageWrap.classList.toggle('opacity-60', !on);
-      if (wipStageLabel) {
-        // text-slate-700 outranks text-slate-400 in the built sheet, so swap, do not just add.
-        wipStageLabel.classList.toggle('text-slate-700', on);
-        wipStageLabel.classList.toggle('text-slate-400', !on);
+      if (wipSourceRow) wipSourceRow.hidden = !on;
+      if (wipDisputeReasonRow) wipDisputeReasonRow.hidden = !on || !wipStageDispute?.checked;
+      if (wipNextStageSelect) {
+        wipNextStageSelect.disabled = !on || !canSave;
+        wipNextStageSelect.required = on;
       }
       if (wipStageSelect) {
-        wipStageSelect.disabled = !on || !canSave;
-        wipStageSelect.required = on;
+        wipStageSelect.disabled = !on || !canSave || !wipStageDispute?.checked;
+        wipStageSelect.required = on && !!wipStageDispute?.checked;
       }
+      if (wipStageDispute) wipStageDispute.disabled = !on || !canSave;
+      if (wipDisputeReason) wipDisputeReason.required = on && !!wipStageDispute?.checked;
       if (wipStageHint) wipStageHint.hidden = !wipStageMissing();
     };
 
@@ -1284,7 +1376,9 @@
       if (key === 'uom_id') {
         next.uom_id = toInt(value);
       }
-      outRows[rowIndex] = applyOutDerived(next);
+      outRows[rowIndex] = next;
+      if (key === 'sku_id') syncWipSourceStage();
+      outRows = outRows.map((entry) => applyOutDerived(entry));
       renderRows();
       restoreActiveRowField(focusState);
     };
@@ -1310,6 +1404,7 @@
     const clearInTransferSelection = () => {
       if (stnOutIdInput) stnOutIdInput.value = '';
       if (transferRefTextInput) transferRefTextInput.value = '';
+      if (selectedTransferType) selectedTransferType.hidden = true;
       if (billBookNoInput) billBookNoInput.value = '';
       if (stockTypeSelect) stockTypeSelect.value = '';
       if (destinationBranchNameInput) destinationBranchNameInput.value = '';
@@ -1329,6 +1424,16 @@
       if (stnOutIdInput) stnOutIdInput.value = String(stnOutId);
       if (transferRefTextInput) {
         transferRefTextInput.value = String(transfer.transfer_ref_no || '').trim();
+      }
+      if (selectedTransferType && selectedTransferBadge && selectedTransferStage) {
+        const isWipTransfer = transfer.is_wip_transfer === true;
+        selectedTransferType.hidden = false;
+        selectedTransferBadge.textContent = isWipTransfer ? wipTransferLabel : regularStockLabel;
+        selectedTransferBadge.className = `rounded-full border px-2 py-0.5 font-semibold ${isWipTransfer ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-slate-200 bg-slate-100 text-slate-700'}`;
+        selectedTransferStage.textContent = isWipTransfer && transfer.next_stage_name
+          ? `${nextStageLabel}: ${String(transfer.next_stage_name)}`
+          : '';
+        selectedTransferStage.hidden = !selectedTransferStage.textContent;
       }
       if (syncDate && voucherDateInput) {
         const dispatchDate = normalizeDateInputValue(transfer.dispatch_date || transfer.voucher_date || '');
@@ -1399,7 +1504,7 @@
       if (!rows.length) {
         stiTransferPickerBody.innerHTML = `
           <tr>
-            <td colspan="5" class="px-2 py-6 text-center text-sm text-slate-500">${escapeHtml(noPendingTransfersMessage)}</td>
+            <td colspan="6" class="px-2 py-6 text-center text-sm text-slate-500">${escapeHtml(noPendingTransfersMessage)}</td>
           </tr>
         `;
         stiTransferPickerSelectedId = null;
@@ -1417,6 +1522,10 @@
             <td class="border-t border-slate-200 px-2 py-2 text-left text-slate-700">${escapeHtml(String(entry.transfer_ref_no || ''))}</td>
             <td class="border-t border-slate-200 px-2 py-2 text-left text-slate-700">${escapeHtml(String(entry.bill_book_no || '-'))}</td>
             <td class="border-t border-slate-200 px-2 py-2 text-left text-slate-700">${escapeHtml(String(entry.stock_type || '-'))}</td>
+            <td class="border-t border-slate-200 px-2 py-2 text-left">
+              <span class="inline-block rounded-full border px-2 py-0.5 font-semibold ${entry.is_wip_transfer === true ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-slate-200 bg-slate-100 text-slate-700'}">${escapeHtml(entry.is_wip_transfer === true ? wipTransferLabel : regularStockLabel)}</span>
+              ${entry.is_wip_transfer === true && entry.next_stage_name ? `<span class="mt-1 block text-slate-600">${escapeHtml(nextStageLabel)}: ${escapeHtml(String(entry.next_stage_name))}</span>` : ''}
+            </td>
             <td class="border-t border-slate-200 px-2 py-2 text-left text-slate-700">${escapeHtml(formatDateDisplay(entry.dispatch_date))}</td>
             <td class="border-t border-slate-200 px-2 py-2 text-center">
               <input type="radio" name="sti_transfer_picker_row" class="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent" value="${stnOutId}" ${checked}>
@@ -1520,6 +1629,8 @@
       if (rowIndex < 0) return;
       outRows.splice(rowIndex, 1);
       ensureOutRows();
+      syncWipSourceStage();
+      outRows = outRows.map((row) => applyOutDerived(row));
       renderRows();
     });
 
@@ -1560,6 +1671,7 @@
     if (wipToggle) {
       wipToggle.addEventListener('change', () => {
         syncWipVisibility();
+        syncWipSourceStage();
         // Available quantity and unit come from a different source in each mode, so the rows
         // are re-derived rather than carried across.
         outRows = outRows.map((row) => applyOutDerived({ ...defaultOutRow(), transfer_qty: row.transfer_qty }));
@@ -1567,8 +1679,32 @@
       });
     }
 
+    if (wipNextStageSelect) {
+      wipNextStageSelect.addEventListener('change', () => {
+        syncWipSourceStage();
+        syncWipVisibility();
+        outRows = outRows.map((row) => applyOutDerived(row));
+        renderRows();
+      });
+    }
+
+    if (wipStageDispute) {
+      wipStageDispute.addEventListener('change', () => {
+        if (wipStageDispute.checked) {
+          sourcePreviewRequest += 1;
+          if (wipSourceError) wipSourceError.hidden = true;
+        } else {
+          syncWipSourceStage();
+        }
+        syncWipVisibility();
+        outRows = outRows.map((row) => applyOutDerived(row));
+        renderRows();
+      });
+    }
+
     if (wipStageSelect) {
       wipStageSelect.addEventListener('change', () => {
+        if (wipStageDispute?.checked && wipSourceError) wipSourceError.hidden = true;
         // The hint and the item picker both key off the stage, so re-sync before redrawing.
         syncWipVisibility();
         outRows = outRows.map((row) => applyOutDerived(row));
@@ -1693,6 +1829,20 @@
 
     const validateBeforeSubmit = () => {
       if (mode === 'out') {
+        if (isWipActive()) {
+          if (!wipNextStageSelect?.value) {
+            window.alert(<%- JSON.stringify(toFriendlyLabel('wip_select_next_stage_first', 'Select the next stage first.')) %>);
+            return false;
+          }
+          if (!wipStageSelect?.value) {
+            window.alert(<%- JSON.stringify(toFriendlyLabel('wip_current_stage_required', 'Current stage could not be determined. Check the item and next stage.')) %>);
+            return false;
+          }
+          if (wipStageDispute?.checked && !wipDisputeReason?.value.trim()) {
+            window.alert(<%- JSON.stringify(toFriendlyLabel('wip_dispute_reason_required', 'Enter a reason for the disputed stage.')) %>);
+            return false;
+          }
+        }
         if (!destinationBranchSelect?.value) {
           window.alert(<%- JSON.stringify(toFriendlyLabel('destination_branch_required', 'Destination branch is required.')) %>);
           return false;
@@ -1782,6 +1932,8 @@
       } else {
         outRows = [applyOutDerived(defaultOutRow())];
       }
+      syncWipSourceStage();
+      outRows = outRows.map((row) => applyOutDerived(row));
       if (transferRefTextInput && !transferRefTextInput.value.trim()) {
         const sourceBranchId = Number(options?.sourceBranch?.id || 0) || Number(<%- JSON.stringify(branchId || 0) %>) || 0;
         const voucherNo = Number(voucherNoInput?.value || 0) || '';
@@ -1837,6 +1989,7 @@
       }
     };
 
+    navigatorReady = true;
     renderRows();
   })();
 </script>
