@@ -1941,19 +1941,20 @@
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(String(result.error || <%- JSON.stringify(toFriendlyLabel('generic_error', 'Something went wrong.')) %>));
         if (result.needsSelection) {
-          const warning = <%- JSON.stringify(toFriendlyLabel('wip_stage_mismatch_warning', 'The BOM expects the current stage to be')) %>
-            + ' ' + String(result.expectedStage?.name || '') + String.fromCharCode(10)
-            + <%- JSON.stringify(toFriendlyLabel('wip_stage_mismatch_question', 'The requested WIP is available at another valid stage. Enter its actual current stage?')) %>;
-          if (window.confirm(warning)) {
-            sourcePreviewRequest += 1;
-            sourceOverrideOpen = true;
-            showSourceStageOptions((result.alternatives || []).map((stage) => stage.id));
-            if (wipStageSelect) wipStageSelect.value = '';
-            syncWipVisibility();
-            outRows = outRows.map((row) => applyOutDerived(row));
-            renderRows();
-            focusControl(wipStageSelect, { openSearchable: true });
+          sourcePreviewRequest += 1;
+          sourceOverrideOpen = true;
+          showSourceStageOptions((result.alternatives || []).map((stage) => stage.id));
+          if (wipStageSelect) wipStageSelect.value = '';
+          syncWipVisibility();
+          if (wipSourceError) {
+            wipSourceError.textContent = <%- JSON.stringify(toFriendlyLabel('wip_stage_mismatch_warning', 'BOM expected current stage:')) %>
+              + ' ' + String(result.expectedStage?.name || '') + '. '
+              + <%- JSON.stringify(toFriendlyLabel('wip_choose_current_stage', 'Select the actual Current Stage to deduct WIP from the correct production department.')) %>;
+            wipSourceError.hidden = false;
           }
+          outRows = outRows.map((row) => applyOutDerived(row));
+          renderRows();
+          focusControl(wipStageSelect, { openSearchable: true });
           return;
         }
         if (sourceOverrideOpen && Number(result.stage?.id || 0) !== Number(wipStageSelect?.value || 0)) {

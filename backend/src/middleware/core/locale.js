@@ -5451,9 +5451,8 @@ Object.assign(translations.en, {
   wip_preview_item_count: "Select between 1 and 100 items.",
   wip_preview_item_invalid: "Invalid item in voucher lines.",
   wip_stage_preview_timeout: "Stage lookup timed out. Try again.",
-  wip_stage_mismatch_warning: "The BOM expects the current stage to be",
-  wip_stage_mismatch_question: "The requested WIP is available at another valid stage. Enter its actual current stage?",
-  wip_choose_current_stage: "Choose the current stage shown by the stock check before saving.",
+  wip_stage_mismatch_warning: "BOM expected current stage:",
+  wip_choose_current_stage: "Select the actual Current Stage to deduct WIP from the correct production department.",
   wip_source_check_timeout: "Stock check timed out. Try again.",
 });
 
@@ -5481,8 +5480,7 @@ Object.assign(translations.ur, {
   wip_preview_item_count: "ایک سے سو تک اشیا منتخب کریں۔",
   wip_preview_item_invalid: "واؤچر کی سطروں میں غلط آئٹم ہے۔",
   wip_stage_preview_timeout: "مرحلہ تلاش کرنے میں وقت ختم ہو گیا۔ دوبارہ کوشش کریں۔",
-  wip_stage_mismatch_warning: "BOM کے مطابق موجودہ مرحلہ یہ ہونا چاہیے:",
-  wip_stage_mismatch_question: "مطلوبہ زیرِ تکمیل اسٹاک ایک دوسرے درست مرحلے میں موجود ہے۔ کیا اصل موجودہ مرحلہ درج کریں؟",
-  wip_choose_current_stage: "محفوظ کرنے سے پہلے اسٹاک چیک میں دکھایا گیا موجودہ مرحلہ منتخب کریں۔",
+  wip_stage_mismatch_warning: "BOM کے مطابق متوقع موجودہ مرحلہ:",
+  wip_choose_current_stage: "درست پیداواری شعبے کے WIP اسٹاک سے کمی کرنے کے لیے اصل موجودہ مرحلہ منتخب کریں۔",
   wip_source_check_timeout: "اسٹاک چیک کا وقت ختم ہو گیا۔ دوبارہ کوشش کریں۔",
 });

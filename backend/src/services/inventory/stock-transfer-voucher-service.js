@@ -2178,7 +2178,7 @@ const validateTransferOutPayloadTx = async ({
       skuMap: wipSkuMap,
     });
     if (assessment.needsSelection) {
-      throw new HttpError(409, req?.res?.locals?.t?.("wip_choose_current_stage") || "Choose the current stage shown by the stock check before saving.");
+      throw new HttpError(409, req?.res?.locals?.t?.("wip_choose_current_stage") || "Select the actual Current Stage to deduct WIP from the correct production department.");
     }
     const stage = assessment.stage;
     const nextStage = await resolveProductionStageTx({
@@ -2621,27 +2621,26 @@ const assessWipTransferSourceStageTx = async ({
   const hasStockAt = (stage) => [...requiredBySku].every(([skuId, required]) =>
     Number(availableBySkuDept.get(skuId + ":" + stage.deptId) || 0) >= required,
   );
-  if (hasStockAt(expectedStage)) {
-    return { stage: expectedStage, expectedStage, overridden: false, needsSelection: false, unitOptionsByBase };
-  }
   const commonStages = await loadCommonWipSourceStagesTx({ trx, skuMap, nextStageId });
-  const alternatives = [];
+  const availableStages = [];
   for (const candidate of commonStages) {
-    if (candidate.stage_id === expectedStage.stageId) continue;
     const stage = await resolveProductionStageTx({ trx, stageId: candidate.stage_id });
-    if (stage.deptId === expectedStage.deptId) continue;
-    if (hasStockAt(stage)) alternatives.push(stage);
+    if (hasStockAt(stage)) availableStages.push(stage);
   }
-  if (!alternatives.length) {
+  if (!availableStages.length) {
     await validateWipTransferLinesTx({
       trx, req, rawLines, skuMap, unitOptionsByBase, stage: expectedStage,
     });
     throw new HttpError(400, req?.res?.locals?.t?.("wip_current_stage_unresolved") || "WIP source stage is unavailable");
   }
-  const chosen = alternatives.find((stage) => stage.stageId === toPositiveInt(sourceStageId));
+  const chosen = availableStages.find((stage) => stage.stageId === toPositiveInt(sourceStageId));
+  const autoStage = availableStages.length === 1 && availableStages[0].stageId === expectedStage.stageId
+    ? expectedStage : null;
+  const stage = chosen || autoStage;
   return {
-    stage: chosen || null, expectedStage, alternatives,
-    overridden: Boolean(chosen), needsSelection: !chosen, unitOptionsByBase,
+    stage, expectedStage, alternatives: availableStages,
+    overridden: Boolean(stage && stage.stageId !== expectedStage.stageId),
+    needsSelection: !stage, unitOptionsByBase,
   };
 };
 
