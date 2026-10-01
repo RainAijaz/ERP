@@ -19,6 +19,7 @@
             <% allowedNotifyPayees.forEach((entry) => { %>
               <label class="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50">
                 <input type="checkbox" name="notify_payee_kinds" value="<%= entry.kind %>"
+                       <%= !selectedVoucher && entry.kind === 'SUPPLIER' ? 'checked' : '' %>
                        class="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-green-600 focus:ring-green-500">
                 <span class="min-w-0">
                   <span class="block text-sm font-semibold text-slate-700"><%= t(entry.labelKey) %></span>

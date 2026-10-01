@@ -842,10 +842,9 @@ const createFinancialVoucherRouter = ({
       const voucherDate = String(req.body?.voucher_date || "").trim();
       const remarks = String(req.body?.remarks || "").trim();
       const lines = toLines(req.body);
-      // Opt-in WhatsApp payee notification, default OFF — it must be ticked per
-      // voucher. A hidden marker field is always submitted so an unchecked
-      // checkbox (which sends nothing) is distinguishable from an older form that
-      // lacks the control entirely; both now mean "do not notify".
+      // New cash/journal forms preselect suppliers. The submitted checkboxes
+      // remain authoritative, so users can opt out or select other allowed kinds.
+      // The hidden marker lets an entirely unchecked form mean "do not notify".
       const notifyPayeeKinds = parseNotifyPayeeKinds(req, res);
       const notifyPayees = notifyPayeeKinds.length > 0;
       if (!voucherDate) {
