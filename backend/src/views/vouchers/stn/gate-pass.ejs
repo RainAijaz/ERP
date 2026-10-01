@@ -29,9 +29,6 @@
           ...(isWipTransfer && voucher?.next_stage_id
             ? [{ labelKey: "next_stage", value: voucher?.next_stage_name || "-" }]
             : []),
-          ...(isWipTransfer && voucher?.stage_dispute
-            ? [{ labelKey: "stage_dispute_reason", value: voucher?.stage_dispute_reason || "-", full: true }]
-            : []),
           { labelKey: "created_by", value: voucher?.created_by_name || "-" },
           { labelKey: "approved_by", value: voucher?.approved_by_name || "-" },
           { labelKey: "remarks", value: voucher?.remarks || "-", full: true },

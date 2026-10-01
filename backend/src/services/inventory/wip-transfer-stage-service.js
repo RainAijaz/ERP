@@ -82,6 +82,25 @@ const sourceStagesForNextStage = (routes, nextStageId) => {
   return predecessors.slice(Math.max(0, gateIndex)).reverse();
 };
 
+const loadCommonWipSourceStagesTx = async ({ trx, skuMap, nextStageId }) => {
+  const routesByItem = await loadApprovedWipRoutesByItemTx({
+    trx,
+    itemIds: [...skuMap.values()].map((sku) => sku.item_id),
+  });
+  let common = null;
+  for (const sku of skuMap.values()) {
+    const candidates = sourceStagesForNextStage(
+      routesByItem.get(positiveId(sku.item_id)) || [],
+      nextStageId,
+    );
+    if (!candidates.length) return [];
+    common = common === null
+      ? candidates
+      : common.filter((stage) => candidates.some((candidate) => candidate.stage_id === stage.stage_id));
+  }
+  return common || [];
+};
+
 const resolveWipTransferStageTx = async ({
   trx,
   skuMap,
@@ -188,5 +207,6 @@ const resolveWipTransferStageTx = async ({
 module.exports = {
   loadApprovedWipRoutesByItemTx,
   sourceStagesForNextStage,
+  loadCommonWipSourceStagesTx,
   resolveWipTransferStageTx,
 };

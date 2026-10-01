@@ -10,6 +10,7 @@ const {
   deleteStockTransferVoucher,
   loadStockTransferVoucherOptions,
   previewWipTransferSourceStage,
+  checkWipTransferSourceStage,
   loadRecentStockTransferVouchers,
   getStockTransferVoucherSeriesStats,
   getStockTransferVoucherNeighbours,
@@ -220,6 +221,32 @@ const createStockTransferVoucherRouter = ({
     },
   );
 
+  router.post(
+    "/wip-stage-check",
+    requirePermission("VOUCHER", scopeKey, "view"),
+    async (req, res) => {
+      try {
+        const result = await checkWipTransferSourceStage({
+          req,
+          nextStageId: req.body?.next_stage_id,
+          sourceStageId: req.body?.stage_id,
+          stockType: req.body?.stock_type,
+          rawLines: req.body?.lines,
+        });
+        res.set("Cache-Control", "no-store");
+        return res.json(result);
+      } catch (err) {
+        console.error("Error in WipTransferSourceCheckService:", err);
+        const status = Number(err?.status);
+        return res.status(status >= 400 && status < 500 ? status : 500).json({
+          error: status >= 400 && status < 500
+            ? String(err.message || res.locals.t("generic_error"))
+            : res.locals.t("generic_error"),
+        });
+      }
+    },
+  );
+
   router.get(
     "/gate-pass",
     requirePermission("VOUCHER", scopeKey, "print"),
@@ -270,8 +297,6 @@ const createStockTransferVoucherRouter = ({
           is_wip_transfer: req.body?.is_wip_transfer,
           stage_id: req.body?.stage_id,
           next_stage_id: req.body?.next_stage_id,
-          stage_dispute: req.body?.stage_dispute,
-          stage_dispute_reason: req.body?.stage_dispute_reason,
           destination_branch_id: req.body?.destination_branch_id,
           transfer_ref_no: req.body?.transfer_ref_no,
           bill_book_no: req.body?.bill_book_no,

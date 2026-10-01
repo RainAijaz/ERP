@@ -37,6 +37,7 @@ const {
 } = require("../production/wip-pool");
 const {
   resolveWipTransferStageTx,
+  loadCommonWipSourceStagesTx,
 } = require("./wip-transfer-stage-service");
 
 const STOCK_TRANSFER_VOUCHER_TYPES = {
@@ -1997,6 +1998,7 @@ const validateWipTransferLinesTx = async ({
   skuMap,
   unitOptionsByBase,
   stage,
+  skipAvailabilityCheck = false,
 }) => {
   const requiredBySku = new Map();
   const lines = rawLines.map((raw, index) => {
@@ -2058,6 +2060,8 @@ const validateWipTransferLinesTx = async ({
       },
     };
   });
+
+  if (skipAvailabilityCheck) return lines;
 
   // Hard block, per the design decision: adjustWipBalanceTx clamps at zero rather than
   // raising, so an unchecked over-dispatch would silently destroy the discrepancy.
@@ -2165,39 +2169,28 @@ const validateTransferOutPayloadTx = async ({
     if (missingWipSku)
       throw new HttpError(400, "Invalid item in voucher lines");
 
-    const stageSelection = await resolveWipTransferStageTx({
+    const assessment = await assessWipTransferSourceStageTx({
       trx,
-      skuMap: wipSkuMap,
+      req,
       nextStageId: payload?.next_stage_id,
-      disputed: payload?.stage_dispute === true ||
-        String(payload?.stage_dispute || "").toLowerCase() === "true" ||
-        String(payload?.stage_dispute || "") === "1",
       sourceStageId: payload?.stage_id,
-      disputeReason: payload?.stage_dispute_reason,
-      t: req?.res?.locals?.t,
+      rawLines,
+      skuMap: wipSkuMap,
     });
-    const [stage, nextStage] = await Promise.all([
-      resolveProductionStageTx({ trx, stageId: stageSelection.sourceStageId }),
-      resolveProductionStageTx({ trx, stageId: stageSelection.nextStageId }),
-    ]);
-
-    const wipUnitOptionsByBase = await loadUnitOptionsByBaseUomIdTx({
+    if (assessment.needsSelection) {
+      throw new HttpError(409, req?.res?.locals?.t?.("wip_choose_current_stage") || "Choose the current stage shown by the stock check before saving.");
+    }
+    const stage = assessment.stage;
+    const nextStage = await resolveProductionStageTx({
       trx,
-      baseUomIds: [
-        ...new Set(
-          [...wipSkuMap.values()]
-            .map((entry) => toPositiveInt(entry?.base_uom_id))
-            .filter(Boolean),
-        ),
-      ],
+      stageId: payload?.next_stage_id,
     });
-
     const wipLines = await validateWipTransferLinesTx({
       trx,
       req,
       rawLines,
       skuMap: wipSkuMap,
-      unitOptionsByBase: wipUnitOptionsByBase,
+      unitOptionsByBase: assessment.unitOptionsByBase,
       stage,
     });
 
@@ -2217,8 +2210,10 @@ const validateTransferOutPayloadTx = async ({
       stageDeptId: stage.deptId,
       nextStageId: nextStage.stageId,
       nextStageName: nextStage.stageName,
-      stageDispute: stageSelection.stageDispute,
-      stageDisputeReason: stageSelection.stageDisputeReason,
+      stageDispute: assessment.overridden,
+      stageDisputeReason: assessment.overridden
+        ? `BOM source: ${assessment.expectedStage.stageName}; actual source: ${stage.stageName}`
+        : null,
     };
   }
 
@@ -2590,6 +2585,97 @@ const stampTransferInShortfallsTx = async ({ trx, branchId, lines = [] }) => {
   }
 
   return lines;
+};
+
+const assessWipTransferSourceStageTx = async ({
+  trx, req, nextStageId, sourceStageId, rawLines, skuMap,
+}) => {
+  const expectedSelection = await resolveWipTransferStageTx({
+    trx, skuMap, nextStageId, disputed: false, t: req?.res?.locals?.t,
+  });
+  const expectedStage = await resolveProductionStageTx({
+    trx, stageId: expectedSelection.sourceStageId,
+  });
+  const unitOptionsByBase = await loadUnitOptionsByBaseUomIdTx({
+    trx,
+    baseUomIds: [...new Set([...skuMap.values()]
+      .map((sku) => toPositiveInt(sku.base_uom_id)).filter(Boolean))],
+  });
+  const lines = await validateWipTransferLinesTx({
+    trx, req, rawLines, skuMap, unitOptionsByBase, stage: expectedStage,
+    skipAvailabilityCheck: true,
+  });
+  const requiredBySku = new Map();
+  for (const line of lines) {
+    const skuId = Number(line.sku_id);
+    requiredBySku.set(skuId, Number(requiredBySku.get(skuId) || 0) + Number(line.meta.transfer_qty_pairs || 0));
+  }
+  const poolRows = await trx("erp.wip_dept_balance")
+    .select("sku_id", "dept_id", "qty_pairs")
+    .where({ branch_id: Number(req.branchId), stock_state: WIP_ON_HAND })
+    .whereIn("sku_id", [...requiredBySku.keys()]);
+  const availableBySkuDept = new Map(poolRows.map((row) => [
+    Number(row.sku_id) + ":" + Number(row.dept_id),
+    Number(row.qty_pairs || 0),
+  ]));
+  const hasStockAt = (stage) => [...requiredBySku].every(([skuId, required]) =>
+    Number(availableBySkuDept.get(skuId + ":" + stage.deptId) || 0) >= required,
+  );
+  if (hasStockAt(expectedStage)) {
+    return { stage: expectedStage, expectedStage, overridden: false, needsSelection: false, unitOptionsByBase };
+  }
+  const commonStages = await loadCommonWipSourceStagesTx({ trx, skuMap, nextStageId });
+  const alternatives = [];
+  for (const candidate of commonStages) {
+    if (candidate.stage_id === expectedStage.stageId) continue;
+    const stage = await resolveProductionStageTx({ trx, stageId: candidate.stage_id });
+    if (stage.deptId === expectedStage.deptId) continue;
+    if (hasStockAt(stage)) alternatives.push(stage);
+  }
+  if (!alternatives.length) {
+    await validateWipTransferLinesTx({
+      trx, req, rawLines, skuMap, unitOptionsByBase, stage: expectedStage,
+    });
+    throw new HttpError(400, req?.res?.locals?.t?.("wip_current_stage_unresolved") || "WIP source stage is unavailable");
+  }
+  const chosen = alternatives.find((stage) => stage.stageId === toPositiveInt(sourceStageId));
+  return {
+    stage: chosen || null, expectedStage, alternatives,
+    overridden: Boolean(chosen), needsSelection: !chosen, unitOptionsByBase,
+  };
+};
+
+const checkWipTransferSourceStage = async ({ req, nextStageId, sourceStageId, stockType, rawLines, trx = knex }) => {
+  try {
+    if (!req?.branchId) throw new HttpError(400, "Branch context is required");
+    const normalizedType = normalizeStockType(stockType);
+    if (normalizedType !== "FG" && normalizedType !== "SFG") {
+      throw new HttpError(400, req?.res?.locals?.t?.("wip_stock_type_invalid") || "WIP requires FG or SFG");
+    }
+    if (!Array.isArray(rawLines) || !rawLines.length || rawLines.length > 100) {
+      throw new HttpError(400, req?.res?.locals?.t?.("wip_preview_item_count") || "Select between 1 and 100 items");
+    }
+    const skuIds = [...new Set(rawLines.map((line) => toPositiveInt(line?.sku_id)).filter(Boolean))];
+    if (rawLines.some((line) => !toPositiveInt(line?.sku_id))) {
+      throw new HttpError(400, req?.res?.locals?.t?.("wip_preview_item_invalid") || "Invalid voucher item");
+    }
+    const skuMap = await fetchSkuMapTx({ trx, skuIds, expectedStockType: normalizedType });
+    if (skuMap.size !== skuIds.length) {
+      throw new HttpError(400, req?.res?.locals?.t?.("wip_preview_item_invalid") || "Invalid voucher item");
+    }
+    const assessment = await assessWipTransferSourceStageTx({
+      trx, req, nextStageId, sourceStageId, rawLines, skuMap,
+    });
+    return {
+      needsSelection: assessment.needsSelection,
+      expectedStage: { id: assessment.expectedStage.stageId, name: assessment.expectedStage.stageName },
+      stage: assessment.stage ? { id: assessment.stage.stageId, name: assessment.stage.stageName } : null,
+      alternatives: (assessment.alternatives || []).map((stage) => ({ id: stage.stageId, name: stage.stageName })),
+    };
+  } catch (err) {
+    console.error("Error in WipTransferSourceCheckService:", err);
+    throw err;
+  }
 };
 
 const previewWipTransferSourceStage = async ({
@@ -5468,6 +5554,7 @@ module.exports = {
   deleteStockTransferVoucher,
   loadStockTransferVoucherOptions,
   previewWipTransferSourceStage,
+  checkWipTransferSourceStage,
   loadRecentStockTransferVouchers,
   getStockTransferVoucherSeriesStats,
   getStockTransferVoucherNeighbours,

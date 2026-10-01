@@ -206,19 +206,6 @@
               <% }) %>
             </select>
           </div>
-          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel('stage_dispute', 'Dispute') %></label>
-          <div class="lg:col-span-4">
-            <label class="flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-snug text-slate-700">
-              <input type="checkbox" name="stage_dispute" value="true" class="h-4 w-4 shrink-0" data-wip-stage-dispute <%= selectedVoucher?.stage_dispute ? 'checked' : '' %> <%= !canSaveVoucher ? 'disabled' : '' %>>
-              <span><%= toFriendlyLabel('stage_dispute_override', 'Current stage differs') %></span>
-            </label>
-          </div>
-        </div>
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center" data-wip-dispute-reason-row hidden>
-          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel('stage_dispute_reason', 'Dispute Reason') %></label>
-          <div class="lg:col-span-10">
-            <input type="text" name="stage_dispute_reason" value="<%= selectedVoucher?.stage_dispute_reason || '' %>" maxlength="500" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-wip-dispute-reason <%= canSaveVoucher ? '' : 'readonly' %>>
-          </div>
         </div>
         <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800" data-wip-source-error hidden></div>
         <% } %>
@@ -691,7 +678,6 @@
         push(stockTypeSelect);
         push(wipNextStageSelect);
         push(wipStageSelect);
-        push(wipDisputeReason);
         push(billBookNoInput);
         push(destinationBranchSelect);
         push(transferReasonSelect);
@@ -756,12 +742,23 @@
     const wipNextStageSelect = form.querySelector('[data-wip-next-stage]');
     const wipStageSelect = form.querySelector('[data-wip-stage]');
     const wipSourceRow = form.querySelector('[data-wip-source-row]');
-    const wipStageDispute = form.querySelector('[data-wip-stage-dispute]');
-    const wipDisputeReasonRow = form.querySelector('[data-wip-dispute-reason-row]');
-    const wipDisputeReason = form.querySelector('[data-wip-dispute-reason]');
     const wipStageHint = form.querySelector('[data-wip-stage-hint]');
     const wipSourceError = form.querySelector('[data-wip-source-error]');
     let sourcePreviewRequest = 0;
+    let sourceOverrideOpen = Boolean(initialVoucher?.stage_dispute);
+    let stageCheckPending = false;
+    let skipStageCheckOnce = false;
+    const allSourceStageOptions = wipStageSelect
+      ? Array.from(wipStageSelect.options).map((option) => option.cloneNode(true))
+      : [];
+    const showSourceStageOptions = (allowedIds = null) => {
+      if (!wipStageSelect) return;
+      const allowed = allowedIds ? new Set(allowedIds.map(Number)) : null;
+      wipStageSelect.replaceChildren(...allSourceStageOptions
+        .filter((option) => !allowed || !option.value || allowed.has(Number(option.value)))
+        .map((option) => option.cloneNode(true)));
+      if (typeof window.refreshSearchableSelects === 'function') window.refreshSearchableSelects(form);
+    };
     let navigatorReady = false;
     const wipPoolMap = new Map(
       (Array.isArray(options.wipPool) ? options.wipPool : []).map((row) => [
@@ -778,7 +775,7 @@
     const wipStageMissing = () => isWipActive() && !Number(wipNextStageSelect?.value || 0);
     const syncWipSourceStage = async () => {
       const requestId = ++sourcePreviewRequest;
-      if (!canSave || !wipStageSelect || wipStageDispute?.checked) return;
+      if (!canSave || !wipStageSelect || sourceOverrideOpen) return;
       if (wipSourceError) wipSourceError.hidden = true;
       const nextStageId = Number(wipNextStageSelect?.value || 0);
       const skuIds = [...new Set(outRows.map((row) => Number(row.sku_id || 0)).filter(Boolean))];
@@ -831,18 +828,15 @@
       wipRow.hidden = !eligible;
       if (!eligible && wipToggle) wipToggle.checked = false;
       const on = isWipActive();
-      if (wipSourceRow) wipSourceRow.hidden = !on;
-      if (wipDisputeReasonRow) wipDisputeReasonRow.hidden = !on || !wipStageDispute?.checked;
+      if (wipSourceRow) wipSourceRow.hidden = !on || !sourceOverrideOpen;
       if (wipNextStageSelect) {
         wipNextStageSelect.disabled = !on || !canSave;
         wipNextStageSelect.required = on;
       }
       if (wipStageSelect) {
-        wipStageSelect.disabled = !on || !canSave || !wipStageDispute?.checked;
-        wipStageSelect.required = on && !!wipStageDispute?.checked;
+        wipStageSelect.disabled = !on || !canSave || !sourceOverrideOpen;
+        wipStageSelect.required = on && sourceOverrideOpen;
       }
-      if (wipStageDispute) wipStageDispute.disabled = !on || !canSave;
-      if (wipDisputeReason) wipDisputeReason.required = on && !!wipStageDispute?.checked;
       if (wipStageHint) wipStageHint.hidden = !wipStageMissing();
     };
 
@@ -1377,7 +1371,12 @@
         next.uom_id = toInt(value);
       }
       outRows[rowIndex] = next;
-      if (key === 'sku_id') syncWipSourceStage();
+      if (key === 'sku_id') {
+        sourceOverrideOpen = false;
+        showSourceStageOptions();
+        syncWipVisibility();
+        syncWipSourceStage();
+      }
       outRows = outRows.map((entry) => applyOutDerived(entry));
       renderRows();
       restoreActiveRowField(focusState);
@@ -1661,6 +1660,8 @@
 
     if (stockTypeSelect) {
       stockTypeSelect.addEventListener('change', () => {
+        sourceOverrideOpen = false;
+        showSourceStageOptions();
         activeStockType = normalizeStockType(stockTypeSelect.value);
         syncWipVisibility();
         outRows = outRows.map((row) => applyOutDerived({ ...defaultOutRow(), transfer_qty: row.transfer_qty }));
@@ -1670,6 +1671,8 @@
 
     if (wipToggle) {
       wipToggle.addEventListener('change', () => {
+        sourceOverrideOpen = false;
+        showSourceStageOptions();
         syncWipVisibility();
         syncWipSourceStage();
         // Available quantity and unit come from a different source in each mode, so the rows
@@ -1681,21 +1684,9 @@
 
     if (wipNextStageSelect) {
       wipNextStageSelect.addEventListener('change', () => {
+        sourceOverrideOpen = false;
+        showSourceStageOptions();
         syncWipSourceStage();
-        syncWipVisibility();
-        outRows = outRows.map((row) => applyOutDerived(row));
-        renderRows();
-      });
-    }
-
-    if (wipStageDispute) {
-      wipStageDispute.addEventListener('change', () => {
-        if (wipStageDispute.checked) {
-          sourcePreviewRequest += 1;
-          if (wipSourceError) wipSourceError.hidden = true;
-        } else {
-          syncWipSourceStage();
-        }
         syncWipVisibility();
         outRows = outRows.map((row) => applyOutDerived(row));
         renderRows();
@@ -1704,7 +1695,7 @@
 
     if (wipStageSelect) {
       wipStageSelect.addEventListener('change', () => {
-        if (wipStageDispute?.checked && wipSourceError) wipSourceError.hidden = true;
+        if (wipSourceError) wipSourceError.hidden = true;
         // The hint and the item picker both key off the stage, so re-sync before redrawing.
         syncWipVisibility();
         outRows = outRows.map((row) => applyOutDerived(row));
@@ -1834,12 +1825,8 @@
             window.alert(<%- JSON.stringify(toFriendlyLabel('wip_select_next_stage_first', 'Select the next stage first.')) %>);
             return false;
           }
-          if (!wipStageSelect?.value) {
-            window.alert(<%- JSON.stringify(toFriendlyLabel('wip_current_stage_required', 'Current stage could not be determined. Check the item and next stage.')) %>);
-            return false;
-          }
-          if (wipStageDispute?.checked && !wipDisputeReason?.value.trim()) {
-            window.alert(<%- JSON.stringify(toFriendlyLabel('wip_dispute_reason_required', 'Enter a reason for the disputed stage.')) %>);
+          if (sourceOverrideOpen && !wipStageSelect?.value) {
+            window.alert(<%- JSON.stringify(toFriendlyLabel('wip_choose_current_stage', 'Choose the current stage before saving.')) %>);
             return false;
           }
         }
@@ -1897,14 +1884,15 @@
       return true;
     };
 
-    form.addEventListener('submit', (event) => {
+    form.addEventListener('submit', async (event) => {
       if (!validateBeforeSubmit()) {
+        skipStageCheckOnce = false;
         event.preventDefault();
         return;
       }
-
+      let payloadRows;
       if (mode === 'out') {
-        const payloadRows = outRows
+        payloadRows = outRows
           .filter((row) => Number(row.transfer_qty || 0) > 0)
           .map((row) => ({
             sku_id: toInt(row.sku_id),
@@ -1914,15 +1902,77 @@
             uom_id: toInt(row.uom_id),
             transfer_qty: qty3(row.transfer_qty),
           }));
-        linesJsonInput.value = JSON.stringify(payloadRows);
       } else {
-        const payloadRows = inRows.map((row) => ({
+        payloadRows = inRows.map((row) => ({
           stn_line_id: toInt(row.stn_line_id),
           received_qty: qty3(row.received_qty),
           rejected_qty: qty3(row.rejected_qty),
           variance_reason: String(row.variance_reason || '').trim() || null,
         }));
-        linesJsonInput.value = JSON.stringify(payloadRows);
+      }
+      linesJsonInput.value = JSON.stringify(payloadRows);
+      if (mode !== 'out' || !isWipActive()) return;
+      if (skipStageCheckOnce) {
+        skipStageCheckOnce = false;
+        return;
+      }
+      event.preventDefault();
+      if (stageCheckPending) return;
+      stageCheckPending = true;
+      const submitter = event.submitter instanceof HTMLButtonElement ? event.submitter : null;
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+      try {
+        const response = await fetch(basePath + '/wip-stage-check', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'x-csrf-token': String(form.querySelector('[name="_csrf"]')?.value || ''),
+          },
+          body: JSON.stringify({
+            stock_type: activeStockType,
+            next_stage_id: wipNextStageSelect?.value,
+            stage_id: sourceOverrideOpen ? wipStageSelect?.value : null,
+            lines: payloadRows,
+          }),
+          signal: controller.signal,
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(String(result.error || <%- JSON.stringify(toFriendlyLabel('generic_error', 'Something went wrong.')) %>));
+        if (result.needsSelection) {
+          const warning = <%- JSON.stringify(toFriendlyLabel('wip_stage_mismatch_warning', 'The BOM expects the current stage to be')) %>
+            + ' ' + String(result.expectedStage?.name || '') + String.fromCharCode(10)
+            + <%- JSON.stringify(toFriendlyLabel('wip_stage_mismatch_question', 'The requested WIP is available at another valid stage. Enter its actual current stage?')) %>;
+          if (window.confirm(warning)) {
+            sourcePreviewRequest += 1;
+            sourceOverrideOpen = true;
+            showSourceStageOptions((result.alternatives || []).map((stage) => stage.id));
+            if (wipStageSelect) wipStageSelect.value = '';
+            syncWipVisibility();
+            outRows = outRows.map((row) => applyOutDerived(row));
+            renderRows();
+            focusControl(wipStageSelect, { openSearchable: true });
+          }
+          return;
+        }
+        if (sourceOverrideOpen && Number(result.stage?.id || 0) !== Number(wipStageSelect?.value || 0)) {
+          sourceOverrideOpen = false;
+          showSourceStageOptions();
+          if (wipStageSelect) wipStageSelect.value = String(result.stage?.id || '');
+          syncWipVisibility();
+        }
+        skipStageCheckOnce = true;
+        stageCheckPending = false;
+        if (submitter) form.requestSubmit(submitter);
+        else form.requestSubmit();
+      } catch (err) {
+        window.alert(err?.name === 'AbortError'
+          ? <%- JSON.stringify(toFriendlyLabel('wip_source_check_timeout', 'Stock check timed out. Try again.')) %>
+          : String(err?.message || <%- JSON.stringify(toFriendlyLabel('generic_error', 'Something went wrong.')) %>));
+      } finally {
+        window.clearTimeout(timeoutId);
+        stageCheckPending = false;
       }
     });
 
