@@ -17,7 +17,7 @@ const {
   parseVoucherNo,
   INVENTORY_VOUCHER_TYPES,
 } = require("../../services/inventory/inventory-voucher-service");
-const { loadDepartmentWipCountArticles } = require("../../services/production/department-wip-count-service");
+const { loadDepartmentWipCountArticles, loadDepartmentWipCountCandidates } = require("../../services/production/department-wip-count-service");
 
 const scopeKey = "STOCK_COUNT_ADJ";
 const voucherTypeCode = INVENTORY_VOUCHER_TYPES.stockCountAdjustment;
@@ -66,6 +66,20 @@ router.get(
       return res.json({ articles });
     } catch (err) {
       console.error("Error in DepartmentWipCountArticlesService:", err);
+      return next(err);
+    }
+  },
+);
+
+router.get(
+  "/wip-candidates",
+  requirePermission("VOUCHER", scopeKey, "view"),
+  async (req, res, next) => {
+    try {
+      const articles = await loadDepartmentWipCountCandidates({ req, deptId: req.query.dept_id });
+      return res.json({ articles });
+    } catch (err) {
+      console.error("Error in DepartmentWipCountCandidatesService:", err);
       return next(err);
     }
   },

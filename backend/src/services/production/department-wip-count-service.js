@@ -23,6 +23,12 @@ const countQty = (value) => {
   const n = Number(value);
   return Number.isSafeInteger(n) && n >= 0 && n <= 2147483647 ? n : null;
 };
+const manualUnitCost = (value) => {
+  if (value === "" || value === null || value === undefined) return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount >= 0.01 && amount <= 10000000
+    && Number(amount.toFixed(4)) === amount ? amount : null;
+};
 const recentWipUnitCostTx = async (trx, branchId, skuId, deptId) => {
   const row = await trx("erp.wip_dept_ledger")
     .select("qty_pairs", "cost_value")
@@ -90,6 +96,20 @@ const loadDepartmentWipCountArticles = async ({ req, deptId, db = knex }) => {
   return skus.map((row) => ({ ...row, system_qty: bySku.get(Number(row.sku_id)) || 0 }));
 };
 
+const loadDepartmentWipCountCandidates = async ({ req, deptId, db = knex }) => {
+  const id = positiveId(deptId);
+  const department = id && await db("erp.departments").select("id")
+    .where({ id, is_active: true, is_production: true }).first();
+  if (!department) throw new HttpError(400, "wip_count_invalid_department");
+  const locale = resolveLocale(req.locale);
+  return db("erp.skus as s")
+    .join("erp.variants as v", "v.id", "s.variant_id")
+    .join("erp.items as i", "i.id", "v.item_id")
+    .select("s.id as sku_id", "s.sku_code", localizedNameSelect("i", "article_name", locale))
+    .where({ "s.is_active": true, "v.is_active": true, "i.is_active": true })
+    .whereIn("i.item_type", ["FG", "SFG"]).orderBy("s.sku_code");
+};
+
 const applyDepartmentWipCountTx = async ({ trx, voucherId }) => {
   const header = await trx("erp.voucher_header as vh")
     .join("erp.wip_count_header as wc", "wc.voucher_id", "vh.id")
@@ -132,6 +152,7 @@ const applyDepartmentWipCountTx = async ({ trx, voucherId }) => {
     let unitCost = resolveWipUnitCost(pool);
     if (delta > 0 && !(unitCost > 0)) {
       unitCost = await recentWipUnitCostTx(trx, header.branch_id, skuId, header.dept_id);
+      if (!(unitCost > 0)) unitCost = manualUnitCost(line.meta?.manual_unit_cost);
       if (!(unitCost > 0)) throw new HttpError(400, "wip_count_missing_cost");
     }
     const cost = delta < 0
@@ -175,15 +196,23 @@ const createDepartmentWipCount = async ({ req, payload, db = knex }) => db.trans
   const validReason = await isDepartmentWipCountReasonTx(trx, reasonCodeId);
   if (!department || !validReason) throw new HttpError(400, "wip_count_invalid_input");
   const allowedSkus = await loadDepartmentWipCountArticles({ req, deptId, db: trx });
-  const allowed = new Set(allowedSkus.map((row) => Number(row.sku_id)));
+  const candidates = await loadDepartmentWipCountCandidates({ req, deptId, db: trx });
+  const allowed = new Set(candidates.map((row) => Number(row.sku_id)));
+  const automatic = new Set(allowedSkus.map((row) => Number(row.sku_id)));
+  automatic.forEach((skuId) => allowed.add(skuId));
   const seen = new Set();
   const normalized = [];
   for (const line of lines) {
     const skuId = positiveId(line?.sku_id);
     const expected = countQty(line?.system_qty);
     const counted = countQty(line?.counted_qty);
+    const suppliedCost = line?.manual_unit_cost;
+    const unitCost = manualUnitCost(suppliedCost);
     if (!skuId || !allowed.has(skuId) || seen.has(skuId) || expected === null || counted === null) {
       throw new HttpError(400, "wip_count_invalid_line");
+    }
+    if (suppliedCost !== "" && suppliedCost !== null && suppliedCost !== undefined && unitCost === null) {
+      throw new HttpError(400, "wip_count_invalid_unit_cost");
     }
     seen.add(skuId);
     const pool = await trx("erp.wip_dept_balance").select("qty_pairs", "cost_value")
@@ -195,10 +224,11 @@ const createDepartmentWipCount = async ({ req, payload, db = knex }) => db.trans
     const current = Number(pool?.qty_pairs || 0);
     if (expected !== current) throw new HttpError(409, "wip_count_stale_balance");
     if (counted > current && !(resolveWipUnitCost(pool) > 0)
-      && !(await recentWipUnitCostTx(trx, req.branchId, skuId, deptId) > 0)) {
+      && !(await recentWipUnitCostTx(trx, req.branchId, skuId, deptId) > 0) && !(unitCost > 0)) {
       throw new HttpError(400, "wip_count_missing_cost");
     }
-    normalized.push({ skuId, expected, counted, cost: Number(pool?.cost_value || 0), ledgerId: Number(latestLedger?.id || 0) });
+    normalized.push({ skuId, expected, counted, cost: Number(pool?.cost_value || 0), ledgerId: Number(latestLedger?.id || 0),
+      manualAdded: !automatic.has(skuId), manualCost: unitCost });
   }
   if (!normalized.some((line) => line.expected !== line.counted)) {
     throw new HttpError(400, "wip_count_no_variance");
@@ -221,7 +251,8 @@ const createDepartmentWipCount = async ({ req, payload, db = knex }) => db.trans
   await trx("erp.wip_count_header").insert({ voucher_id: voucherId, dept_id: deptId, reason_code_id: reasonCodeId, reason_notes: reasonNotes });
   await trx("erp.voucher_line").insert(normalized.map((line, index) => ({
     voucher_header_id: voucherId, line_no: index + 1, line_kind: "SKU", sku_id: line.skuId,
-    qty: line.counted, meta: { system_qty: line.expected, system_cost: line.cost, system_ledger_id: line.ledgerId },
+    qty: line.counted, meta: { system_qty: line.expected, system_cost: line.cost, system_ledger_id: line.ledgerId,
+      manual_added: line.manualAdded, manual_unit_cost: line.manualCost },
   })));
   if (queued) {
     await trx("erp.approval_request").insert({
@@ -229,7 +260,8 @@ const createDepartmentWipCount = async ({ req, payload, db = knex }) => db.trans
       entity_id: String(voucherId), summary: `Department WIP count (Stock Count #${voucherNo})`,
       new_value: { action: "create", voucher_type_code: TYPE, voucher_id: voucherId, wip_count: true,
         dept_id: deptId, reason_code_id: reasonCodeId, reason_notes: reasonNotes,
-        lines: normalized.map(({ skuId, expected, counted }) => ({ sku_id: skuId, system_qty: expected, counted_qty: counted })) },
+        lines: normalized.map(({ skuId, expected, counted, manualAdded, manualCost }) => ({ sku_id: skuId, system_qty: expected,
+          counted_qty: counted, manual_added: manualAdded, manual_unit_cost: manualCost })) },
       requested_by: req.user.id,
     });
   } else {
@@ -246,4 +278,5 @@ const createDepartmentWipCount = async ({ req, payload, db = knex }) => db.trans
 
 module.exports = { TYPE, REASON_CODE, loadDepartmentWipCountDepartments,
   isDepartmentWipCountReasonTx, loadDepartmentWipCountDetails,
-  loadDepartmentWipCountArticles, createDepartmentWipCount, applyDepartmentWipCountTx };
+  loadDepartmentWipCountArticles, loadDepartmentWipCountCandidates,
+  createDepartmentWipCount, applyDepartmentWipCountTx };

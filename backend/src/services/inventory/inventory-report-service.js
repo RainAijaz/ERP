@@ -3449,7 +3449,11 @@ const resolveTransferLineLabel = (row) => {
   const groupName = String(row?.group_name || "").trim();
   const withGroup = (base) => (groupName ? `${base} (${groupName})` : base);
   if (lineKind === "ITEM") {
-    return withGroup(String(row?.item_name || "").trim() || "-");
+    const name = String(row?.item_name || "").trim() || "-";
+    const dimensions = [row?.rm_color_name, row?.rm_size_name]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    return withGroup([name, ...dimensions].join(" / "));
   }
   const sku = String(row?.sku_code || "").trim();
   const item = String(row?.sku_item_name || row?.item_name || "").trim();
@@ -3937,6 +3941,8 @@ const loadStockTransferOutRows = async ({
     .leftJoin("erp.variants as v", "v.id", "s.variant_id")
     .leftJoin("erp.items as si", "si.id", "v.item_id")
     .leftJoin("erp.items as i", "i.id", "vl.item_id")
+    .leftJoin("erp.colors as rm_c", "rm_c.id", knex.raw("(vl.meta->>'color_id')::bigint"))
+    .leftJoin("erp.sizes as rm_sz", "rm_sz.id", knex.raw("(vl.meta->>'size_id')::bigint"))
     .leftJoin("erp.uom as u", "u.id", "vl.uom_id")
     .leftJoin("erp.product_groups as pg_si", "pg_si.id", "si.group_id")
     .leftJoin("erp.product_groups as pg_i", "pg_i.id", "i.group_id")
@@ -3973,6 +3979,8 @@ const loadStockTransferOutRows = async ({
       "si.item_type as sku_item_type",
       "si.base_uom_id as sku_base_uom_id",
       localizedNameSelect("i", "item_name", filters.locale),
+      localizedNameSelect("rm_c", "rm_color_name", filters.locale),
+      localizedNameSelect("rm_sz", "rm_size_name", filters.locale),
       "i.base_uom_id as item_base_uom_id",
       "u.code as uom_code",
       localizedNameSelect("u", "uom_name", filters.locale),
@@ -4135,6 +4143,8 @@ const loadStockTransferPendingForInRows = async ({
     .leftJoin("erp.variants as v", "v.id", "s.variant_id")
     .leftJoin("erp.items as si", "si.id", "v.item_id")
     .leftJoin("erp.items as i", "i.id", "vl.item_id")
+    .leftJoin("erp.colors as rm_c", "rm_c.id", knex.raw("(vl.meta->>'color_id')::bigint"))
+    .leftJoin("erp.sizes as rm_sz", "rm_sz.id", knex.raw("(vl.meta->>'size_id')::bigint"))
     .leftJoin("erp.uom as u", "u.id", "vl.uom_id")
     .leftJoin("erp.product_groups as pg_si", "pg_si.id", "si.group_id")
     .leftJoin("erp.product_groups as pg_i", "pg_i.id", "i.group_id")
@@ -4171,6 +4181,8 @@ const loadStockTransferPendingForInRows = async ({
       "si.item_type as sku_item_type",
       "si.base_uom_id as sku_base_uom_id",
       localizedNameSelect("i", "item_name", filters.locale),
+      localizedNameSelect("rm_c", "rm_color_name", filters.locale),
+      localizedNameSelect("rm_sz", "rm_size_name", filters.locale),
       "i.base_uom_id as item_base_uom_id",
       "u.code as uom_code",
       localizedNameSelect("u", "uom_name", filters.locale),
@@ -4310,6 +4322,8 @@ const loadStockTransferInRows = async ({
     .leftJoin("erp.variants as v", "v.id", "s.variant_id")
     .leftJoin("erp.items as si", "si.id", "v.item_id")
     .leftJoin("erp.items as i", "i.id", "vl.item_id")
+    .leftJoin("erp.colors as rm_c", "rm_c.id", knex.raw("(vl.meta->>'color_id')::bigint"))
+    .leftJoin("erp.sizes as rm_sz", "rm_sz.id", knex.raw("(vl.meta->>'size_id')::bigint"))
     .leftJoin("erp.uom as u", "u.id", "vl.uom_id")
     .leftJoin("erp.product_groups as pg_si", "pg_si.id", "si.group_id")
     .leftJoin("erp.product_groups as pg_i", "pg_i.id", "i.group_id")
@@ -4346,6 +4360,8 @@ const loadStockTransferInRows = async ({
       "si.item_type as sku_item_type",
       "si.base_uom_id as sku_base_uom_id",
       localizedNameSelect("i", "item_name", filters.locale),
+      localizedNameSelect("rm_c", "rm_color_name", filters.locale),
+      localizedNameSelect("rm_sz", "rm_size_name", filters.locale),
       "i.base_uom_id as item_base_uom_id",
       "u.code as uom_code",
       localizedNameSelect("u", "uom_name", filters.locale),

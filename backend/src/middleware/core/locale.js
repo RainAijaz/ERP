@@ -5367,6 +5367,11 @@ Object.assign(translations.en, {
   wip_count_physical_qty: "Counted Pairs",
   wip_count_variance: "Variance",
   wip_count_selective_note: "Articles previously handled by this department load automatically. Enter a counted quantity for each; enter 0 when none are present.",
+  wip_count_add_article: "Add an article to this count",
+  wip_count_add_button: "Add Article",
+  wip_count_unit_cost: "Unit Cost / Pair",
+  wip_count_cost_help: "For an article with no department WIP cost, enter its unit cost per pair when counting more than the system quantity.",
+  wip_count_invalid_unit_cost: "Enter a valid unit cost per pair for a newly added article with a positive count.",
   wip_count_empty_department: "No articles have been handled by this department yet.",
   wip_count_load_failed: "Unable to load department articles. Check your connection and try again.",
   wip_count_fill_all_quantities: "Enter a whole-number counted quantity for every article. Zero is valid.",
@@ -5382,7 +5387,7 @@ Object.assign(translations.en, {
   wip_count_invalid_input: "Enter a department, reason, notes, and counted articles.",
   wip_count_invalid_line: "An article or quantity in the count is invalid.",
   wip_count_stale_balance: "Department quantities changed since the count was loaded. Refresh and recount before posting.",
-  wip_count_missing_cost: "This article has no WIP cost history. Record its first production movement before adding it through a count.",
+  wip_count_missing_cost: "This article has no department WIP cost. Enter a unit cost per pair before increasing its count.",
   wip_count_no_variance: "Enter at least one counted quantity that differs from the system quantity.",
 });
 
@@ -5395,6 +5400,11 @@ Object.assign(translations.ur, {
   wip_count_physical_qty: "گنے ہوئے جوڑے",
   wip_count_variance: "فرق",
   wip_count_selective_note: "اس شعبے میں پہلے کام ہونے والے آرٹیکلز خودکار طور پر آتے ہیں۔ ہر ایک کی گنی ہوئی مقدار درج کریں؛ موجود نہ ہونے پر صفر لکھیں۔",
+  wip_count_add_article: "اس گنتی میں آرٹیکل شامل کریں",
+  wip_count_add_button: "آرٹیکل شامل کریں",
+  wip_count_unit_cost: "فی جوڑا لاگت",
+  wip_count_cost_help: "اگر آرٹیکل کی اس شعبے میں زیرِ تکمیل لاگت موجود نہیں تو سسٹم سے زیادہ مقدار گنتے وقت فی جوڑا لاگت درج کریں۔",
+  wip_count_invalid_unit_cost: "مثبت گنتی والے نئے آرٹیکل کے لیے درست فی جوڑا لاگت درج کریں۔",
   wip_count_empty_department: "اس شعبے میں ابھی کسی آرٹیکل پر کام نہیں ہوا۔",
   wip_count_load_failed: "شعبے کے آرٹیکلز لوڈ نہیں ہو سکے۔ کنکشن چیک کرکے دوبارہ کوشش کریں۔",
   wip_count_fill_all_quantities: "ہر آرٹیکل کے لیے مکمل عدد میں گنی ہوئی مقدار درج کریں۔ صفر درست ہے۔",
@@ -5410,7 +5420,7 @@ Object.assign(translations.ur, {
   wip_count_invalid_input: "شعبہ، وجہ، تفصیل اور گنے ہوئے آرٹیکلز درج کریں۔",
   wip_count_invalid_line: "گنتی میں آرٹیکل یا مقدار درست نہیں ہے۔",
   wip_count_stale_balance: "گنتی کھولنے کے بعد شعبے کی مقدار بدل گئی ہے۔ دوبارہ تازہ کرکے گنتی درج کریں۔",
-  wip_count_missing_cost: "اس آرٹیکل کی زیرِ تکمیل لاگت موجود نہیں ہے۔ گنتی میں شامل کرنے سے پہلے اس کی پہلی پیداوار درج کریں۔",
+  wip_count_missing_cost: "اس آرٹیکل کی شعبے میں زیرِ تکمیل لاگت موجود نہیں ہے۔ مقدار بڑھانے سے پہلے فی جوڑا لاگت درج کریں۔",
   wip_count_no_variance: "کم از کم ایک گنی ہوئی مقدار سسٹم کی مقدار سے مختلف درج کریں۔",
 });
 

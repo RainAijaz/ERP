@@ -214,9 +214,19 @@
 
 			<div class="hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" data-wip-lines-panel>
 				<p class="mb-2 text-sm font-semibold text-slate-700"><%= t('wip_count_selective_note') %></p>
+				<div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end" data-wip-add-controls>
+					<div class="w-full sm:max-w-md">
+						<label class="mb-1 block text-xs font-semibold text-slate-700" for="wip-add-article"><%= t('wip_count_add_article') %></label>
+						<select id="wip-add-article" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-wip-add-article data-searchable-select="true" data-searchable-variant="unified" disabled>
+							<option value=""><%= t('select_article') %></option>
+						</select>
+					</div>
+					<button type="button" class="h-10 rounded-xl bg-accent px-4 text-xs font-semibold uppercase tracking-widest text-white shadow-sm disabled:opacity-40" data-wip-add-button disabled><%= t('wip_count_add_button') %></button>
+				</div>
+				<p class="mb-2 text-xs text-slate-500"><%= t('wip_count_cost_help') %></p>
 				<div class="overflow-x-auto" data-searchable-boundary>
-					<table class="w-full min-w-[540px] table-fixed text-xs" data-wip-lines-table>
-						<thead class="bg-slate-50 uppercase text-slate-600"><tr><th class="px-2 py-2 text-left"><%= t('article') %></th><th class="px-2 py-2 text-right"><%= t('wip_count_system_qty') %></th><th class="px-2 py-2 text-right"><%= t('wip_count_physical_qty') %></th><th class="px-2 py-2 text-right"><%= t('wip_count_variance') %></th></tr></thead>
+					<table class="w-full min-w-[760px] table-fixed text-xs" data-wip-lines-table>
+						<thead class="bg-slate-50 uppercase text-slate-600"><tr><th class="px-2 py-2 text-left"><%= t('article') %></th><th class="px-2 py-2 text-right"><%= t('wip_count_system_qty') %></th><th class="px-2 py-2 text-right"><%= t('wip_count_physical_qty') %></th><th class="px-2 py-2 text-right"><%= t('wip_count_unit_cost') %></th><th class="px-2 py-2 text-right"><%= t('wip_count_variance') %></th><th class="px-2 py-2"></th></tr></thead>
 						<tbody data-wip-lines-body></tbody>
 					</table>
 				</div>
@@ -436,6 +446,8 @@
 		};
 
 		const wipDepartment = form.querySelector("[data-wip-department]");
+		const wipAddArticle = form.querySelector("[data-wip-add-article]");
+		const wipAddButton = form.querySelector("[data-wip-add-button]");
 		const wipBody = form.querySelector("[data-wip-lines-body]");
 		const wipEmpty = form.querySelector("[data-wip-empty]");
 		const wipMessages = {
@@ -444,14 +456,17 @@
 			quantitiesRequired: <%- JSON.stringify(t('wip_count_fill_all_quantities')) %>,
 			varianceRequired: <%- JSON.stringify(t('wip_count_no_variance')) %>,
 			tooMany: <%- JSON.stringify(t('wip_count_too_many_articles')) %>,
+			unitCost: <%- JSON.stringify(t('wip_count_invalid_unit_cost')) %>,
 		};
 		let wipRows = initialVoucher?.is_wip_count
 			? (initialVoucher.lines || []).map((line) => ({
 				sku_id: Number(line.sku_id), sku_code: line.sku_code,
 				article_name: line.article_name, system_qty: Number(line.meta?.system_qty || 0),
-				counted_qty: Number(line.qty),
+				counted_qty: Number(line.qty), manual_added: Boolean(line.meta?.manual_added),
+				manual_unit_cost: line.meta?.manual_unit_cost ?? null,
 			}))
 			: [];
+		let wipCandidates = [];
 		let wipLoadGeneration = 0;
 		let unbindWipNavigator = null;
 		const isWipMode = () => {
@@ -497,34 +512,86 @@
 					variance.textContent = row.counted_qty === null ? "—" : String(row.counted_qty - row.system_qty);
 				};
 				counted.addEventListener("input", update);
+				const costCell = document.createElement("td");
+				costCell.className = "border-t border-slate-200 px-2 py-1";
+				const cost = document.createElement("input");
+				cost.type = "number";
+				cost.min = "0.01";
+				cost.max = "10000000";
+				cost.step = "0.0001";
+				cost.inputMode = "decimal";
+				cost.className = "h-9 w-full rounded-lg border border-slate-300 px-2 text-right text-sm";
+				cost.setAttribute("data-row-field", "manual_unit_cost");
+				cost.setAttribute("data-line-index", String(index));
+				cost.disabled = !canSave;
+				cost.value = row.manual_unit_cost ?? "";
+				cost.addEventListener("input", () => { row.manual_unit_cost = cost.value; });
+				costCell.appendChild(cost);
 				update();
-				tr.append(article, system, countedCell, variance);
+				const action = document.createElement("td");
+				action.className = "border-t border-slate-200 px-2 py-1 text-right";
+				if (canSave && row.manual_added) {
+					const remove = document.createElement("button");
+					remove.type = "button";
+					remove.className = "rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700";
+					remove.textContent = <%- JSON.stringify(t('remove')) %>;
+					remove.addEventListener("click", () => {
+						wipRows.splice(index, 1);
+						const candidate = wipCandidates.find((item) => Number(item.sku_id) === row.sku_id);
+						if (candidate && wipAddArticle) {
+							wipAddArticle.add(new Option([candidate.sku_code, candidate.article_name].filter(Boolean).join(" — "), String(row.sku_id)));
+							window.refreshSearchableSelects?.(wipAddArticle.parentElement);
+						}
+						renderWipRows();
+					});
+					action.appendChild(remove);
+				}
+				tr.append(article, system, countedCell, costCell, variance, action);
 				wipBody.appendChild(tr);
 			});
 			if (typeof window.createVoucherRowEnterNavigator === "function") {
 				const navigator = window.createVoucherRowEnterNavigator({ form, linesBody: wipBody,
 					rowSelector: "tr[data-line-index]", fieldAttr: "data-row-field",
-					fieldOrder: ["counted_qty"], canAppendRow: () => false });
+					fieldOrder: ["counted_qty", "manual_unit_cost"], canAppendRow: () => false });
 				unbindWipNavigator = navigator.bind();
 			}
 		};
 		const loadWipRows = async () => {
 			const generation = ++wipLoadGeneration;
 			wipRows = [];
+			wipCandidates = [];
 			renderWipRows();
+			if (wipAddArticle) wipAddArticle.replaceChildren(new Option(<%- JSON.stringify(t('select_article')) %>, ""));
+			if (wipAddButton) wipAddButton.disabled = true;
 			if (!wipDepartment?.value || !isWipMode()) return;
 			try {
-				const response = await fetch(`${basePath}/wip-articles?dept_id=${encodeURIComponent(wipDepartment.value)}`,
-					{ credentials: "same-origin", headers: { Accept: "application/json" } });
-				if (!response.ok) throw new Error(`HTTP ${response.status}`);
-				const data = await response.json();
+				const endpoints = ["wip-articles", "wip-candidates"];
+				const [data, candidateData] = await Promise.all(endpoints.map(async (endpoint) => {
+					const response = await fetch(`${basePath}/${endpoint}?dept_id=${encodeURIComponent(wipDepartment.value)}`,
+						{ credentials: "same-origin", headers: { Accept: "application/json" } });
+					if (!response.ok) throw new Error(`HTTP ${response.status}`);
+					return response.json();
+				}));
 				if (generation !== wipLoadGeneration) return;
-				if (!Array.isArray(data.articles) || data.articles.length > 500) {
+				if (!Array.isArray(data.articles) || !Array.isArray(candidateData.articles)) {
+					showUiMessage(wipMessages.loadFailed);
+					return;
+				}
+				if (data.articles.length > 500) {
 					showUiMessage(wipMessages.tooMany);
 					return;
 				}
 				wipRows = data.articles.map((row) => ({ ...row,
 					sku_id: Number(row.sku_id), system_qty: Number(row.system_qty || 0), counted_qty: null }));
+				wipCandidates = candidateData.articles;
+				const loaded = new Set(wipRows.map((row) => row.sku_id));
+				wipCandidates.forEach((candidate) => {
+					if (!loaded.has(Number(candidate.sku_id))) {
+						wipAddArticle?.add(new Option([candidate.sku_code, candidate.article_name].filter(Boolean).join(" — "), String(candidate.sku_id)));
+					}
+				});
+				if (wipAddArticle) wipAddArticle.disabled = !canSave;
+				window.initSearchableSelects?.(wipAddArticle?.parentElement);
 				renderWipRows();
 			} catch (err) {
 				console.error("Error loading department WIP articles:", err);
@@ -541,10 +608,31 @@
 			stockTypeSelect.disabled = wip || !canSave;
 			wipDepartment.disabled = !wip || !canSave;
 			wipDepartment.required = wip && canSave;
+			window.initSearchableSelects?.(wipDepartment.parentElement);
+			if (!wip || !canSave) {
+				if (wipAddArticle) wipAddArticle.disabled = true;
+				if (wipAddButton) wipAddButton.disabled = true;
+				window.initSearchableSelects?.(wipAddArticle?.parentElement);
+			}
 			if (wip) productGroupRow?.classList.add("hidden");
 			renderWipRows();
 		};
 		wipDepartment?.addEventListener("change", loadWipRows);
+		wipAddArticle?.addEventListener("change", () => { wipAddButton.disabled = !canSave || !wipAddArticle.value; });
+		wipAddButton?.addEventListener("click", () => {
+			const skuId = Number(wipAddArticle?.value || 0);
+			const candidate = wipCandidates.find((row) => Number(row.sku_id) === skuId);
+			if (!candidate || wipRows.some((row) => row.sku_id === skuId)) return;
+			if (wipRows.length >= 500) { showUiMessage(wipMessages.tooMany); return; }
+			wipRows.push({ ...candidate, sku_id: skuId, system_qty: 0, counted_qty: null,
+				manual_added: true, manual_unit_cost: null });
+			wipAddArticle.querySelector(`option[value="${skuId}"]`)?.remove();
+			wipAddArticle.value = "";
+			wipAddButton.disabled = true;
+			window.refreshSearchableSelects?.(wipAddArticle.parentElement);
+			renderWipRows();
+			wipBody?.lastElementChild?.querySelector('[data-row-field="counted_qty"]')?.focus();
+		});
 
 		const buildArticlesUrl = (groupId, stockType) => {
 			const voucherDateInput = form.querySelector('[name="voucher_date"]');
@@ -1700,8 +1788,14 @@
 					showUiMessage(wipMessages.varianceRequired);
 					return;
 				}
+				if (wipRows.some((row) => row.manual_added && row.counted_qty > 0 && !(Number(row.manual_unit_cost) > 0))) {
+					event.preventDefault();
+					showUiMessage(wipMessages.unitCost);
+					return;
+				}
 				linesJsonInput.value = JSON.stringify(wipRows.map((row) => ({
 					sku_id: row.sku_id, system_qty: row.system_qty, counted_qty: row.counted_qty,
+					manual_unit_cost: row.manual_unit_cost,
 				})));
 				return;
 			}
