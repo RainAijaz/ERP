@@ -787,6 +787,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
       .select("id", "item_id", "version_no")
       .whereIn("item_id", sfgItemIds)
       .andWhere("status", "APPROVED")
+      .andWhere("level", "SEMI_FINISHED")
       .orderBy("item_id", "asc")
       .orderBy("version_no", "desc")
       .orderBy("id", "desc");
@@ -2069,13 +2070,7 @@ const validateDraftReadyForApproval = async (
     );
   }
 
-  const [itemRow, options] = await Promise.all([
-    db("erp.items")
-      .select("id", "item_type", "uses_sfg")
-      .where({ id: itemId })
-      .first(),
-    loadFormOptions(db, locale, { includeItemId: itemId }),
-  ]);
+  const options = await loadFormOptions(db, locale, { includeItemId: itemId });
   const hasBomSkuOverrideTable = await tableExists(
     db,
     "erp.bom_sku_override_line",
@@ -2249,24 +2244,9 @@ const validateDraftReadyForApproval = async (
     }
   }
 
-  const getSkuLabel = (sku) => {
-    const parts = [];
-    if (sku?.size_name) parts.push(sku.size_name);
-    if (sku?.color_name) parts.push(sku.color_name);
-    if (sku?.packing_name) parts.push(sku.packing_name);
-    if (sku?.grade_name) parts.push(sku.grade_name);
-    return parts.length
-      ? `(${parts.join(" ")})`
-      : `SKU ${sku?.id || ""}`.trim();
-  };
-
-  if (
-    (String(form.header.level || "").toUpperCase() === "FINISHED" &&
-      String(itemRow?.item_type || "").toUpperCase() === "FG" &&
-      Boolean(itemRow?.uses_sfg)) ||
-    (String(form.header.level || "").toUpperCase() === "SEMI_FINISHED" &&
-      toArray(form.sfg_lines).length > 0)
-  ) {
+  // SFG inputs are optional per output SKU. Validate only the rows actually
+  // selected; blank rows in the form represent variants with no SFG input.
+  if (toArray(form.sfg_lines).length > 0) {
     const sfgRowsForApproval = toArray(form.sfg_lines)
       .map((line, idx) => ({
         rowIndex: idx + 1,
@@ -2283,35 +2263,6 @@ const validateDraftReadyForApproval = async (
           line.required_qty &&
           line.consumed_in_stage_id,
       );
-    const validSfgBySize = new Set(sfgRowsForApproval.filter((line) => !line.output_sku_id).map((line) => String(line.fg_size_id)));
-    const validSfgBySku = new Set(sfgRowsForApproval.map((line) => String(line.output_sku_id)));
-    const missingSfgSkus = skuRows.filter(
-      (sku) => !validSfgBySku.has(String(sku.id)) && !validSfgBySize.has(String(sku.size_id)),
-    );
-    if (missingSfgSkus.length) {
-      const sample = missingSfgSkus
-        .slice(0, 12)
-        .map((sku) => getSkuLabel(sku))
-        .join(", ");
-      const suffix =
-        missingSfgSkus.length > 12 ? ` (+${missingSfgSkus.length - 12})` : "";
-      details.push({
-        field: "sfg_lines_json",
-        message:
-          `Issue in Semi-Finished section: ${
-            isApproveIntent
-              ? resolveText(
-                  "bom_error_approval_missing_sfg_rows_approve",
-                  "Complete all Semi-Finished rows for every Article SKU before approval.",
-                )
-              : resolveText(
-                  "bom_error_approval_missing_sfg_rows",
-                  "Complete all Semi-Finished rows for every Article SKU before sending for approval.",
-                )
-          }` + (sample ? ` ${sample}${suffix}` : ""),
-      });
-    }
-
     const selectedSfgSkuIds = [
       ...new Set(
         sfgRowsForApproval.map((line) => line.sfg_sku_id).filter(Boolean),
@@ -2338,6 +2289,7 @@ const validateDraftReadyForApproval = async (
           .select("id", "item_id", "version_no")
           .whereIn("item_id", sfgItemIds)
           .andWhere("status", "APPROVED")
+          .andWhere("level", "SEMI_FINISHED")
           .orderBy("item_id", "asc")
           .orderBy("version_no", "desc")
           .orderBy("id", "desc");
@@ -3047,7 +2999,7 @@ const loadFormOptions = async (knex, locale = "en", options = {}) => {
         "i.is_global_sfg as is_global_sfg",
         "v.size_id as size_id",
         knex.raw(
-          "EXISTS (SELECT 1 FROM erp.bom_header bh WHERE bh.item_id = i.id AND bh.status = 'APPROVED') as has_approved_bom",
+          "EXISTS (SELECT 1 FROM erp.bom_header bh WHERE bh.item_id = i.id AND bh.level = 'SEMI_FINISHED' AND bh.status = 'APPROVED') as has_approved_bom",
         ),
       )
       .leftJoin("erp.variants as v", "s.variant_id", "v.id")
@@ -3349,6 +3301,29 @@ const loadFormOptions = async (knex, locale = "en", options = {}) => {
       if (!inferred.length) return;
       fgToSfgMap[fgKey] = [...new Set(inferred)];
     });
+  const approvedSfgSkusByItem = new Map();
+  const approvedGlobalSfgSkuIds = [];
+  (sfgSkus || []).forEach((sku) => {
+    if (sku.has_approved_bom !== true) return;
+    const sfgItemId = toNumberOrNull(sku.item_id);
+    const skuId = toNumberOrNull(sku.id);
+    if (!sfgItemId || !skuId) return;
+    if (!approvedSfgSkusByItem.has(sfgItemId)) approvedSfgSkusByItem.set(sfgItemId, []);
+    approvedSfgSkusByItem.get(sfgItemId).push(skuId);
+    if (sku.is_global_sfg === true) approvedGlobalSfgSkuIds.push(skuId);
+  });
+  const eligibleSfgSkuIdsByParent = {};
+  (itemsRaw || []).forEach((item) => {
+    const parentId = toNumberOrNull(item.id);
+    if (!parentId) return;
+    const eligibleIds = new Set(approvedGlobalSfgSkuIds);
+    (fgToSfgMap[String(parentId)] || []).forEach((linkedItemId) => {
+      (approvedSfgSkusByItem.get(toNumberOrNull(linkedItemId)) || [])
+        .forEach((skuId) => eligibleIds.add(skuId));
+    });
+    (approvedSfgSkusByItem.get(parentId) || []).forEach((skuId) => eligibleIds.delete(skuId));
+    eligibleSfgSkuIdsByParent[String(parentId)] = [...eligibleIds];
+  });
   const itemSkuMap = {};
   (itemSkus || []).forEach((sku) => {
     const itemId = toNumberOrNull(sku?.item_id);
@@ -3702,6 +3677,7 @@ const loadFormOptions = async (knex, locale = "en", options = {}) => {
     uomConversionMap,
     itemLabourDefaultsMap,
     fgToSfgMap,
+    eligibleSfgSkuIdsByParent,
     sfgSkus,
     levelOptions: [
       { value: "FINISHED", label: "finished" },

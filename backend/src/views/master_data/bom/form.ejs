@@ -362,6 +362,8 @@
       <div class="mb-3 flex items-center justify-between">
         <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_sfg_per_sku")  %></h2>
       </div>
+      <p class="mb-3 text-xs text-slate-500"><%= t("bom_sfg_optional_eligible_hint") %></p>
+      <p class="mb-3 hidden text-xs text-slate-500" data-sfg-no-options></p>
       <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
         <table class="min-w-full text-sm">
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
@@ -1980,24 +1982,10 @@
         .filter(Boolean);
     };
 
-    const isGlobalSfgSku = (sku) => sku?.is_global_sfg === true || sku?.is_global_sfg === "true";
-    const getGlobalSfgSkus = () => (options.sfgSkus || []).filter(isGlobalSfgSku);
     const getRelevantSfgSkus = () => {
       const headerItemId = String(headerItemSelect?.value || "");
-      if (String(headerLevelSelect?.value || "").toUpperCase() === "SEMI_FINISHED") {
-        return (options.sfgSkus || []).filter((sku) => String(sku.item_id || "") !== headerItemId);
-      }
-      const linkedSfgItemIds = Array.isArray(options.fgToSfgMap?.[headerItemId]) ? options.fgToSfgMap[headerItemId] : [];
-      // Global SFGs are shared components available to every article. They carry no
-      // item_usage rows on purpose, so they never appear in fgToSfgMap and must be
-      // unioned in separately rather than looked up per article.
-      const globalSkus = getGlobalSfgSkus();
-      if (!linkedSfgItemIds.length) return globalSkus;
-      const itemIdSet = new Set(linkedSfgItemIds.map((id) => String(id)));
-      const linkedSkus = (options.sfgSkus || []).filter(
-        (sku) => itemIdSet.has(String(sku.item_id || "")) && !isGlobalSfgSku(sku),
-      );
-      return [...linkedSkus, ...globalSkus];
+      const eligibleIds = new Set((options.eligibleSfgSkuIdsByParent?.[headerItemId] || []).map(String));
+      return (options.sfgSkus || []).filter((sku) => eligibleIds.has(String(sku.id)));
     };
     const getPlannedOutputQtyValue = () => {
       const raw = String(document.querySelector('input[name="output_qty"]')?.value || "").trim();
@@ -2378,6 +2366,15 @@
       }
       const fgSkuOptions = getHeaderSkuOptions().filter((sku) => Number(sku?.size_id || 0) > 0);
       const sfgOptions = getRelevantSfgSkus();
+      const noOptionsHint = document.querySelector('[data-sfg-no-options]');
+      if (noOptionsHint) {
+        const noOptions = Boolean(headerItemSelect?.value) && sfgOptions.length === 0;
+        noOptionsHint.classList.toggle("hidden", !noOptions);
+        noOptionsHint.textContent = String(headerLevelSelect?.value || "").toUpperCase() === "SEMI_FINISHED"
+          ? "<%= t('bom_sfg_no_eligible_for_sfg') %>"
+          : "<%= t('bom_sfg_no_eligible_for_fg') %>";
+      }
+      const sfgOptionIdSet = new Set(sfgOptions.map((sku) => String(sku.id)));
       const stageChoices = getSelectedStageChoicesForSfg();
       if (!fgSkuOptions.length) {
         body.innerHTML = `<tr><td colspan="6" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_sku_available")  %></td></tr>`;
@@ -2432,6 +2429,15 @@
             : "";
           const fixedUomId = resolveSfgUomId(row);
           const fixedUomName = getUomName(fixedUomId);
+          const previousSkuId = row.sfg_sku_id && !sfgOptionIdSet.has(String(row.sfg_sku_id))
+            ? String(row.sfg_sku_id)
+            : "";
+          const previousSku = previousSkuId
+            ? (options.sfgSkus || []).find((sku) => String(sku.id) === previousSkuId)
+            : null;
+          const previousOption = previousSkuId
+            ? `<option value="${esc(previousSkuId)}" selected disabled>${esc(getSkuLabel(previousSku) || previousSku?.item_name || `#${previousSkuId}`)} — <%= t("bom_sfg_existing_unavailable") %></option>`
+            : "";
           return `
           <tr data-row-index="${idx}" class="${isFirstOfSku ? "border-t border-slate-200" : ""}">
             <td class="px-3 py-2">
@@ -2440,7 +2446,7 @@
               <input type="hidden" data-col="fg_size_id" value="${esc(fgSizeId)}">
               <input type="text" value="${esc(skuLabel)}" class="w-full rounded-lg border ${isFirstOfSku ? "border-slate-200 bg-slate-50 text-slate-700" : "border-transparent bg-transparent"} px-2 py-1.5 text-sm" readonly>
             </td>
-            <td class="px-3 py-2"><select data-col="sfg_sku_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(sfgOptions, row.sfg_sku_id, (r) => getSkuLabel(r) || r.item_name || r.id)}</select></td>
+            <td class="px-3 py-2"><select data-col="sfg_sku_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value=""><%= t("bom_sfg_none_option") %></option>${previousOption}${makeOptions(sfgOptions, row.sfg_sku_id, (r) => getSkuLabel(r) || r.item_name || r.id)}</select></td>
             <td class="px-3 py-2"><input data-col="required_qty" data-no-stepper="true" type="number" min="0.001" step="0.001" value="${esc(row.required_qty ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
             <td class="px-3 py-2"><select data-col="consumed_in_stage_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(stageChoices, row.consumed_in_stage_id, (r) => r.name || r.id)}</select></td>
             <td class="px-3 py-2">
@@ -2999,6 +3005,11 @@
         const qtyInput = row?.querySelector('[data-col="required_qty"]');
         if (hidden) hidden.value = uomId;
         if (display) display.value = getUomName(uomId);
+        if (!selectedSkuId) {
+          if (qtyInput) qtyInput.value = "";
+          const stageSelect = row?.querySelector('[data-col="consumed_in_stage_id"]');
+          if (stageSelect) stageSelect.value = "";
+        }
         if (selectedSkuId && qtyInput) {
           const currentQty = String(qtyInput.value || "").trim();
           if (!currentQty || Number(currentQty) <= 0) {
@@ -3007,6 +3018,10 @@
           }
         }
         syncStateFromDom();
+        if (!selectedSkuId) {
+          renderSfg();
+          if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+        }
         return;
       }
       const fgSkuControl = event.target.closest('[data-col="fg_sku_id"]');
