@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS erp.bom_header (
   status         erp.bom_status NOT NULL DEFAULT 'DRAFT',
   is_active      boolean NOT NULL DEFAULT true,
   version_no     int NOT NULL DEFAULT 1,
+  department_rate_changes jsonb NOT NULL DEFAULT '[]'::jsonb,
 
   created_by     bigint NOT NULL REFERENCES erp.users(id),
   created_at     timestamptz NOT NULL DEFAULT now(),
@@ -69,6 +70,9 @@ CREATE TABLE IF NOT EXISTS erp.bom_header (
 
   UNIQUE (item_id, level, version_no)
 );
+
+ALTER TABLE erp.bom_header
+  ADD COLUMN IF NOT EXISTS department_rate_changes jsonb NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE INDEX IF NOT EXISTS ix_bom_header_item_status
 ON erp.bom_header(item_id, status);

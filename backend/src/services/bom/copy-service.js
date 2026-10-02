@@ -754,6 +754,8 @@ const hydrateBomSnapshotForPreview = async (knex, snapshot, locale = "en") => {
   const sfgLines = Array.isArray(safe.sfg_lines) ? safe.sfg_lines : [];
   const stageRoutes = Array.isArray(safe.stage_routes) ? safe.stage_routes : [];
   const skuOverrides = Array.isArray(safe.sku_overrides) ? safe.sku_overrides : [];
+  const labourLines = Array.isArray(safe.labour_lines) ? safe.labour_lines : [];
+  const departmentRateChanges = Array.isArray(safe.department_rate_changes) ? safe.department_rate_changes : [];
 
   const itemIds = new Set();
   const deptIds = new Set();
@@ -761,6 +763,7 @@ const hydrateBomSnapshotForPreview = async (knex, snapshot, locale = "en") => {
   const sizeIds = new Set();
   const colorIds = new Set();
   const skuIds = new Set();
+  const labourIds = new Set();
   const collect = (set, value) => {
     const num = toNumberOrNull(value);
     if (num) set.add(num);
@@ -790,10 +793,19 @@ const hydrateBomSnapshotForPreview = async (knex, snapshot, locale = "en") => {
     collect(stageIds, r.stage_id);
     collect(deptIds, r.dept_id);
   });
+  labourLines.forEach((r) => {
+    collect(labourIds, r.labour_id);
+    collect(deptIds, r.dept_id);
+    collect(sizeIds, r.size_id);
+  });
+  departmentRateChanges.forEach((r) => {
+    collect(deptIds, r.dept_id);
+    collect(skuIds, r.sku_id);
+  });
 
   const nameCol = (col) =>
     useUr ? knex.raw(`COALESCE(${col}_ur, ${col}) as name`) : `${col} as name`;
-  const [items, depts, stages, sizes, colors, skus] = await Promise.all([
+  const [items, depts, stages, sizes, colors, skus, labours] = await Promise.all([
     itemIds.size ? knex("erp.items").select("id", "name").whereIn("id", [...itemIds]) : [],
     deptIds.size
       ? knex("erp.departments").select("id", nameCol("name")).whereIn("id", [...deptIds])
@@ -808,6 +820,7 @@ const hydrateBomSnapshotForPreview = async (knex, snapshot, locale = "en") => {
       ? knex("erp.colors").select("id", nameCol("name")).whereIn("id", [...colorIds])
       : [],
     skuIds.size ? knex("erp.skus").select("id", "sku_code").whereIn("id", [...skuIds]) : [],
+    labourIds.size ? knex("erp.labours").select("id", nameCol("name")).whereIn("id", [...labourIds]) : [],
   ]);
   const nameMap = (rows, key = "name") =>
     new Map(rows.map((r) => [toNumberOrNull(r.id), r[key]]));
@@ -817,6 +830,7 @@ const hydrateBomSnapshotForPreview = async (knex, snapshot, locale = "en") => {
   const sizeName = nameMap(sizes);
   const colorName = nameMap(colors);
   const skuCode = nameMap(skus, "sku_code");
+  const labourName = nameMap(labours);
 
   return {
     header: safe.header || {},
@@ -860,6 +874,23 @@ const hydrateBomSnapshotForPreview = async (knex, snapshot, locale = "en") => {
       ]
         .filter(Boolean)
         .join(" / "),
+    })),
+    labour_lines: labourLines.map((r) => ({
+      ...r,
+      _label: [
+        labourName.get(toNumberOrNull(r.labour_id)) || `#${r.labour_id}`,
+        deptName.get(toNumberOrNull(r.dept_id)) || `#${r.dept_id}`,
+        sizeName.get(toNumberOrNull(r.size_id)) || String(r.size_scope || "ALL"),
+        `${r.rate_value} ${r.rate_type || ""}`.trim(),
+      ].join(" / "),
+    })),
+    department_rate_changes: departmentRateChanges.map((r) => ({
+      ...r,
+      _label: [
+        deptName.get(toNumberOrNull(r.dept_id)) || `#${r.dept_id}`,
+        skuCode.get(toNumberOrNull(r.sku_id)) || `#${r.sku_id}`,
+        `${r.rate_value} ${r.rate_type || ""}`.trim(),
+      ].join(" / "),
     })),
   };
 };

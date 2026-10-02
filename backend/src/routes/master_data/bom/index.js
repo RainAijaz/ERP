@@ -100,6 +100,7 @@ const buildEmptyFormState = () => ({
   rm_lines: [],
   sfg_lines: [],
   labour_lines: [],
+  department_rate_changes: [],
   stage_routes: [],
   variant_rules: [],
   sku_overrides: [],
@@ -227,6 +228,7 @@ const buildSubmittedFormState = (reqBody = {}, bomId = null) => ({
   rm_lines: safeJsonArray(reqBody.rm_lines_json),
   sfg_lines: safeJsonArray(reqBody.sfg_lines_json),
   labour_lines: safeJsonArray(reqBody.labour_lines_json),
+  department_rate_changes: safeJsonArray(reqBody.department_rate_changes_json),
   stage_routes: safeJsonArray(reqBody.stage_routes_json),
   variant_rules: [],
   sku_overrides: [],
@@ -238,6 +240,7 @@ const requestHasBomDraftPayload = (body = {}) => {
     "sku_rules_json",
     "sfg_lines_json",
     "labour_lines_json",
+    "department_rate_changes_json",
     "stage_routes_json",
   ];
   return keys.some((key) =>

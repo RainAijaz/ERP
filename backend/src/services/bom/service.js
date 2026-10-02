@@ -1,5 +1,6 @@
 const { insertBomChangeLog } = require("../../utils/bom-change-log");
 const { assertNoSfgDependencyCycleTx } = require("./sfg-dependency-service");
+const { resolveLabourIds, applyBulkSkuRateUpsert } = require("../hr-payroll/labour-rates-service");
 const {
   SYSTEM_DECISION_NOTES,
 } = require("../../utils/approval-decision-notes");
@@ -91,6 +92,82 @@ const makeValidationError = (message, details = []) => {
   err.code = "BOM_VALIDATION";
   err.details = details;
   return err;
+};
+
+const normalizeDepartmentRateChanges = async (db, itemId, rawChanges, t) => {
+  const source = toArray(rawChanges);
+  if (!source.length) return [];
+  const field = "department_rate_changes_json";
+  const fail = (key, index) => {
+    const message = `${t("bom_error_row_prefix")} ${index + 1}: ${t(key)}`;
+    throw makeValidationError(t("bom_error_fix_fields"), [{ field, message }]);
+  };
+  if (source.length > 5000) fail("bom_error_department_rate_invalid", 0);
+  const seen = new Set();
+  const changes = source.map((row, index) => {
+    const deptId = toPositiveInt(row?.dept_id);
+    const skuId = toPositiveInt(row?.sku_id);
+    const rateType = String(row?.rate_type || "").trim().toUpperCase();
+    const rateText = String(row?.rate_value ?? "").trim();
+    const rateValue = Number(rateText);
+    if (!deptId || !skuId || !LABOUR_RATE_TYPES.has(rateType) ||
+        !/^\d+(?:\.\d{1,2})?$/.test(rateText) ||
+        !Number.isFinite(rateValue) || rateValue > 99999999.99) {
+      fail("bom_error_department_rate_invalid", index);
+    }
+    const key = `${deptId}:${skuId}`;
+    if (seen.has(key)) fail("bom_error_department_rate_duplicate", index);
+    seen.add(key);
+    return { dept_id: deptId, sku_id: skuId, rate_type: rateType, rate_value: rateValue };
+  });
+  const [skus, departments] = await Promise.all([
+    db("erp.skus as s")
+      .join("erp.variants as v", "v.id", "s.variant_id")
+      .select("s.id")
+      .where("v.item_id", itemId)
+      .where("s.is_active", true)
+      .whereIn("s.id", changes.map((row) => row.sku_id)),
+    db("erp.departments")
+      .select("id")
+      .where({ is_active: true, is_production: true })
+      .whereIn("id", changes.map((row) => row.dept_id)),
+  ]);
+  const skuIds = new Set(skus.map((row) => Number(row.id)));
+  const deptIds = new Set(departments.map((row) => Number(row.id)));
+  changes.forEach((row, index) => {
+    if (!skuIds.has(row.sku_id) || !deptIds.has(row.dept_id)) {
+      fail("bom_error_department_rate_target_invalid", index);
+    }
+  });
+  return changes;
+};
+
+const applyBomDepartmentRateChangesTx = async (trx, itemId, rawChanges, t) => {
+  const changes = await normalizeDepartmentRateChanges(trx, itemId, rawChanges, t);
+  const groups = new Map();
+  changes.forEach((row) => {
+    const key = `${row.dept_id}:${row.rate_type}`;
+    if (!groups.has(key)) groups.set(key, { deptId: row.dept_id, rateType: row.rate_type, rows: [] });
+    groups.get(key).rows.push({ skuId: row.sku_id, rate: row.rate_value });
+  });
+  for (const group of groups.values()) {
+    const labourIds = await resolveLabourIds({
+      db: trx,
+      deptId: group.deptId,
+      labourSelection: { all: true },
+      t,
+    });
+    await applyBulkSkuRateUpsert({
+      trx,
+      labourIds,
+      deptId: group.deptId,
+      applyOn: "SKU",
+      rateType: group.rateType,
+      status: "active",
+      rows: group.rows,
+      appliesToAllLabours: true,
+    });
+  }
 };
 
 const tableExists = async (db, tableName) => {
@@ -324,6 +401,7 @@ const parseBomFormPayload = (body = {}) => {
   const sfgRaw = parseJsonArray(body.sfg_lines_json);
   const labourRaw = parseJsonArray(body.labour_lines_json);
   const stageRaw = parseJsonArray(body.stage_routes_json);
+  const departmentRateRaw = parseJsonArray(body.department_rate_changes_json);
 
   return {
     header: {
@@ -393,6 +471,7 @@ const parseBomFormPayload = (body = {}) => {
         enforce_sequence: row.enforce_sequence !== false,
       }))
       .filter((row) => row.stage_id || row.dept_id),
+    department_rate_changes: departmentRateRaw,
     variant_rules: [],
     sku_overrides: [],
   };
@@ -860,6 +939,9 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
       rate_value: toNumberOrNull(line.rate_value),
     }))
     .filter((line) => line.dept_id || line.labour_id || line.rate_value);
+  const departmentRateChanges = itemId && item
+    ? await normalizeDepartmentRateChanges(db, itemId, input?.department_rate_changes, t)
+    : [];
 
   const labourIds = [
     ...new Set(
@@ -1404,6 +1486,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
     sku_rules: skuRules,
     sfg_lines: sfgLines,
     labour_lines: labourLines,
+    department_rate_changes: departmentRateChanges,
     stage_routes: stageRoutes
       .slice()
       .sort((a, b) => Number(a.sequence_no || 0) - Number(b.sequence_no || 0)),
@@ -1547,11 +1630,20 @@ const buildApprovalSnapshot = (snapshot = {}) => {
         `${b.sku_id || 0}:${b.target_rm_item_id || 0}:${b.dept_id || 0}`,
       ),
     );
+  const departmentRateChanges = toArray(snapshot.department_rate_changes)
+    .map((row) => ({
+      dept_id: toPositiveInt(row.dept_id),
+      sku_id: toPositiveInt(row.sku_id),
+      rate_type: String(row.rate_type || "").toUpperCase(),
+      rate_value: toNumberOrNull(row.rate_value),
+    }))
+    .sort((a, b) => `${a.dept_id}:${a.sku_id}`.localeCompare(`${b.dept_id}:${b.sku_id}`));
   return {
     header,
     rm_lines: rmLines,
     sfg_lines: sfgLines,
     labour_lines: labourLines,
+    department_rate_changes: departmentRateChanges,
     stage_routes: stageRoutes,
     variant_rules: [],
     sku_overrides: skuOverrides,
@@ -1717,6 +1809,7 @@ const getBomSnapshot = async (db, bomId) => {
     "version_no",
     "created_by",
     "approved_by",
+    "department_rate_changes",
   ];
   if (lifecycleSupported) headerFields.push("is_active");
   const header = await db("erp.bom_header")
@@ -1725,6 +1818,8 @@ const getBomSnapshot = async (db, bomId) => {
     .first();
   if (header && !lifecycleSupported) header.is_active = true;
   if (!header) return null;
+  const departmentRateChanges = parseJsonArray(header.department_rate_changes);
+  delete header.department_rate_changes;
   const [rmLines, sfgLines, labourLines, stageRoutes, skuOverrides] =
     await Promise.all([
       db("erp.bom_rm_line")
@@ -1801,6 +1896,7 @@ const getBomSnapshot = async (db, bomId) => {
     rm_lines: rmLines,
     sfg_lines: sfgLines,
     labour_lines: labourLines,
+    department_rate_changes: departmentRateChanges,
     stage_routes: stageRoutes,
     variant_rules: [],
     sku_overrides: skuOverrides,
@@ -2049,6 +2145,7 @@ const validateDraftReadyForApproval = async (
       sku_rules: toArray(form?.sku_overrides),
       sfg_lines: toArray(form?.sfg_lines),
       labour_lines: toArray(form?.labour_lines),
+      department_rate_changes: toArray(form?.department_rate_changes),
       stage_routes: toArray(form?.stage_routes),
       variant_rules: [],
       sku_overrides: [],
@@ -2177,7 +2274,12 @@ const validateDraftReadyForApproval = async (
   }
   const departmentsUsedInBom = [
     ...new Set(
-      rmLines.map((line) => toNumberOrNull(line?.dept_id)).filter(Boolean),
+      [
+        ...rmLines,
+        ...toArray(form.sku_overrides),
+        ...toArray(form.labour_lines),
+        ...toArray(form.department_rate_changes),
+      ].map((line) => toNumberOrNull(line?.dept_id)).filter(Boolean),
     ),
   ];
   const [hasProductionStageTable, hasBomStageRoutingTable] = await Promise.all([
@@ -2233,11 +2335,11 @@ const validateDraftReadyForApproval = async (
             isApproveIntent
               ? resolveText(
                   "bom_error_stage_department_scope_approve",
-                  "Every department used in Raw Materials and Labour must be added in Production Stages before approval.",
+                  "Every department used in Raw Materials, SKU Rules or Labour Rates must be selected in Production Stages before approval.",
                 )
               : resolveText(
                   "bom_error_stage_department_scope",
-                  "Every department used in Raw Materials and Labour must be added in Production Stages before sending for approval.",
+                  "Every department used in Raw Materials, SKU Rules or Labour Rates must be selected in Production Stages before sending for approval.",
                 )
           }` + (sample ? ` Missing departments: ${sample}${suffix}.` : ""),
       });
@@ -2387,6 +2489,7 @@ const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t, allowPe
       status: "DRAFT",
       version_no: versionNo,
       created_by: actorId,
+      department_rate_changes: JSON.stringify(normalized.department_rate_changes),
     };
     if (lifecycleSupported) insertPayload.is_active = true;
     if (copiedFromSupported)
@@ -2440,6 +2543,7 @@ const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t, allowPe
       level: normalized.header.level,
       output_qty: normalized.header.output_qty,
       output_uom_id: normalized.header.output_uom_id,
+      department_rate_changes: JSON.stringify(normalized.department_rate_changes),
     };
     if (copiedFromSupported)
       updatePayload.copied_from_bom_id =
@@ -2588,8 +2692,9 @@ const approveBomDirectTx = async (trx, { bomId, userId, requestId, t }) => {
   const lifecycleSupported = await hasBomLifecycleColumn(trx);
   const id = Number(bomId);
   const row = await trx("erp.bom_header")
-    .select("id", "status", "version_no", "item_id", "level")
+    .select("id", "status", "version_no", "item_id", "level", "department_rate_changes")
     .where({ id })
+    .forUpdate()
     .first();
   if (!row)
     throw makeValidationError(t("error_not_found") );
@@ -2637,6 +2742,12 @@ const approveBomDirectTx = async (trx, { bomId, userId, requestId, t }) => {
       approved_at: trx.fn.now(),
       ...(lifecycleSupported ? { is_active: true } : {}),
     });
+  await applyBomDepartmentRateChangesTx(
+    trx,
+    row.item_id,
+    parseJsonArray(row.department_rate_changes),
+    t,
+  );
   const after = await getBomSnapshot(trx, id);
   await insertBomChangeLog(trx, {
     bomId: id,
@@ -3895,6 +4006,7 @@ const getBomForForm = async (knex, id) => {
     "bh.approved_at",
     "bh.created_by",
     "bh.approved_by",
+    "bh.department_rate_changes",
     "i.name as item_name",
     "i.code as item_code",
   ];
@@ -3920,6 +4032,8 @@ const getBomForForm = async (knex, id) => {
   }
   const header = await headerQuery.first();
   if (!header) return null;
+  const departmentRateChanges = parseJsonArray(header.department_rate_changes);
+  delete header.department_rate_changes;
   if (!lifecycleSupported) header.is_active = true;
   if (!copiedFromSupported) header.copied_from_bom_id = null;
 
@@ -4003,6 +4117,7 @@ const getBomForForm = async (knex, id) => {
     rm_lines: rmLines,
     sfg_lines: sfgLines,
     labour_lines: labourLines,
+    department_rate_changes: departmentRateChanges,
     stage_routes: stageRoutes,
     variant_rules: [],
     sku_overrides: skuOverrides,

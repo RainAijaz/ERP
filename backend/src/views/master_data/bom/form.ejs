@@ -146,6 +146,7 @@
     <input type="hidden" name="sku_rules_json" value="[]" data-lines-json="sku_rules">
     <input type="hidden" name="sfg_lines_json" value="<%= JSON.stringify(formState?.sfg_lines || []) %>" data-lines-json="sfg_lines">
     <input type="hidden" name="labour_lines_json" value="<%= JSON.stringify(formState?.labour_lines || []) %>" data-lines-json="labour_lines">
+    <input type="hidden" name="department_rate_changes_json" value="<%= JSON.stringify(formState?.department_rate_changes || []) %>" data-lines-json="department_rate_changes">
     <input type="hidden" name="stage_routes_json" value="<%= JSON.stringify(formState?.stage_routes || []) %>" data-lines-json="stage_routes">
     <input type="hidden" name="copied_from_bom_id" value="<%= header.copied_from_bom_id || '' %>" data-bom-copied-from>
 
@@ -587,6 +588,7 @@
       labourRuleOpenSkuId: "",
       labourRuleOpenFallbackSizeId: null,
       departmentRates: <%- JSON.stringify(departmentRates || []) %>,
+      departmentRateChanges: <%- JSON.stringify(formState?.department_rate_changes || []) %>,
       sku_override: <%- JSON.stringify(formState?.sku_overrides || []) %>,
       skuRuleOpenSkuId: "",
     };
@@ -749,50 +751,6 @@
       if (!allowedDeptIds.length) return stageScopedDepartments;
       return stageScopedDepartments.filter((dept) => allowedDeptIds.includes(String(dept.id)));
     };
-    const upsertStageRouteForDepartment = (deptId) => {
-      const normalizedDeptId = String(deptId || "").trim();
-      if (!normalizedDeptId) return false;
-      const mappedStageId = String(stageIdByDeptId.get(normalizedDeptId) || "").trim();
-      if (!Array.isArray(state.stage_routes)) state.stage_routes = [];
-      const alreadyExists = state.stage_routes.some((line) => {
-        const lineDeptId = String(line?.dept_id || "").trim();
-        if (lineDeptId) return lineDeptId === normalizedDeptId;
-        // Fallback: match via stage_id when dept_id not loaded (e.g. DB-loaded routes)
-        const lineStageId = String(line?.stage_id || "").trim();
-        return lineStageId && lineStageId === mappedStageId;
-      });
-      if (alreadyExists) return false;
-      const emptyRowIndex = state.stage_routes.findIndex(
-        (line) => !String(line?.dept_id || "").trim() && !String(line?.stage_id || "").trim(),
-      );
-      const nextRow = {
-        dept_id: normalizedDeptId,
-        stage_id: mappedStageId,
-        sequence_no: "",
-        is_required: true,
-        enforce_sequence: true,
-      };
-      if (emptyRowIndex >= 0) {
-        state.stage_routes[emptyRowIndex] = {
-          ...(state.stage_routes[emptyRowIndex] || {}),
-          ...nextRow,
-        };
-        return true;
-      }
-      state.stage_routes.push(nextRow);
-      return true;
-    };
-    const ensureStageRoutesCoverDepartments = (deptIds = []) => {
-      const seen = new Set();
-      let changed = false;
-      deptIds.forEach((deptId) => {
-        const normalizedDeptId = String(deptId || "").trim();
-        if (!normalizedDeptId || seen.has(normalizedDeptId)) return;
-        seen.add(normalizedDeptId);
-        if (upsertStageRouteForDepartment(normalizedDeptId)) changed = true;
-      });
-      return changed;
-    };
     const getSelectedStageChoicesForSfg = () => {
       const rows = Array.isArray(state?.stage_routes) ? state.stage_routes : [];
       const byStageId = new Map();
@@ -931,16 +889,6 @@
       if (!row) return;
       const deptSelect = row.querySelector('[data-col="dept_id"]');
       setSelectOptions(deptSelect, getLabourDepartmentsForLabour(labourId), deptSelect?.value || "");
-    };
-    const pruneDepartmentScopedRows = () => {
-      const selectedDeptIds = getSelectedStageDepartmentIdSet();
-      if (!selectedDeptIds.size) return;
-      const keepDept = (deptId) => selectedDeptIds.has(String(deptId || "").trim());
-      // Non-destructive: do not clear RM/Labour selections automatically while user is still building stage routes.
-      // Only trim invalid dept-scoped override rows, which are derived data and safe to regenerate.
-      if (Array.isArray(state.sku_override)) {
-        state.sku_override = state.sku_override.filter((line) => keepDept(line?.dept_id));
-      }
     };
     const getAllowedOutputUomsForSelectedItem = () => {
       const itemId = String(headerItemSelect?.value || "").trim();
@@ -1136,8 +1084,14 @@
     const departmentRateDirty = new Set();
     let departmentRateOpenDeptId = "";
     let departmentRateLoadVersion = 0;
-    let rateSubmitResuming = false;
     const departmentRateKey = (deptId, skuId) => `${deptId}:${skuId}`;
+    state.departmentRateChanges.forEach((change) => {
+      const key = departmentRateKey(change.dept_id, change.sku_id);
+      const existing = state.departmentRates.find((row) => departmentRateKey(row.dept_id, row.sku_id) === key);
+      if (existing) Object.assign(existing, change, { mixed: false });
+      else state.departmentRates.push({ ...change, mixed: false });
+      departmentRateDirty.add(key);
+    });
     const findDepartmentRate = (deptId, skuId) =>
       (state.departmentRates || []).find((row) =>
         String(row.dept_id) === String(deptId) && String(row.sku_id) === String(skuId));
@@ -1148,7 +1102,13 @@
         state.departmentRates.push(row);
       }
       Object.assign(row, change, { mixed: false });
-      departmentRateDirty.add(departmentRateKey(deptId, skuId));
+      row.rate_type = normalizeLabourRateType(row.rate_type);
+      const key = departmentRateKey(deptId, skuId);
+      departmentRateDirty.add(key);
+      const proposed = { dept_id: Number(deptId), sku_id: Number(skuId), rate_type: row.rate_type, rate_value: row.rate_value };
+      const existingIndex = state.departmentRateChanges.findIndex((entry) => departmentRateKey(entry.dept_id, entry.sku_id) === key);
+      if (existingIndex >= 0) state.departmentRateChanges[existingIndex] = proposed;
+      else state.departmentRateChanges.push(proposed);
     };
     const renderDepartmentRates = () => {
       if (!(departmentRateHost instanceof HTMLElement)) return;
@@ -1194,6 +1154,7 @@
       const itemId = String(headerItemSelect?.value || "").trim();
       const version = ++departmentRateLoadVersion;
       state.departmentRates = [];
+      state.departmentRateChanges = [];
       departmentRateDirty.clear();
       renderDepartmentRates();
       if (!itemId) return;
@@ -1246,7 +1207,6 @@
         }
       }
     });
-    headerItemSelect?.addEventListener("change", () => { void loadDepartmentRatesForItem(); });
     const findHeaderSkuById = (skuId) =>
       getHeaderSkuOptions().find((row) => String(row.id || "") === String(skuId || "")) || null;
     const findHeaderSkuBySizeId = (sizeId) =>
@@ -1280,6 +1240,28 @@
       if (typeof window.showUiErrorModal === "function") {
         window.showUiErrorModal(text, "<%= t('error_generic')  %>");
       }
+    };
+    const getMissingStageDepartments = () => {
+      const selected = getSelectedStageDepartmentIdSet();
+      const sfgDepartments = (state.sfg || []).map((row) => {
+        const stageId = String(row?.consumed_in_stage_id || "").trim();
+        return { dept_id: stageId.startsWith("dept:") ? stageId.slice(5) : stageById.get(stageId)?.dept_id };
+      });
+      const used = new Set([
+        ...(state.rm || []),
+        ...(state.sku_override || []),
+        ...(state.labour || []),
+        ...(state.departmentRateChanges || []),
+        ...sfgDepartments,
+      ].map((row) => String(row?.dept_id || "").trim()).filter(Boolean));
+      return [...used].filter((id) => !selected.has(id));
+    };
+    const warnIfMissingStageDepartments = () => {
+      const missing = getMissingStageDepartments();
+      if (!missing.length) return false;
+      const names = missing.map((id) => departmentNameById.get(id) || id).join(", ");
+      showErrorModal("<%= t('bom_error_missing_stage_selection') %>".replace("{departments}", names));
+      return true;
     };
     const getRmDuplicateCombo = () => {
       const seen = new Map();
@@ -2165,6 +2147,8 @@
       state.labourRuleRateMap = {};
       state.labourRuleLockedMap = {};
       state.labour = [];
+      state.departmentRateChanges = [];
+      departmentRateDirty.clear();
       state.labourRuleOpenSkuId = "";
       state.labourRuleOpenFallbackSizeId = null;
       state.sku_override = [];
@@ -2215,6 +2199,7 @@
       if (field === "level" || field === "item_id") {
         renderHeaderItemsByLevel(true);
         applyLabourDefaultsForSelectedItem(true);
+        void loadDepartmentRatesForItem();
       }
       const shouldSyncFromDom = syncFromDom && !isIdentityField;
       if (shouldSyncFromDom) {
@@ -2438,6 +2423,15 @@
           const previousOption = previousSkuId
             ? `<option value="${esc(previousSkuId)}" selected disabled>${esc(getSkuLabel(previousSku) || previousSku?.item_name || `#${previousSkuId}`)} — <%= t("bom_sfg_existing_unavailable") %></option>`
             : "";
+          const stageOptions = [...stageChoices];
+          const selectedStageId = String(row.consumed_in_stage_id || "");
+          if (selectedStageId && !stageOptions.some((stage) => String(stage.id) === selectedStageId)) {
+            const oldStage = stageById.get(selectedStageId);
+            stageOptions.push({
+              id: selectedStageId,
+              name: `${oldStage?.name || selectedStageId} — <%= t('bom_stage_not_selected') %>`,
+            });
+          }
           return `
           <tr data-row-index="${idx}" class="${isFirstOfSku ? "border-t border-slate-200" : ""}">
             <td class="px-3 py-2">
@@ -2448,7 +2442,7 @@
             </td>
             <td class="px-3 py-2"><select data-col="sfg_sku_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value=""><%= t("bom_sfg_none_option") %></option>${previousOption}${makeOptions(sfgOptions, row.sfg_sku_id, (r) => getSkuLabel(r) || r.item_name || r.id)}</select></td>
             <td class="px-3 py-2"><input data-col="required_qty" data-no-stepper="true" type="number" min="0.001" step="0.001" value="${esc(row.required_qty ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
-            <td class="px-3 py-2"><select data-col="consumed_in_stage_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(stageChoices, row.consumed_in_stage_id, (r) => r.name || r.id)}</select></td>
+            <td class="px-3 py-2"><select data-col="consumed_in_stage_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(stageOptions, row.consumed_in_stage_id, (r) => r.name || r.id)}</select></td>
             <td class="px-3 py-2">
               <input type="hidden" data-col="uom_id" value="${esc(fixedUomId)}">
               <input type="text" data-col-display="uom_id" value="${esc(fixedUomName)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-600" readonly>
@@ -2515,10 +2509,18 @@
       body.innerHTML = lines
         .map((row, idx) => {
           const normalizedRow = normalizeLabourSelectionRow(row);
+          const departmentOptions = [...getLabourDepartmentsForLabour(normalizedRow.labour_id)];
+          if (normalizedRow.dept_id && !departmentOptions.some((dept) => String(dept.id) === normalizedRow.dept_id)) {
+            const existingDepartment = getDraftFallbackDepartments().find((dept) => String(dept.id) === normalizedRow.dept_id);
+            departmentOptions.push(existingDepartment || {
+              id: normalizedRow.dept_id,
+              name: departmentNameById.get(normalizedRow.dept_id) || normalizedRow.dept_id,
+            });
+          }
           return `
           <tr data-row-index="${idx}" class="border-b border-slate-100">
             <td class="px-3 py-2"><select data-col="labour_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.labours || [], normalizedRow.labour_id, (r) => r.name || r.code || r.id)}</select></td>
-            <td class="px-3 py-2"><select data-col="dept_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(getLabourDepartmentsForLabour(normalizedRow.labour_id), normalizedRow.dept_id)}</select></td>
+            <td class="px-3 py-2"><select data-col="dept_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(departmentOptions, normalizedRow.dept_id)}</select></td>
             <td class="px-3 py-2"><select data-col="rate_type" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions((options.labourRateTypeOptions || []).map((r) => ({ value: r.value, id: r.value })), normalizedRow.rate_type, (r) => rateTypeLabel[r.value] || r.value)}</select></td>
             <td class="px-3 py-2 text-right">${editable ? actionButtons("labour_selection") : ""}</td>
           </tr>`;
@@ -2878,10 +2880,10 @@
         }
         renderStageRoutes();
         renderSfg();
-        pruneDepartmentScopedRows();
         syncLabourLinesFromSelectionAndRates();
         renderRmWithSkuRules();
         renderLabourSections();
+        warnIfMissingStageDepartments();
         return;
       }
       const skuRuleControl = event.target.closest("[data-sku-rule-col]");
@@ -2929,15 +2931,10 @@
           renderRmWithSkuRules();
           return;
         }
-        const selectedDeptId = String(rmDeptControl.value || "").trim();
-        const stageChanged = selectedDeptId ? upsertStageRouteForDepartment(selectedDeptId) : false;
-        if (stageChanged) {
-          renderStageRoutes();
-          renderSfg();
-        }
         syncLabourLinesFromSelectionAndRates();
         renderSkuRules();
         renderLabourSections();
+        warnIfMissingStageDepartments();
         return;
       }
       const labourControl = event.target.closest('[data-lines-body="labour_selection"] [data-col="labour_id"]');
@@ -2963,16 +2960,8 @@
           renderLabourSections();
           return;
         }
-        let stageChanged = false;
-        if (changedCol === "dept_id") {
-          const selectedDeptId = String(labourSelectionControl.value || "").trim();
-          if (selectedDeptId) stageChanged = upsertStageRouteForDepartment(selectedDeptId);
-        }
-        if (stageChanged) {
-          renderStageRoutes();
-          renderSfg();
-        }
         renderLabourSections();
+        if (changedCol === "dept_id") warnIfMissingStageDepartments();
         return;
       }
       const labourRateControl = event.target.closest('[data-lines-body="labour_rule"] [data-labour-rule-col="rate_value"]');
@@ -3100,6 +3089,7 @@
           state.stage_routes.splice(idx, 1);
           if (!state.stage_routes.length) state.stage_routes.push(addDefaults.stage_route());
           renderAll();
+          warnIfMissingStageDepartments();
         }, true);
         stageBody.addEventListener("keyup", (event) => {
           if (event.key !== "Enter") return;
@@ -3360,54 +3350,6 @@
       }
     };
 
-    const saveDepartmentRateChanges = async () => {
-      const itemId = String(headerItemSelect?.value || "").trim();
-      const articleType = String(headerLevelSelect?.value || "").toUpperCase() === "SEMI_FINISHED" ? "SFG" : "FG";
-      const selectedDeptIds = getSelectedStageDepartmentIdSet();
-      const groups = new Map();
-      for (const key of departmentRateDirty) {
-        const [deptId, skuId] = key.split(":");
-        if (!selectedDeptIds.has(deptId)) continue;
-        const row = findDepartmentRate(deptId, skuId);
-        const raw = String(row?.rate_value ?? "").trim();
-        if (!raw) continue;
-        const value = Number(raw);
-        if (!Number.isFinite(value) || value < 0 || value > 99999999.99 || !/^\d+(?:\.\d{1,2})?$/.test(raw)) {
-          throw new Error("<%= t("error_invalid_rate_value") %>");
-        }
-        const type = String(row?.rate_type || "PER_PAIR").toUpperCase();
-        const groupKey = `${deptId}:${type}`;
-        if (!groups.has(groupKey)) groups.set(groupKey, { deptId, type, rows: [], keys: [] });
-        groups.get(groupKey).rows.push({ sku_id: Number(skuId), new_rate: value });
-        groups.get(groupKey).keys.push(key);
-      }
-      if (!groups.size) return;
-      if (!itemId) throw new Error("<%= t("bom_error_item_required") %>");
-      for (const group of groups.values()) {
-        const payload = {
-          _csrf: <%- JSON.stringify(csrfToken) %>,
-          labour_id: "ALL",
-          dept_id: Number(group.deptId),
-          apply_on: "SKU",
-          sku_ids: group.rows.map((row) => row.sku_id),
-          article_type: articleType,
-          rate_type: group.type,
-          status: "active",
-          rows: group.rows,
-        };
-        const response = await fetch("/hr-payroll/labours/rates/bulk-upsert", {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-csrf-token": <%- JSON.stringify(csrfToken) %> },
-          body: JSON.stringify(payload),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || (!data.queued && data.ok === false)) {
-          throw new Error(data.message || "<%= t("bom_labour_rate_save_failed") %>");
-        }
-        group.keys.forEach((key) => departmentRateDirty.delete(key));
-      }
-    };
-
     document.getElementById("bom-form")?.addEventListener("submit", (event) => {
       const submitter = event.submitter;
       const isApproveNow = submitter instanceof HTMLElement && submitter.matches("[data-bom-approve-now='1']");
@@ -3419,21 +3361,13 @@
         event.preventDefault();
         return;
       }
-      if (!rateSubmitResuming && departmentRateDirty.size) {
-        event.preventDefault();
-        const originalSubmitter = submitter;
-        saveDepartmentRateChanges()
-          .then(() => {
-            rateSubmitResuming = true;
-            bomForm.requestSubmit(originalSubmitter instanceof HTMLElement ? originalSubmitter : undefined);
-          })
-          .catch((err) => showErrorModal(err?.message || "<%= t("bom_labour_rate_save_failed") %>"));
-        return;
-      }
-      rateSubmitResuming = false;
       allowBomSubmit = false;
       syncStateFromDom();
       syncSkuRulesFromDom();
+      if (isExplicitApprovalFlow && warnIfMissingStageDepartments()) {
+        event.preventDefault();
+        return;
+      }
       // Auto-fill empty same-size SKUs from their filled sibling before serializing.
       fillEmptySameSizeSkusFromFilled();
       if (hasClientDuplicateCombos()) {
@@ -3450,6 +3384,9 @@
       document.querySelector('[data-lines-json="sku_rules"]').value = JSON.stringify(skuRuleEntries);
       document.querySelector('[data-lines-json="sfg_lines"]').value = JSON.stringify(sfgEntries);
       document.querySelector('[data-lines-json="labour_lines"]').value = JSON.stringify(state.labour);
+      document.querySelector('[data-lines-json="department_rate_changes"]').value = JSON.stringify(
+        state.departmentRateChanges.filter((row) => String(row.rate_value ?? "").trim() !== ""),
+      );
       document.querySelector('[data-lines-json="stage_routes"]').value = JSON.stringify(getSanitizedStageRoutesForSubmission());
       if (submitIntentInput) {
         submitIntentInput.value = isApproveNow ? "approve" : (isSendForApproval ? "send_for_approval" : "");
@@ -3746,6 +3683,9 @@
         if (sections.includes("labour_rates")) {
           departmentRateLoadVersion += 1;
           state.departmentRates = (data.lines?.labour_rates || []).map((row) => ({ ...row }));
+          state.departmentRateChanges = state.departmentRates
+            .filter((row) => String(row.rate_value ?? "").trim() !== "")
+            .map((row) => ({ dept_id: row.dept_id, sku_id: row.sku_id, rate_type: row.rate_type, rate_value: row.rate_value }));
           departmentRateDirty.clear();
           state.departmentRates.forEach((row) => departmentRateDirty.add(departmentRateKey(row.dept_id, row.sku_id)));
         }
