@@ -35,7 +35,6 @@ const {
 } = require("../services/products/item-lifecycle-service");
 const {
   cascadeSizeRenameToSkuCodes,
-  resyncVariantSkuCode,
 } = require("../services/master-data/size-rename-service");
 const {
   RECALC_APPROVAL_MODE,
@@ -379,17 +378,6 @@ const applySkuChange = async (trx, request, userId) => {
   if (!newValue) return false;
 
   const action = newValue._action || (entityId === "NEW" ? "create" : "update");
-
-  if (action === "resync_code") {
-    await resyncVariantSkuCode({
-      trx,
-      variantId: Number(entityId),
-      expectedOldCode: newValue.expected_old_code,
-      userId,
-      branchId: request.branch_id,
-    });
-    return true;
-  }
 
   if (action === "delete") {
     await trx("erp.skus")

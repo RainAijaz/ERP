@@ -7,12 +7,7 @@ const {
 const {
   hasPermission,
   requiresApproval,
-  handleScreenApproval,
 } = require("../../../middleware/approvals/screen-approval");
-const {
-  markSkuCodeMismatches,
-  resyncVariantSkuCode,
-} = require("../../../services/master-data/size-rename-service");
 const { sendMail } = require("../../../utils/email");
 const { queueAuditLog } = require("../../../utils/audit-log");
 const { sendSkuRateNotification } = require("../../../utils/sku-rate-notification");
@@ -342,7 +337,7 @@ const loadRows = async (filters = {}, itemType = "FG") => {
   query.orderBy("i.name", "asc");
   query.orderBy("v.id", "desc");
   const result = await query;
-  return markSkuCodeMismatches(result, itemType);
+  return result;
 };
 
 // "Recently repriced" for the SKU list = the last month to date. Downloading
@@ -1357,48 +1352,6 @@ router.post(
     }
   },
 );
-
-router.post("/:id/resync-code", async (req, res, next) => {
-  const variantId = Number(req.params.id);
-  const expectedOldCode = String(req.body?.expected_old_code || "").trim();
-  const viewQuery = req.query.item_type === "SFG" ? "?item_type=SFG" : "?item_type=FG";
-  try {
-    if (!Number.isSafeInteger(variantId) || variantId <= 0 || !expectedOldCode) {
-      throw new HttpError(400, res.locals.t("generic_error"));
-    }
-    const current = await knex("erp.skus").select("sku_code")
-      .where({ variant_id: variantId }).first();
-    if (!current || current.sku_code !== expectedOldCode) {
-      throw new HttpError(409, res.locals.t("sku_code_changed"));
-    }
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: "master_data.products.skus",
-      action: "edit",
-      entityType: "SKU",
-      entityId: variantId,
-      summary: `${res.locals.t("sku_code_resync")} - ${expectedOldCode}`,
-      oldValue: { sku_code: expectedOldCode },
-      newValue: { _action: "resync_code", expected_old_code: expectedOldCode },
-      t: res.locals.t,
-    });
-    if (!approval.queued) {
-      await knex.transaction((trx) => resyncVariantSkuCode({
-        trx, variantId, expectedOldCode,
-        userId: req.user?.id || null, branchId: req.branchId || null,
-      }));
-    }
-    const message = approval.queued ? res.locals.t("approval_submitted") : res.locals.t("sku_code_resynced");
-    return res.redirect(`${req.baseUrl}${viewQuery}&success=true&msg=${encodeURIComponent(message)}`);
-  } catch (err) {
-    console.error("Error in resyncVariantSkuCode:", err);
-    if (err instanceof HttpError) return next(err);
-    if (err.code === "SKU_CODE_STALE") {
-      return next(new HttpError(409, res.locals.t("sku_code_changed")));
-    }
-    return next(new HttpError(500, res.locals.t("generic_error")));
-  }
-});
 
 router.post(
   "/:id/toggle",

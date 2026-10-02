@@ -67,16 +67,6 @@ const priorSizeNamesFromAudit = (entries) => {
   return [...names];
 };
 
-const markSkuCodeMismatches = (rows, itemType) => {
-  for (const row of rows) {
-    const baseCode = buildSkuCodeForVariant({ ...row, item_type: itemType }, row.size_name);
-    row.sku_code_suggested = baseCode;
-    row.sku_code_needs_resync = Boolean(row.size_name && row.sku_code &&
-      !isGeneratedSkuCodeForBase(row.sku_code, baseCode));
-  }
-  return rows;
-};
-
 const ensureUniqueSkuCode = async (trx, baseCode, excludeSkuId) => {
   let candidate = baseCode;
   let counter = 2;
@@ -190,57 +180,8 @@ const cascadeSizeRenameToSkuCodes = async ({
   }
 };
 
-// Explicitly repair a SKU left behind by an older size rename. The caller must
-// authorize this action; a read of the SKU list must never rewrite custom codes.
-const resyncVariantSkuCode = async ({ trx, variantId, expectedOldCode, userId, branchId = null }) => {
-  const id = Number(variantId);
-  if (!trx || !Number.isSafeInteger(id) || id <= 0 || !String(expectedOldCode || "").trim()) {
-    throw Object.assign(new Error("SKU_CODE_INVALID"), { code: "SKU_CODE_INVALID" });
-  }
-  try {
-    const row = await trx("erp.variants as v")
-      .select("v.id as variant_id", "k.id as sku_id", "k.sku_code", "i.name as item_name",
-        "i.code as item_code", "i.item_type", "s.name as size_name", "g.name as grade_name",
-        "c.name as color_name", "p.name as packing_name")
-      .join("erp.skus as k", "k.variant_id", "v.id")
-      .join("erp.items as i", "i.id", "v.item_id")
-      .leftJoin("erp.sizes as s", "s.id", "v.size_id")
-      .leftJoin("erp.grades as g", "g.id", "v.grade_id")
-      .leftJoin("erp.colors as c", "c.id", "v.color_id")
-      .leftJoin("erp.packing_types as p", "p.id", "v.packing_type_id")
-      .where("v.id", id)
-      .forUpdate("k")
-      .first();
-    if (!row || !row.size_name || row.sku_code !== expectedOldCode) {
-      throw Object.assign(new Error("SKU_CODE_STALE"), { code: "SKU_CODE_STALE" });
-    }
-    const baseCode = buildSkuCodeForVariant(row, row.size_name);
-    if (isGeneratedSkuCodeForBase(row.sku_code, baseCode)) {
-      return { updated: false, skuCode: row.sku_code };
-    }
-    const nextCode = await ensureUniqueSkuCode(trx, baseCode, row.sku_id);
-    await trx("erp.skus").where({ id: row.sku_id, sku_code: expectedOldCode })
-      .update({ sku_code: nextCode });
-    await insertActivityLog(trx, {
-      branchId,
-      userId,
-      entityType: "SKU",
-      entityId: String(id),
-      action: "UPDATE",
-      context: { source: "sku-code-resync", sku_id: row.sku_id,
-        old_sku_code: row.sku_code, new_sku_code: nextCode, size_name: row.size_name },
-    });
-    return { updated: true, skuCode: nextCode };
-  } catch (err) {
-    console.error("Error in SizeRenameService:", err);
-    throw err;
-  }
-};
-
 module.exports = {
   buildSkuCodeForVariant,
   cascadeSizeRenameToSkuCodes,
   isGeneratedSkuCodeForBase,
-  markSkuCodeMismatches,
-  resyncVariantSkuCode,
 };
