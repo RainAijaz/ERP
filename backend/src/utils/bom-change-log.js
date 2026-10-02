@@ -8,7 +8,7 @@ const valueChanged = (a, b) => JSON.stringify(a ?? null) !== JSON.stringify(b ??
 
 const keysBySection = {
   rm_lines: (row) => `${row.rm_item_id || 0}:${row.dept_id || 0}:${row.color_id || 0}:${row.size_id || 0}`,
-  sfg_lines: (row) => `${row.fg_size_id || 0}:${row.sfg_sku_id || 0}`,
+  sfg_lines: (row) => `${row.output_sku_id ? `sku:${row.output_sku_id}` : `size:${row.fg_size_id || 0}`}:${row.sfg_sku_id || 0}`,
   labour_lines: (row) => `${row.dept_id || 0}:${row.labour_id || 0}:${row.size_scope || "ALL"}:${row.size_id || 0}:${row.rate_type || "PER_PAIR"}`,
   stage_routes: (row) => String(row.stage_id || 0),
   variant_rules: (row) =>

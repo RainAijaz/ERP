@@ -1,4 +1,5 @@
 const { insertBomChangeLog } = require("../../utils/bom-change-log");
+const { assertNoSfgDependencyCycleTx } = require("./sfg-dependency-service");
 const {
   SYSTEM_DECISION_NOTES,
 } = require("../../utils/approval-decision-notes");
@@ -364,11 +365,12 @@ const parseBomFormPayload = (body = {}) => {
       ),
     sfg_lines: sfgRaw
       .map((row) => ({
+        output_sku_id: toNumberOrNull(row.output_sku_id || row.fg_sku_id),
         fg_size_id: toNumberOrNull(row.fg_size_id),
         sfg_sku_id: toNumberOrNull(row.sfg_sku_id),
         required_qty: toNumberOrNull(row.required_qty),
         uom_id: toNumberOrNull(row.uom_id),
-        consumed_in_stage_id: toPositiveInt(row.consumed_in_stage_id),
+        consumed_in_stage_id: String(row.consumed_in_stage_id || "").trim(),
       }))
       .filter((row) => row.sfg_sku_id || row.required_qty),
     labour_lines: labourRaw
@@ -726,18 +728,22 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
 
   let sfgLines = toArray(input?.sfg_lines)
     .map((line) => ({
+      output_sku_id: toNumberOrNull(line.output_sku_id || line.fg_sku_id),
       fg_size_id: toNumberOrNull(line.fg_size_id),
       sfg_sku_id: toNumberOrNull(line.sfg_sku_id),
       required_qty: toPositiveNumber(line.required_qty),
       uom_id: toNumberOrNull(line.uom_id),
       consumed_in_stage_id: toPositiveInt(line.consumed_in_stage_id),
+      consumed_in_dept_id: /^dept:\d+$/.test(String(line.consumed_in_stage_id || ""))
+        ? toPositiveInt(String(line.consumed_in_stage_id).slice(5))
+        : null,
       ref_approved_bom_id: null,
     }))
     .filter((line) => line.sfg_sku_id || line.required_qty);
   if (sfgLines.length) {
     const sfgUniqueByCombo = new Map();
     sfgLines.forEach((line) => {
-      const key = `${toNumberOrNull(line.fg_size_id) || 0}:${toNumberOrNull(line.sfg_sku_id) || 0}`;
+      const key = `${line.output_sku_id ? `sku:${line.output_sku_id}` : `size:${line.fg_size_id || 0}`}:${line.sfg_sku_id || 0}`;
       const score =
         Number(line.required_qty ? 1 : 0) + Number(line.uom_id ? 1 : 0);
       const existing = sfgUniqueByCombo.get(key);
@@ -746,14 +752,6 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
       }
     });
     sfgLines = [...sfgUniqueByCombo.values()].map((entry) => entry.line);
-  }
-
-  if (level === "SEMI_FINISHED" && sfgLines.length) {
-    details.push({
-      field: "sfg_lines_json",
-      message:
-        t("bom_error_sfg_not_allowed_for_sfg_level") ,
-    });
   }
 
   const skuIds = [
@@ -767,6 +765,14 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         .whereIn("s.id", skuIds)
     : [];
   const skuMap = new Map(skuRows.map((row) => [toNumberOrNull(row.id), row]));
+  const outputSkuIds = [...new Set(sfgLines.map((line) => line.output_sku_id).filter(Boolean))];
+  const outputSkuRows = outputSkuIds.length
+    ? await db("erp.skus as s")
+        .select("s.id", "v.item_id", "v.size_id")
+        .leftJoin("erp.variants as v", "s.variant_id", "v.id")
+        .whereIn("s.id", outputSkuIds)
+    : [];
+  const outputSkuMap = new Map(outputSkuRows.map((row) => [toNumberOrNull(row.id), row]));
   const incompleteSfgRowIndexes = [];
   const sfgItemIds = [
     ...new Set(
@@ -792,11 +798,19 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
   }
   for (let idx = 0; idx < sfgLines.length; idx += 1) {
     const line = sfgLines[idx];
+    if (line.output_sku_id) {
+      const outputSku = outputSkuMap.get(line.output_sku_id);
+      if (!outputSku || toNumberOrNull(outputSku.item_id) !== itemId ||
+          toNumberOrNull(outputSku.size_id) !== line.fg_size_id) {
+        details.push({ field: "sfg_lines_json", message: formatRowMessage(idx, t("bom_error_sfg_output_sku_invalid")) });
+        continue;
+      }
+    }
     if (
       !line.fg_size_id ||
       !line.sfg_sku_id ||
       !line.required_qty ||
-      !line.consumed_in_stage_id
+      !(line.consumed_in_stage_id || line.consumed_in_dept_id)
     ) {
       incompleteSfgRowIndexes.push(idx + 1);
       continue;
@@ -1195,6 +1209,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
       enforce_sequence: line?.enforce_sequence !== false,
     }))
     .filter((line) => line.stage_id || line.dept_id);
+  let resolvedStageIdByDeptId = new Map();
 
   const hasProductionStageTable = await tableExists(
     db,
@@ -1225,6 +1240,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         actorUserId: options?.actorUserId,
       },
     );
+    resolvedStageIdByDeptId = stageIdByDeptId;
     stageRoutes.forEach((line) => {
       if (line.dept_id) {
         line.stage_id = stageIdByDeptId.get(line.dept_id) || null;
@@ -1296,12 +1312,17 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
   }
 
   if (sfgLines.length) {
+    sfgLines.forEach((line) => {
+      if (!line.consumed_in_stage_id && line.consumed_in_dept_id) {
+        line.consumed_in_stage_id = resolvedStageIdByDeptId.get(line.consumed_in_dept_id) || null;
+      }
+      delete line.consumed_in_dept_id;
+    });
     const mappedStageIds = new Set(
       stageRoutes.map((line) => toPositiveInt(line.stage_id)).filter(Boolean),
     );
     if (
       hasBomStageRoutingTable &&
-      level === "FINISHED" &&
       !mappedStageIds.size
     ) {
       details.push({
@@ -1338,6 +1359,17 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
       t("bom_error_fix_fields") ,
       details,
     );
+
+  if (level === "SEMI_FINISHED" && sfgLines.length) {
+    await assertNoSfgDependencyCycleTx({
+      trx: db,
+      parentItemId: itemId,
+      childItemIds: sfgLines.map((line) =>
+        toNumberOrNull(skuMap.get(line.sfg_sku_id)?.item_id),
+      ),
+      t,
+    });
+  }
 
   await validateRequiredRates(db, rmLines, t);
 
@@ -1459,6 +1491,7 @@ const buildApprovalSnapshot = (snapshot = {}) => {
     );
   const sfgLines = toArray(snapshot.sfg_lines)
     .map((line) => ({
+      output_sku_id: toNumberOrNull(line.output_sku_id),
       fg_size_id: toNumberOrNull(line.fg_size_id),
       sfg_sku_id: toNumberOrNull(line.sfg_sku_id),
       required_qty: toNumberOrNull(line.required_qty),
@@ -1467,8 +1500,8 @@ const buildApprovalSnapshot = (snapshot = {}) => {
       ref_approved_bom_id: toNumberOrNull(line.ref_approved_bom_id),
     }))
     .sort((a, b) =>
-      `${a.fg_size_id || 0}:${a.sfg_sku_id || 0}`.localeCompare(
-        `${b.fg_size_id || 0}:${b.sfg_sku_id || 0}`,
+      `${a.output_sku_id || 0}:${a.fg_size_id || 0}:${a.sfg_sku_id || 0}`.localeCompare(
+        `${b.output_sku_id || 0}:${b.fg_size_id || 0}:${b.sfg_sku_id || 0}`,
       ),
     );
   const labourLines = toArray(snapshot.labour_lines)
@@ -1567,6 +1600,7 @@ const replaceBomLines = async (trx, bomId, lines) => {
     await trx("erp.bom_sfg_line").insert(
       lines.sfg_lines.map((line) => ({
         bom_id: bomId,
+        output_sku_id: line.output_sku_id || null,
         fg_size_id: line.fg_size_id,
         sfg_sku_id: line.sfg_sku_id,
         required_qty: line.required_qty,
@@ -1706,6 +1740,7 @@ const getBomSnapshot = async (db, bomId) => {
         .orderBy("id", "asc"),
       db("erp.bom_sfg_line")
         .select(
+          "output_sku_id",
           "fg_size_id",
           "sfg_sku_id",
           "required_qty",
@@ -2068,24 +2103,21 @@ const validateDraftReadyForApproval = async (
       const rmItemId = toNumberOrNull(line?.target_rm_item_id);
       const deptId = toNumberOrNull(line?.dept_id);
       const qty = toNumberOrNull(line?.override_qty);
-      if (!skuId || !rmItemId || !deptId || qty === null || qty < 0) return;
+      const isExcluded = line?.is_excluded === true;
+      if (!skuId || !rmItemId || !deptId) return;
+      if (!isExcluded && (qty === null || qty < 0)) return;
       providedPairSet.add(`${skuId}:${rmItemId}:${deptId}`);
     });
-    const skusWithAnyRule = new Set(
-      [...providedPairSet].map((key) => toNumberOrNull(key.split(":")[0])).filter(Boolean),
-    );
     const missingPairs = [];
     skuRows.forEach((sku) => {
       const skuId = toNumberOrNull(sku?.id);
-      if (!skuId || !skusWithAnyRule.has(skuId)) return;
+      if (!skuId) return;
       rmLines.forEach((rmLine) => {
         const rmItemId = toNumberOrNull(rmLine?.rm_item_id);
         const deptId = toNumberOrNull(rmLine?.dept_id);
         if (!rmItemId || !deptId) return;
         const pairKey = `${skuId}:${rmItemId}:${deptId}`;
-        const baseQty = toNumberOrNull(rmLine?.qty);
-        const hasValidBase = baseQty !== null && Number.isFinite(baseQty) && baseQty >= 0;
-        if (!providedPairSet.has(pairKey) && !hasValidBase) {
+        if (!providedPairSet.has(pairKey)) {
           missingPairs.push({ skuId, rmItemId, deptId });
         }
       });
@@ -2229,13 +2261,16 @@ const validateDraftReadyForApproval = async (
   };
 
   if (
-    String(form.header.level || "").toUpperCase() === "FINISHED" &&
-    String(itemRow?.item_type || "").toUpperCase() === "FG" &&
-    Boolean(itemRow?.uses_sfg)
+    (String(form.header.level || "").toUpperCase() === "FINISHED" &&
+      String(itemRow?.item_type || "").toUpperCase() === "FG" &&
+      Boolean(itemRow?.uses_sfg)) ||
+    (String(form.header.level || "").toUpperCase() === "SEMI_FINISHED" &&
+      toArray(form.sfg_lines).length > 0)
   ) {
     const sfgRowsForApproval = toArray(form.sfg_lines)
       .map((line, idx) => ({
         rowIndex: idx + 1,
+        output_sku_id: toNumberOrNull(line?.output_sku_id),
         fg_size_id: toNumberOrNull(line?.fg_size_id),
         sfg_sku_id: toNumberOrNull(line?.sfg_sku_id),
         required_qty: toPositiveNumber(line?.required_qty),
@@ -2248,11 +2283,10 @@ const validateDraftReadyForApproval = async (
           line.required_qty &&
           line.consumed_in_stage_id,
       );
-    const validSfgBySize = new Set(
-      sfgRowsForApproval.map((line) => String(line.fg_size_id)),
-    );
+    const validSfgBySize = new Set(sfgRowsForApproval.filter((line) => !line.output_sku_id).map((line) => String(line.fg_size_id)));
+    const validSfgBySku = new Set(sfgRowsForApproval.map((line) => String(line.output_sku_id)));
     const missingSfgSkus = skuRows.filter(
-      (sku) => !validSfgBySize.has(String(sku.size_id)),
+      (sku) => !validSfgBySku.has(String(sku.id)) && !validSfgBySize.has(String(sku.size_id)),
     );
     if (missingSfgSkus.length) {
       const sample = missingSfgSkus
@@ -2558,7 +2592,11 @@ const saveBomDraft = async (knex, params) => {
           ],
         );
       }
-      if (hasConstraint("bom_sfg_line_bom_id_fg_size_id_sfg_sku_id_key")) {
+      if (
+        hasConstraint("bom_sfg_line_bom_id_fg_size_id_sfg_sku_id_key") ||
+        hasConstraint("ux_bom_sfg_legacy_size_input") ||
+        hasConstraint("ux_bom_sfg_output_sku_input")
+      ) {
         throw makeValidationError(
           (params?.t && params.t("bom_error_fix_fields")) ||
             "Please fix the following validation issues before saving BOM.",
@@ -2609,6 +2647,23 @@ const approveBomDirectTx = async (trx, { bomId, userId, requestId, t }) => {
     throw makeValidationError(
       t("bom_error_approve_requires_draft") ,
     );
+  }
+
+  if (row.level === "SEMI_FINISHED") {
+    // Serialize approvals so two concurrent BOM edits cannot create a cycle.
+    await trx.raw("SELECT pg_advisory_xact_lock(?::bigint)", [541086019]);
+    const childRows = await trx("erp.bom_sfg_line as line")
+      .join("erp.skus as sku", "sku.id", "line.sfg_sku_id")
+      .join("erp.variants as variant", "variant.id", "sku.variant_id")
+      .select("variant.item_id")
+      .where("line.bom_id", id);
+    await assertNoSfgDependencyCycleTx({
+      trx,
+      parentItemId: row.item_id,
+      childItemIds: childRows.map((child) => child.item_id),
+      requireApprovedChildren: true,
+      t,
+    });
   }
 
   const before = await getBomSnapshot(trx, id);
@@ -2731,6 +2786,7 @@ const createNewVersionFromApprovedTx = async (
         .where({ bom_id: sourceId }),
       trx("erp.bom_sfg_line")
         .select(
+          "output_sku_id",
           "fg_size_id",
           "sfg_sku_id",
           "required_qty",
@@ -3909,6 +3965,7 @@ const getBomForForm = async (knex, id) => {
       knex("erp.bom_sfg_line")
         .select(
           "id",
+          "output_sku_id",
           "fg_size_id",
           "sfg_sku_id",
           "required_qty",

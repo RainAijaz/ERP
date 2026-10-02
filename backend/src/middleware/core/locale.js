@@ -752,6 +752,7 @@ const translations = {
     bom_labour_rate_save_failed: "Labour rates could not be saved. Review the rates and try again.",
     bom_copy_section_labour_rates: "Labour rates",
     bom_copy_skip_mixed_labour_rates: "labourers have different rates; set this rate manually",
+    bom_copy_skip_no_matching_output_sku: "no unique output SKU with the same size, color, grade, and packaging was found",
     bom_copy_subtitle: "Pick another article's approved BOM to pre-fill this draft, including available labour rates.",
     bom_tab_variant_rules: "Variant Rules",
     bom_rm_rules_size_wise: "Size-Wise Raw Material Rules",
@@ -940,6 +941,11 @@ const translations = {
     bom_error_loss_pct_invalid: "Normal loss % must be between 0 and 100.",
     bom_error_sfg_not_allowed_for_sfg_level:
       "Semi-finished BOM cannot include SFG section lines.",
+    bom_error_sfg_dependency_cycle:
+      "A semi-finished item cannot consume itself, directly or through another semi-finished item.",
+    bom_sfg_component_sku: "Semi-finished input SKU",
+    bom_error_sfg_output_sku_invalid:
+      "Article SKU must belong to this BOM and match the selected size.",
     bom_error_sfg_line_invalid: "Invalid semi-finished line.",
     bom_error_sfg_section_incomplete:
       "Complete all mandatory fields in Semi-Finished section (Article SKU, Step/Upper SKU, and Step Quantity).",
@@ -2778,6 +2784,11 @@ translations.ur = {
     "منتخب سائز اس خام مال کے فعال ریٹس میں موجود نہیں ہے۔",
   bom_error_sfg_item_invalid:
     "منتخب کردہ SKU کا تعلق نیم تیار شدہ شے سے ہونا چاہیے۔",
+  bom_error_sfg_dependency_cycle:
+    "نیم تیار شدہ آئٹم خود کو براہِ راست یا کسی دوسرے نیم تیار شدہ آئٹم کے ذریعے استعمال نہیں کر سکتا۔",
+  bom_sfg_component_sku: "نیم تیار شدہ اِن پٹ SKU",
+  bom_error_sfg_output_sku_invalid:
+    "آرٹیکل SKU کا تعلق اسی BOM سے ہونا چاہیے اور اس کا سائز منتخب کردہ سائز سے ملنا چاہیے۔",
   bom_error_sfg_line_invalid: "غلط نیم تیار شدہ لائن۔",
   bom_error_sfg_section_incomplete:
     "Semi-Finished سیکشن کے تمام لازمی فیلڈز مکمل کریں (Article SKU، Step/Upper SKU، Step Quantity)۔",
@@ -2827,6 +2838,7 @@ translations.ur = {
   bom_labour_rate_save_failed: "لیبر ریٹ محفوظ نہیں ہو سکے۔ ریٹ دیکھ کر دوبارہ کوشش کریں۔",
   bom_copy_section_labour_rates: "لیبر ریٹس",
   bom_copy_skip_mixed_labour_rates: "لیبر کے ریٹ مختلف ہیں؛ یہ ریٹ دستی طور پر درج کریں",
+  bom_copy_skip_no_matching_output_sku: "اسی سائز، رنگ، گریڈ اور پیکنگ والا منفرد آؤٹ پٹ SKU نہیں ملا۔",
   bom_copy_subtitle: "دوسرے آرٹیکل کے منظور شدہ BOM سے یہ ڈرافٹ اور دستیاب لیبر ریٹ کاپی کریں۔",
   bom_labour_selection_hint:
     "Rows are auto-loaded from active Labour Rates for the selected article. Review and adjust only if needed.",

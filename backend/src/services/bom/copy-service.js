@@ -245,6 +245,8 @@ const skipReasonLabel = (t, entry) => {
       return `${entry.label || ""}: ${resolveText(t, "bom_copy_skip_no_sfg_link", "this article has no linked semi-finished item")}`;
     case "no_matching_sfg_sku":
       return `${entry.label || ""}: ${resolveText(t, "bom_copy_skip_no_sfg_sku", "no semi-finished SKU with the same size was found for this article")}`;
+    case "no_matching_output_sku":
+      return `${entry.label || ""}: ${resolveText(t, "bom_copy_skip_no_matching_output_sku", "no unique output SKU with the same size, color, grade, and packaging was found")}`;
     case "mixed_labour_rates":
       return `${entry.sku_code || ""}${variant}: ${resolveText(t, "bom_copy_skip_mixed_labour_rates", "labourers have different rates; set this rate manually")}`;
     default:
@@ -255,11 +257,29 @@ const skipReasonLabel = (t, entry) => {
 // Map source SFG consumption lines onto the target article's linked SFG items.
 const mapSfgLinesToTarget = async (
   knex,
-  { sfgLines, targetItem, targetSizeIdSet },
+  { sfgLines, sourceItemId = null, targetItem, targetSizeIdSet },
 ) => {
   const mapped = [];
   const skipped = [];
   if (!Array.isArray(sfgLines) || !sfgLines.length) return { mapped, skipped };
+  const variantAttrs = sourceItemId
+    ? await loadSkuVariantAttrs(knex, [sourceItemId, targetItem.id])
+    : new Map();
+  const sourceOutputById = new Map((variantAttrs.get(toNumberOrNull(sourceItemId)) || [])
+    .map((sku) => [sku.sku_id, sku]));
+  const targetOutputSkus = variantAttrs.get(toNumberOrNull(targetItem.id)) || [];
+  const outputVariantKey = (sku) => [sku?.size_id, sku?.color_id, sku?.grade_id, sku?.packing_type_id]
+    .map((value) => toNumberOrNull(value) || 0).join("|");
+  const mapOutputSku = (line) => {
+    if (!toNumberOrNull(line.output_sku_id)) return { outputSkuId: null };
+    const sourceOutput = sourceOutputById.get(toNumberOrNull(line.output_sku_id));
+    if (!sourceOutput) return { error: "no_matching_output_sku" };
+    const candidates = targetOutputSkus.filter((sku) =>
+      outputVariantKey(sku) === outputVariantKey(sourceOutput));
+    return candidates.length === 1
+      ? { outputSkuId: candidates[0].sku_id }
+      : { error: "no_matching_output_sku" };
+  };
 
   const usageRows = await knex("erp.item_usage")
     .select("sfg_item_id")
@@ -303,6 +323,9 @@ const mapSfgLinesToTarget = async (
           "s.sku_code",
           "v.item_id",
           "v.size_id",
+          "v.color_id",
+          "v.grade_id",
+          "v.packing_type_id",
           "i.code as item_code",
           "i.is_global_sfg",
         )
@@ -314,6 +337,40 @@ const mapSfgLinesToTarget = async (
     sourceSkuRows.map((row) => [toNumberOrNull(row.id), row]),
   );
 
+  if (String(targetItem.item_type || "").toUpperCase() === "SFG") {
+    // SFG inputs are physical components, not FG-to-SFG usage mappings. Keep
+    // the same input SKU when copying between semi-finished BOMs; the save
+    // validator will still check the target's dependency graph and stage.
+    sfgLines.forEach((line) => {
+      const outputMapping = mapOutputSku(line);
+      if (outputMapping.error) {
+        skipped.push({ label: `Output SKU ${line.output_sku_id}`, line, reason: outputMapping.error });
+        return;
+      }
+      const sourceSku = sourceSkuById.get(toNumberOrNull(line.sfg_sku_id));
+      const sizeId = toNumberOrNull(line.fg_size_id);
+      const label = sourceSku?.sku_code || `SFG SKU ${line.sfg_sku_id}`;
+      if (sizeId && targetSizeIdSet && !targetSizeIdSet.has(sizeId)) {
+        skipped.push({ label, line, reason: "fg_size_not_in_target" });
+        return;
+      }
+      if (!sourceSku || toNumberOrNull(sourceSku.item_id) === toNumberOrNull(targetItem.id)) {
+        skipped.push({ label, line, reason: "no_matching_sfg_sku" });
+        return;
+      }
+      mapped.push({
+        output_sku_id: outputMapping.outputSkuId,
+        fg_size_id: line.fg_size_id,
+        sfg_sku_id: sourceSku.id,
+        required_qty: line.required_qty,
+        uom_id: line.uom_id,
+        consumed_in_stage_id: line.consumed_in_stage_id,
+        ref_approved_bom_id: null,
+      });
+    });
+    return { mapped, skipped };
+  }
+
   const targetSfgSkuRows = targetSfgItemIds.length
     ? await knex("erp.skus as s")
         .select(
@@ -321,6 +378,9 @@ const mapSfgLinesToTarget = async (
           "s.sku_code",
           "v.item_id",
           "v.size_id",
+          "v.color_id",
+          "v.grade_id",
+          "v.packing_type_id",
           "i.code as item_code",
         )
         .leftJoin("erp.variants as v", "s.variant_id", "v.id")
@@ -338,6 +398,11 @@ const mapSfgLinesToTarget = async (
   };
 
   sfgLines.forEach((line) => {
+    const outputMapping = mapOutputSku(line);
+    if (outputMapping.error) {
+      skipped.push({ label: `Output SKU ${line.output_sku_id}`, line, reason: outputMapping.error });
+      return;
+    }
     const sourceSku = sourceSkuById.get(toNumberOrNull(line.sfg_sku_id));
     const label = sourceSku?.sku_code || `SFG SKU ${line.sfg_sku_id}`;
     const fgSizeId = toNumberOrNull(line.fg_size_id);
@@ -354,6 +419,7 @@ const mapSfgLinesToTarget = async (
     // means the per-article mapping below would find no candidate and drop it.
     if (sourceSku.is_global_sfg === true) {
       mapped.push({
+        output_sku_id: outputMapping.outputSkuId,
         fg_size_id: line.fg_size_id,
         sfg_sku_id: sourceSku.id,
         required_qty: line.required_qty,
@@ -370,7 +436,7 @@ const mapSfgLinesToTarget = async (
     const sourceSuffix = suffixOf(sourceSku.item_code);
     let candidates = targetSfgSkuRows.filter(
       (row) =>
-        toNumberOrNull(row.size_id) === toNumberOrNull(sourceSku.size_id),
+        outputVariantKey(row) === outputVariantKey(sourceSku),
     );
     if (candidates.length > 1 && sourceSuffix) {
       const bySuffix = candidates.filter(
@@ -383,6 +449,7 @@ const mapSfgLinesToTarget = async (
       return;
     }
     mapped.push({
+      output_sku_id: outputMapping.outputSkuId,
       fg_size_id: line.fg_size_id,
       sfg_sku_id: candidates[0].id,
       required_qty: line.required_qty,
@@ -470,6 +537,7 @@ const buildCopyPayload = async (
       .orderBy("id", "asc"),
     knex("erp.bom_sfg_line")
       .select(
+        "output_sku_id",
         "fg_size_id",
         "sfg_sku_id",
         "required_qty",
@@ -598,6 +666,7 @@ const buildCopyPayload = async (
     );
     const { mapped, skipped } = await mapSfgLinesToTarget(knex, {
       sfgLines,
+      sourceItemId: source.item_id,
       targetItem,
       targetSizeIdSet,
     });
@@ -712,6 +781,7 @@ const hydrateBomSnapshotForPreview = async (knex, snapshot, locale = "en") => {
     collect(sizeIds, r.rm_size_id);
   });
   sfgLines.forEach((r) => {
+    collect(skuIds, r.output_sku_id);
     collect(skuIds, r.sfg_sku_id);
     collect(sizeIds, r.fg_size_id);
     collect(stageIds, r.consumed_in_stage_id);
@@ -764,6 +834,7 @@ const hydrateBomSnapshotForPreview = async (knex, snapshot, locale = "en") => {
     sfg_lines: sfgLines.map((r) => ({
       ...r,
       _label: [
+        skuCode.get(toNumberOrNull(r.output_sku_id)),
         sizeName.get(toNumberOrNull(r.fg_size_id)),
         skuCode.get(toNumberOrNull(r.sfg_sku_id)) || `#${r.sfg_sku_id}`,
         stageName.get(toNumberOrNull(r.consumed_in_stage_id)),

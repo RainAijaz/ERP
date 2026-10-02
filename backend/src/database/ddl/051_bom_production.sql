@@ -108,17 +108,20 @@ CREATE TABLE IF NOT EXISTS erp.bom_rm_line (
 );
 
 -- -----------------------------------------------------------------------------
--- bom_sfg_line (SFG consumption lines varying by finished size)
+-- bom_sfg_line (SFG consumption lines varying by output size)
 -- -----------------------------------------------------------------------------
--- Finished BOM can consume SFG SKUs, and required mapping may vary by FG size.
+-- Finished and semi-finished BOMs can consume SFG SKUs. The legacy fg_size_id
+-- column identifies the parent output size for either BOM level.
 -- ref_approved_bom_id is intended to point to the APPROVED BOM of the SFG item.
 -- Status+item matching is enforced later in integrity_checks.sql (trigger).
 CREATE TABLE IF NOT EXISTS erp.bom_sfg_line (
   id                  bigserial PRIMARY KEY,
   bom_id              bigint NOT NULL REFERENCES erp.bom_header(id) ON DELETE CASCADE,
 
-  -- Which FINISHED size does this line apply to?
+  -- Which parent output size does this line apply to?
   fg_size_id          bigint NOT NULL REFERENCES erp.sizes(id),
+  -- NULL is the legacy size-wide rule; new rules target one exact output SKU.
+  output_sku_id       bigint REFERENCES erp.skus(id) ON DELETE RESTRICT,
 
   -- Which SFG SKU is consumed (SFG has SKUs in your design)
   sfg_sku_id          bigint NOT NULL REFERENCES erp.skus(id) ON DELETE RESTRICT,
@@ -131,10 +134,38 @@ CREATE TABLE IF NOT EXISTS erp.bom_sfg_line (
   -- Intended to reference the APPROVED BOM of the SFG item behind sfg_sku_id
   ref_approved_bom_id bigint REFERENCES erp.bom_header(id),
 
-  CHECK (required_qty > 0),
-
-  UNIQUE (bom_id, fg_size_id, sfg_sku_id)
+  CHECK (required_qty > 0)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_bom_sfg_legacy_size_input
+  ON erp.bom_sfg_line (bom_id, fg_size_id, sfg_sku_id)
+  WHERE output_sku_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_bom_sfg_output_sku_input
+  ON erp.bom_sfg_line (bom_id, output_sku_id, sfg_sku_id)
+  WHERE output_sku_id IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION erp.trg_bom_sfg_output_sku_validate()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  parent_item_id bigint;
+  output_item_id bigint;
+  output_size_id bigint;
+BEGIN
+  IF NEW.output_sku_id IS NULL THEN RETURN NEW; END IF;
+  SELECT item_id INTO parent_item_id FROM erp.bom_header WHERE id = NEW.bom_id;
+  SELECT v.item_id, v.size_id INTO output_item_id, output_size_id
+    FROM erp.skus s JOIN erp.variants v ON v.id = s.variant_id
+    WHERE s.id = NEW.output_sku_id;
+  IF parent_item_id IS NULL OR output_item_id IS DISTINCT FROM parent_item_id
+     OR output_size_id IS DISTINCT FROM NEW.fg_size_id THEN
+    RAISE EXCEPTION 'SFG output SKU must belong to the BOM item and match its size.';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS trg_bom_sfg_output_sku_validate ON erp.bom_sfg_line;
+CREATE TRIGGER trg_bom_sfg_output_sku_validate
+  BEFORE INSERT OR UPDATE ON erp.bom_sfg_line
+  FOR EACH ROW EXECUTE FUNCTION erp.trg_bom_sfg_output_sku_validate();
 
 -- -----------------------------------------------------------------------------
 -- bom_labour_line (rates for BOM costing + DCV)

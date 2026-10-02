@@ -1337,6 +1337,8 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
       knex("erp.bom_sfg_line as sl")
         .select(
           "sl.bom_id",
+          "sl.output_sku_id",
+          "sl.consumed_in_stage_id",
           "sl.sfg_sku_id",
           "sl.required_qty",
           // fg_size_id and uom_id are what make an SFG line costable: the line
@@ -1657,24 +1659,38 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
     return pairs > 0 ? pairs : resolveBomOutputQty(bomRow);
   };
 
-  // SFG lines are declared per finished size: producing one lot of size 8
-  // consumes only the lines whose fg_size_id is 8 (production filters on
-  // fg_size_id === the SKU's size). Summing every size therefore multiplied a
-  // BOM's SFG cost by its size count. Collapse the sizes onto one representative
-  // lot by weighting each size 1/sizeCount -- i.e. the average of the per-size
-  // subtotals, which is exact whenever the sizes consume alike (the normal case:
-  // one upper per pair, differing only in which size-specific SKU is used).
-  //
-  // This is deliberately NOT tied to the labour aggregation control: multiple
-  // labours in a department are additional operations that really do all get
-  // costed, whereas size variants are mutually exclusive for a given lot.
-  const resolveSfgSizeWeights = (sfgLines) => {
+  const outputSkuRows = await knex("erp.skus as s")
+    .select("s.id", "v.item_id", "v.size_id")
+    .join("erp.variants as v", "s.variant_id", "v.id")
+    .whereIn("v.item_id", [...new Set([...bomById.values()].map((row) => Number(row.item_id)))])
+    .andWhere("s.is_active", true);
+  const outputSkusByItem = new Map();
+  outputSkuRows.forEach((sku) => {
+    const itemId = Number(sku.item_id);
+    if (!outputSkusByItem.has(itemId)) outputSkusByItem.set(itemId, []);
+    outputSkusByItem.get(itemId).push(sku);
+  });
+  const resolveSfgLineWeights = (bomRow, sfgLines) => {
     const weights = new Map();
-    const sizeIds = [
-      ...new Set((sfgLines || []).map((line) => Number(line.fg_size_id || 0))),
-    ];
-    const weight = sizeIds.length > 1 ? 1 / sizeIds.length : 1;
-    sizeIds.forEach((sizeId) => weights.set(sizeId, weight));
+    if (!(sfgLines || []).some((line) => line.output_sku_id)) {
+      // Preserve the historical equal-per-size costing of approved legacy BOMs.
+      const sizeIds = new Set((sfgLines || []).map((line) => Number(line.fg_size_id || 0)));
+      const weight = sizeIds.size > 1 ? 1 / sizeIds.size : 1;
+      (sfgLines || []).forEach((line) => weights.set(line, weight));
+      return weights;
+    }
+    const outputSkus = outputSkusByItem.get(Number(bomRow.item_id)) || [];
+    if (!outputSkus.length) return weights;
+    const explicitBySkuStage = new Set((sfgLines || [])
+      .filter((line) => line.output_sku_id)
+      .map((line) => `${line.output_sku_id}:${line.consumed_in_stage_id || 0}`));
+    (sfgLines || []).forEach((line) => {
+      const appliesTo = outputSkus.filter((sku) => line.output_sku_id
+        ? Number(line.output_sku_id) === Number(sku.id)
+        : Number(line.fg_size_id) === Number(sku.size_id) &&
+          !explicitBySkuStage.has(`${sku.id}:${line.consumed_in_stage_id || 0}`));
+      weights.set(line, appliesTo.length / outputSkus.length);
+    });
     return weights;
   };
 
@@ -1837,16 +1853,14 @@ const getBomCostBreakdownReportPageData = async ({ req, input = {} }) => {
       });
 
       const sfgForBom = sfgLinesByBom.get(currentBomId) || [];
-      const sfgSizeWeights = resolveSfgSizeWeights(sfgForBom);
+      const sfgLineWeights = resolveSfgLineWeights(currentBom, sfgForBom);
       const sfgLabelOf = (line, skuId) => {
         const base = line.item_name || line.sku_code || `SKU#${skuId}`;
         return line.fg_size_name ? `${base} (${line.fg_size_name})` : base;
       };
       sfgForBom.forEach((line) => {
         const skuId = toPositiveInt(line.sfg_sku_id) || 0;
-        const sizeWeight = Number(
-          sfgSizeWeights.get(Number(line.fg_size_id || 0)) ?? 1,
-        );
+        const sizeWeight = Number(sfgLineWeights.get(line) ?? 1);
         // MAX aggregation zeroes every size but the costliest; drop those lines
         // outright rather than showing a row that contributes nothing.
         if (!(sizeWeight > 0)) return;

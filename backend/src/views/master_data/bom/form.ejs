@@ -366,7 +366,7 @@
         <table class="min-w-full text-sm">
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
             <tr>
-              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_article_sku')  %>"><%= t("size")  %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_article_sku')  %>"><%= t("article_sku")  %></th>
               <th class="px-3 py-2 text-left" data-sfg-part-col-title title="<%= t('bom_hint_step_upper_sku')  %>"><span data-sfg-part-col-label><%= t("bom_sfg_col_step_upper_sku")  %></span></th>
               <th class="px-3 py-2 text-left" title="<%= t('bom_hint_step_quantity')  %>"><%= t("bom_sfg_col_step_qty")  %></th>
               <th class="px-3 py-2 text-left" title="<%= t('bom_hint_sfg_consumed_stage')  %>"><%= t("bom_sfg_col_consumed_stage")  %></th>
@@ -704,6 +704,7 @@
     const stepLabel = "<%= t('step')  %>";
     const upperLabel = "<%= t('upper')  %>";
     const sfgPartDefaultColLabel = "<%= t('bom_sfg_col_step_upper_sku')  %>";
+    const sfgComponentColLabel = "<%= t('bom_sfg_component_sku') %>";
     const sfgPartDefaultHint = "<%= t('bom_hint_step_upper_sku')  %>";
     const sfgPartStepHint = "<%= t('bom_hint_step_sku')  %>";
     const sfgPartUpperHint = "<%= t('bom_hint_upper_sku')  %>";
@@ -796,16 +797,17 @@
       rows.forEach((line, index) => {
         const deptId = String(line?.dept_id || "").trim();
         const stageId = String(stageIdByDeptId.get(deptId) || line?.stage_id || "").trim();
-        if (!stageId || byStageId.has(stageId)) return;
+        const stageRef = stageId || (deptId ? `dept:${deptId}` : "");
+        if (!stageRef || byStageId.has(stageRef)) return;
         const stage = stageById.get(stageId);
         const deptName = String(stage?.dept_name || departmentNameById.get(deptId) || deptId || "").trim();
         const stageName = String(stage?.name || "").trim();
-        const baseLabel = deptName || stageName || stageId;
+        const baseLabel = deptName || stageName || stageRef;
         const displayLabel = stageName && stageName !== deptName
           ? `${index + 1}. ${baseLabel} (${stageName})`
           : `${index + 1}. ${baseLabel}`;
-        byStageId.set(stageId, {
-          id: stageId,
+        byStageId.set(stageRef, {
+          id: stageRef,
           name: displayLabel,
         });
       });
@@ -989,6 +991,7 @@
     const getSfgPartType = () => String(getSelectedHeaderItem()?.sfg_part_type || "").trim().toUpperCase();
 
     const getSfgPartColumnLabel = () => {
+      if (String(headerLevelSelect?.value || "").toUpperCase() === "SEMI_FINISHED") return sfgComponentColLabel;
       const partType = getSfgPartType();
       if (partType === "STEP") return `${stepLabel} SKU`;
       if (partType === "UPPER") return `${upperLabel} SKU`;
@@ -1000,7 +1003,9 @@
       const label = getSfgPartColumnLabel();
       if (sfgPartColumnLabelEl) sfgPartColumnLabelEl.textContent = label;
       if (sfgPartColumnTitleEl) {
-        if (partType === "STEP") {
+        if (String(headerLevelSelect?.value || "").toUpperCase() === "SEMI_FINISHED") {
+          sfgPartColumnTitleEl.setAttribute("title", sfgComponentColLabel);
+        } else if (partType === "STEP") {
           sfgPartColumnTitleEl.setAttribute("title", sfgPartStepHint);
         } else if (partType === "UPPER") {
           sfgPartColumnTitleEl.setAttribute("title", sfgPartUpperHint);
@@ -1246,6 +1251,7 @@
       getHeaderSkuOptions().find((row) => String(row.size_id || "") === String(sizeId || "")) || null;
     const shouldShowSfgSection = () => {
       const level = String(headerLevelSelect?.value || "").trim().toUpperCase();
+      if (level === "SEMI_FINISHED") return Boolean(getSelectedHeaderItem());
       if (level !== "FINISHED") return false;
       const item = getSelectedHeaderItem();
       if (!item) return false;
@@ -1978,6 +1984,9 @@
     const getGlobalSfgSkus = () => (options.sfgSkus || []).filter(isGlobalSfgSku);
     const getRelevantSfgSkus = () => {
       const headerItemId = String(headerItemSelect?.value || "");
+      if (String(headerLevelSelect?.value || "").toUpperCase() === "SEMI_FINISHED") {
+        return (options.sfgSkus || []).filter((sku) => String(sku.item_id || "") !== headerItemId);
+      }
       const linkedSfgItemIds = Array.isArray(options.fgToSfgMap?.[headerItemId]) ? options.fgToSfgMap[headerItemId] : [];
       // Global SFGs are shared components available to every article. They carry no
       // item_usage rows on purpose, so they never appear in fgToSfgMap and must be
@@ -2374,40 +2383,30 @@
         body.innerHTML = `<tr><td colspan="6" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_sku_available")  %></td></tr>`;
         return;
       }
-      // An article can consume more than one semi-finished input per size (e.g. an
-      // Upper AND a shared global part), so rows are NOT rebuilt one-per-SKU here.
-      // Rows are keyed by size because bom_sfg_line stores fg_size_id and has no
-      // fg_sku_id column: rendering per SKU would make colour variants of the same
-      // size collapse into each other on reload.
-      //
-      // Existing rows are preserved; a size with no rows at all gets one blank row
-      // so every size stays visible, and rows for sizes the article no longer has
-      // are dropped.
-      const orderedSizeIds = [];
-      const seenSizeIds = new Set();
-      fgSkuOptions.forEach((sku) => {
-        const sizeId = String(sku.size_id || "");
-        if (!sizeId || seenSizeIds.has(sizeId)) return;
-        seenSizeIds.add(sizeId);
-        orderedSizeIds.push(sizeId);
-      });
-
-      const rowsBySizeId = new Map();
+      const rowsBySkuId = new Map();
+      fgSkuOptions.forEach((sku) => rowsBySkuId.set(String(sku.id), []));
       (state.sfg || []).forEach((row) => {
-        const sizeId = String(row?.fg_size_id || "");
-        if (!seenSizeIds.has(sizeId)) return;
-        if (!rowsBySizeId.has(sizeId)) rowsBySizeId.set(sizeId, []);
-        rowsBySizeId.get(sizeId).push(row);
+        const outputSkuId = String(row?.output_sku_id || row?.fg_sku_id || "");
+        if (outputSkuId && rowsBySkuId.has(outputSkuId)) {
+          rowsBySkuId.get(outputSkuId).push(row);
+          return;
+        }
+        // Old approved BOMs used one size-wide row. Show it for each matching
+        // output SKU; saving the form records independent SKU-specific rows.
+        if (!outputSkuId) fgSkuOptions
+          .filter((sku) => String(sku.size_id) === String(row?.fg_size_id || ""))
+          .forEach((sku) => rowsBySkuId.get(String(sku.id)).push(row));
       });
 
-      const normalizeSfgRow = (row, sizeId) => {
+      const normalizeSfgRow = (row, sku) => {
         const selectedSfgSkuId = String(row?.sfg_sku_id || "");
         const resolvedUomId = sfgSkuUomById.get(selectedSfgSkuId) || String(row?.uom_id || "");
         const existingQtyText = String(row?.required_qty ?? "").trim();
         const defaultRequiredQty = selectedSfgSkuId ? getDefaultSfgRequiredQty(selectedSfgSkuId) : "";
         return {
-          fg_sku_id: String(row?.fg_sku_id || findHeaderSkuBySizeId(sizeId)?.id || ""),
-          fg_size_id: String(sizeId),
+          output_sku_id: String(sku.id),
+          fg_sku_id: String(sku.id),
+          fg_size_id: String(sku.size_id),
           sfg_sku_id: selectedSfgSkuId,
           required_qty: existingQtyText || (suppressNextSfgQtyAutofill ? "" : defaultRequiredQty),
           consumed_in_stage_id: String(row?.consumed_in_stage_id || ""),
@@ -2416,36 +2415,30 @@
       };
 
       const nextSfg = [];
-      orderedSizeIds.forEach((sizeId) => {
-        const rowsForSize = rowsBySizeId.get(sizeId) || [];
-        if (!rowsForSize.length) {
-          nextSfg.push(normalizeSfgRow({}, sizeId));
-          return;
-        }
-        rowsForSize.forEach((row) => nextSfg.push(normalizeSfgRow(row, sizeId)));
+      fgSkuOptions.forEach((sku) => {
+        const rows = rowsBySkuId.get(String(sku.id)) || [];
+        (rows.length ? rows : [{}]).forEach((row) => nextSfg.push(normalizeSfgRow(row, sku)));
       });
       state.sfg = nextSfg;
       suppressNextSfgQtyAutofill = false;
-      const sizeNameById = new Map(
-        (getHeaderSizeOptions() || []).map((size) => [String(size.id || ""), String(size.name || size.id || "")]),
-      );
+      const headerSkuById = new Map(fgSkuOptions.map((sku) => [String(sku.id), sku]));
       body.innerHTML = nextSfg
         .map((row, idx) => {
           const fgSizeId = String(row.fg_size_id || "");
-          // Several rows can share a size. Label only the first of each group so the
-          // rows below it read as belonging to the same size.
-          const isFirstOfSize = idx === 0 || String(nextSfg[idx - 1]?.fg_size_id || "") !== fgSizeId;
-          const sizeLabel = isFirstOfSize
-            ? (sizeNameById.get(fgSizeId) || getSkuLabel(findHeaderSkuBySizeId(fgSizeId)) || fgSizeId)
+          const isFirstOfSku = idx === 0 || String(nextSfg[idx - 1]?.output_sku_id || "") !== String(row.output_sku_id);
+          const outputSku = headerSkuById.get(String(row.output_sku_id));
+          const skuLabel = isFirstOfSku
+            ? [getSkuLabel(outputSku) || String(row.output_sku_id), outputSku?.color_name].filter(Boolean).join(" / ")
             : "";
           const fixedUomId = resolveSfgUomId(row);
           const fixedUomName = getUomName(fixedUomId);
           return `
-          <tr data-row-index="${idx}" class="${isFirstOfSize ? "border-t border-slate-200" : ""}">
+          <tr data-row-index="${idx}" class="${isFirstOfSku ? "border-t border-slate-200" : ""}">
             <td class="px-3 py-2">
+              <input type="hidden" data-col="output_sku_id" value="${esc(row.output_sku_id)}">
               <input type="hidden" data-col="fg_sku_id" value="${esc(row.fg_sku_id)}">
               <input type="hidden" data-col="fg_size_id" value="${esc(fgSizeId)}">
-              <input type="text" value="${esc(sizeLabel)}" class="w-full rounded-lg border ${isFirstOfSize ? "border-slate-200 bg-slate-50 text-slate-700" : "border-transparent bg-transparent"} px-2 py-1.5 text-sm" readonly>
+              <input type="text" value="${esc(skuLabel)}" class="w-full rounded-lg border ${isFirstOfSku ? "border-slate-200 bg-slate-50 text-slate-700" : "border-transparent bg-transparent"} px-2 py-1.5 text-sm" readonly>
             </td>
             <td class="px-3 py-2"><select data-col="sfg_sku_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(sfgOptions, row.sfg_sku_id, (r) => getSkuLabel(r) || r.item_name || r.id)}</select></td>
             <td class="px-3 py-2"><input data-col="required_qty" data-no-stepper="true" type="number" min="0.001" step="0.001" value="${esc(row.required_qty ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
@@ -2685,7 +2678,7 @@
 
     const addDefaults = {
       rm: () => ({ rm_item_id: "", color_id: "", size_id: "", dept_id: "", qty: 0, uom_id: "", normal_loss_pct: 0 }),
-      sfg: () => ({ fg_sku_id: "", fg_size_id: "", sfg_sku_id: "", required_qty: "", consumed_in_stage_id: "", uom_id: "" }),
+      sfg: () => ({ output_sku_id: "", fg_sku_id: "", fg_size_id: "", sfg_sku_id: "", required_qty: "", consumed_in_stage_id: "", uom_id: "" }),
       stage_route: () => ({ dept_id: "", stage_id: "", sequence_no: "", is_required: true, enforce_sequence: true }),
       labour_selection: () => defaultLabourSelectionRow(),
       sku_override: () => ({ sku_id: "", target_rm_item_id: "", dept_id: "", is_excluded: false, override_qty: "", replacement_rm_item_id: "", rm_color_id: "", rm_size_id: "" }),
@@ -2725,6 +2718,7 @@
       const source = state.sfg[index] || {};
       state.sfg.splice(index + 1, 0, {
         ...addDefaults.sfg(),
+        output_sku_id: String(source.output_sku_id || ""),
         fg_sku_id: String(source.fg_sku_id || ""),
         fg_size_id: String(source.fg_size_id || ""),
       });
@@ -2877,6 +2871,7 @@
           state.stage_routes.push(addDefaults.stage_route());
         }
         renderStageRoutes();
+        renderSfg();
         pruneDepartmentScopedRows();
         syncLabourLinesFromSelectionAndRates();
         renderRmWithSkuRules();
@@ -2932,6 +2927,7 @@
         const stageChanged = selectedDeptId ? upsertStageRouteForDepartment(selectedDeptId) : false;
         if (stageChanged) {
           renderStageRoutes();
+          renderSfg();
         }
         syncLabourLinesFromSelectionAndRates();
         renderSkuRules();
@@ -2968,6 +2964,7 @@
         }
         if (stageChanged) {
           renderStageRoutes();
+          renderSfg();
         }
         renderLabourSections();
         return;
@@ -3266,17 +3263,19 @@
         const consumedInStageId = String(row?.consumed_in_stage_id || "").trim();
         const uomId = String(row?.uom_id || "").trim();
         if (!fgSizeId && !sfgSkuId && !requiredQty && !consumedInStageId) return;
-        // Collapse only genuine duplicates (same size + same SFG SKU, which the
+        // Collapse only genuine duplicates (same output SKU + same SFG SKU, which the
         // bom_sfg_line unique constraint would reject anyway). Rows with no SFG SKU
         // picked yet must stay distinct, otherwise a just-added blank row for a size
         // that already has one would be merged away before the user can fill it in.
-        const key = fgSizeId && sfgSkuId ? `size:${fgSizeId}:${sfgSkuId}` : `row:${index}`;
+        const outputSkuId = String(row?.output_sku_id || row?.fg_sku_id || "").trim();
+        const key = outputSkuId && sfgSkuId ? `sku:${outputSkuId}:${sfgSkuId}` : `row:${index}`;
         const score = (sfgSkuId ? 2 : 0) + (requiredQty ? 1 : 0) + (consumedInStageId ? 1 : 0);
         const existing = byKey.get(key);
         if (!existing || score >= existing.score) {
           byKey.set(key, {
             score,
             line: {
+              output_sku_id: outputSkuId,
               fg_sku_id: String(row?.fg_sku_id || "").trim(),
               fg_size_id: fgSizeId,
               sfg_sku_id: sfgSkuId,
@@ -3301,6 +3300,7 @@
         normal_loss_pct: getValue(row, "normal_loss_pct"),
       }));
       state.sfg = collectRows("sfg", (row) => ({
+        output_sku_id: getValue(row, "output_sku_id"),
         fg_sku_id: getValue(row, "fg_sku_id"),
         fg_size_id: getValue(row, "fg_size_id"),
         sfg_sku_id: getValue(row, "sfg_sku_id"),

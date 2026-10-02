@@ -1034,6 +1034,7 @@ const loadBomProfileBySkuTx = async ({ trx, skuId }) => {
       hasBomSfgLineTable
         ? trx("erp.bom_sfg_line")
             .select(
+              "output_sku_id",
               "fg_size_id",
               "sfg_sku_id",
               "required_qty",
@@ -1120,6 +1121,7 @@ const loadBomProfileBySkuTx = async ({ trx, skuId }) => {
         const uomId = toPositiveInt(row.uom_id);
         const uomFactor = uomId ? Number(pairFactorByUomId.get(uomId) || 0) : 0;
         return {
+          output_sku_id: toPositiveInt(row.output_sku_id),
           fg_size_id: toPositiveInt(row.fg_size_id),
           sfg_sku_id: toPositiveInt(row.sfg_sku_id),
           required_qty: Number(row.required_qty || 0),
@@ -2244,19 +2246,18 @@ const buildSfgRequirementsForStage = ({
   }
   const ratio = Number((linePairs / outputQtyInPairs).toFixed(12));
 
-  const stageSfgLines = (
+  const matchingStageLines = (
     Array.isArray(profile.sfgLines) ? profile.sfgLines : []
-  ).filter((row) => {
-    const consumedStageId = toPositiveInt(row?.consumed_in_stage_id);
-    if (
-      !consumedStageId ||
-      Number(consumedStageId) !== Number(normalizedStageId)
-    )
-      return false;
-    const fgSizeId = toPositiveInt(row?.fg_size_id);
-    if (!fgSizeId || !sourceSizeId) return false;
-    return Number(fgSizeId) === Number(sourceSizeId);
-  });
+  ).filter((row) => toPositiveInt(row?.consumed_in_stage_id) === normalizedStageId);
+  const exactSkuLines = matchingStageLines.filter(
+    (row) => toPositiveInt(row?.output_sku_id) === toPositiveInt(profile.skuId),
+  );
+  const stageSfgLines = exactSkuLines.length
+    ? exactSkuLines
+    : matchingStageLines.filter((row) =>
+        !toPositiveInt(row?.output_sku_id) &&
+        toPositiveInt(row?.fg_size_id) === sourceSizeId,
+      );
 
   const requirements = [];
   for (const sfgLine of stageSfgLines) {

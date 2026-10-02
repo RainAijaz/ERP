@@ -24,7 +24,7 @@ const collectIds = (snapshots) => {
     uom: ["output_uom_id", "uom_id", "override_uom_id"],
     dept: ["dept_id"], size: ["size_id", "fg_size_id", "rm_size_id"],
     color: ["color_id", "rm_color_id"], stage: ["stage_id", "consumed_in_stage_id"],
-    sku: ["sku_id", "sfg_sku_id"], labour: ["labour_id"], bom: ["ref_approved_bom_id"],
+    sku: ["sku_id", "sfg_sku_id", "output_sku_id"], labour: ["labour_id"], bom: ["ref_approved_bom_id"],
   };
   snapshots.forEach((snapshot) => {
     [snapshot.header, ...Object.keys(sectionFields).flatMap((section) => snapshot[section] || [])].forEach((row) => {
@@ -67,7 +67,7 @@ const formatValue = (field, value, names, t) => {
     item_id: "item", rm_item_id: "item", target_rm_item_id: "item", replacement_rm_item_id: "item",
     output_uom_id: "uom", uom_id: "uom", override_uom_id: "uom", dept_id: "dept",
     size_id: "size", fg_size_id: "size", rm_size_id: "size", color_id: "color", rm_color_id: "color",
-    stage_id: "stage", consumed_in_stage_id: "stage", sku_id: "sku", sfg_sku_id: "sku",
+    stage_id: "stage", consumed_in_stage_id: "stage", sku_id: "sku", sfg_sku_id: "sku", output_sku_id: "sku",
     labour_id: "labour", ref_approved_bom_id: "bom",
   }[field];
   if (type) return names[type].get(Number(value)) || `#${value}`;
@@ -79,7 +79,7 @@ const formatValue = (field, value, names, t) => {
 const rowLabel = (section, row, names, t) => {
   const part = (field) => formatValue(field, row[field], names, t);
   if (section === "rm_lines") return `${part("rm_item_id")} / ${part("dept_id")}${row.color_id ? ` / ${part("color_id")}` : ""}${row.size_id ? ` / ${part("size_id")}` : ""}`;
-  if (section === "sfg_lines") return `${part("sfg_sku_id")} / ${part("fg_size_id")}`;
+  if (section === "sfg_lines") return `${part("sfg_sku_id")} / ${row.output_sku_id ? part("output_sku_id") : part("fg_size_id")}`;
   if (section === "labour_lines") return `${part("dept_id")} / ${part("labour_id")} / ${row.size_id ? part("size_id") : t("all")} / ${part("rate_type")}`;
   if (section === "stage_routes") return part("stage_id");
   return `${part("sku_id")} / ${part("target_rm_item_id")} / ${part("dept_id")}`;

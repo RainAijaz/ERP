@@ -92,6 +92,9 @@ const diffParentSfgByFgSize = async (knex, { oldBomId, newBomId }) => {
   ]);
   const oldSnapshot = bomService.buildApprovalSnapshot(oldSnapshotRaw || {});
   const newSnapshot = bomService.buildApprovalSnapshot(newSnapshotRaw || {});
+  // Cross-article SFG cascade still groups by size. Explicit output-SKU
+  // mappings cannot be reduced to one row per size without losing variants.
+  if ([...oldSnapshot.sfg_lines, ...newSnapshot.sfg_lines].some((row) => row.output_sku_id)) return [];
 
   const keyFn = (row) => String(toNumberOrNull(row.fg_size_id) || 0);
   const beforeMap = new Map((oldSnapshot.sfg_lines || []).map((row) => [keyFn(row), row]));
@@ -462,13 +465,15 @@ const computeDependentMergePlan = async (knex, { dependentApprovedBomId, parentN
     dependentVariantKeyToSkuIds,
     copiedRmComboSet: combinedRmComboSet,
   });
-  sections.sfg_lines = await classifySfgSection(knex, {
-    parentDeltaRows: sfgDeltaRows,
-    sfgOriginRows,
-    sfgRemovedCount,
-    dependentItem: dependentItemRow,
-    dependentSizeIdSet,
-  });
+  sections.sfg_lines = depSnapshot.sfg_lines.some((row) => row.output_sku_id)
+    ? { eligible: false, safe: [], conflicts: [], skipped: [], allCurrentRows: depSnapshot.sfg_lines }
+    : await classifySfgSection(knex, {
+        parentDeltaRows: sfgDeltaRows,
+        sfgOriginRows,
+        sfgRemovedCount,
+        dependentItem: dependentItemRow,
+        dependentSizeIdSet,
+      });
 
   await hydratePlanLabels(knex, sections, locale);
 
