@@ -45,6 +45,7 @@
 
   <form action="/administration/approvals/settings" method="POST" class="flex-1 flex min-h-0 overflow-hidden">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="dcv_sfg_policy_present" value="1">
 
     <aside class="w-72 bg-slate-50 border-r border-slate-200 flex flex-col shrink-0 overflow-hidden min-h-0 group">
       <div class="p-3 border-b border-slate-200/60 flex items-center justify-between">
@@ -75,6 +76,15 @@
     </aside>
 
     <div class="flex-1 flex flex-col min-w-0 min-h-0 bg-white relative">
+      <div class="relative z-40 shrink-0 border-b border-slate-200 bg-amber-50 px-4 py-3">
+        <label class="flex items-start gap-3 text-sm font-semibold text-slate-800">
+          <input type="checkbox" name="dcv_enforce_sfg_availability" value="1" <%= dcvEnforceSfgAvailability ? 'checked' : '' %> class="mt-0.5 rounded text-accent focus:ring-accent">
+          <span>
+            <span class="block"><%= t('dcv_require_sfg_stock') %></span>
+            <span class="block text-xs font-normal text-slate-600"><%= t('dcv_require_sfg_stock_help') %></span>
+          </span>
+        </label>
+      </div>
       <div id="module-empty-state" class="absolute inset-0 z-30 bg-slate-50/50 flex flex-col items-center justify-center text-center p-6">
         <div class="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mb-4 border border-slate-100">
           <svg class="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 12h16m-7 6h7"></path></svg>

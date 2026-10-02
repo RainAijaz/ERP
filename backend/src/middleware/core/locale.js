@@ -4218,6 +4218,22 @@ Object.assign(translations.en, {
   view_all: "View All",
 });
 
+Object.assign(translations.en, {
+  dcv_require_sfg_stock: "DCV: Require SFG stock at the consumption stage",
+  dcv_require_sfg_stock_help:
+    "When checked, no user or administrator can post a DCV that would consume more SFG than this branch has on hand. Earlier stages may still be recorded. When unchecked, the DCV Neg. Stock approval rule applies.",
+  dcv_sfg_stock_shortage:
+    "DCV cannot post: {sku} needs {required} pairs of SFG in this branch; {available} are available.",
+});
+
+Object.assign(translations.ur, {
+  dcv_require_sfg_stock: "DCV: استعمال کے مرحلے پر SFG اسٹاک لازمی کریں",
+  dcv_require_sfg_stock_help:
+    "نشان لگانے پر کوئی صارف یا منتظم ایسا DCV پوسٹ نہیں کر سکتا جو اس برانچ کے دستیاب SFG اسٹاک سے زیادہ استعمال کرے۔ پہلے مراحل درج کیے جا سکتے ہیں۔ نشان ہٹانے پر DCV کا منفی اسٹاک منظوری کا اصول لاگو ہوگا۔",
+  dcv_sfg_stock_shortage:
+    "DCV پوسٹ نہیں ہو سکتا: اس برانچ میں {sku} کے {required} جوڑے درکار ہیں؛ {available} جوڑے دستیاب ہیں۔",
+});
+
 Object.assign(translations.ur, {
   pending_grn_report: "زیر التوا جی آر این (غیر بل شدہ)",
   pending_grn_report_purpose_tooltip:

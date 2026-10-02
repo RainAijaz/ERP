@@ -1774,6 +1774,13 @@
       if (unit) params.set("unit", String(unit));
       if (voucherDate) params.set("voucher_date", String(voucherDate));
       if (voucherId) params.set("voucher_id", String(voucherId));
+      const dcvStages = getCompleteDcvPairs().map((pair) => ({
+        dept_id: Number(pair.dept_id),
+        labour_id: Number(pair.labour_id),
+      }));
+      if (dcvStages.length) {
+        params.set("dcv_stages", JSON.stringify(dcvStages));
+      }
       const res = await fetch(`${dcvAvailabilityPath}?${params.toString()}`, {
         headers: { Accept: "application/json" },
       });

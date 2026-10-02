@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS erp.voucher_type (
   name              text NOT NULL,    -- display name shown in UI
   requires_approval boolean NOT NULL DEFAULT false,
   affects_stock     boolean NOT NULL DEFAULT false,
-  affects_gl        boolean NOT NULL DEFAULT true
+  affects_gl        boolean NOT NULL DEFAULT true,
+  enforce_sfg_availability boolean NOT NULL DEFAULT false
 );
 
 DO $$ BEGIN

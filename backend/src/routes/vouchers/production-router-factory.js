@@ -326,6 +326,7 @@ const createProductionVoucherRouter = ({
           voucherDate: req.query?.voucher_date,
           voucherId: req.query?.voucher_id,
           siblingPairs: req.query?.sibling_pairs,
+          dcvStages: req.query?.dcv_stages,
         });
         return res.json(result || { status: "OK" });
       } catch (err) {

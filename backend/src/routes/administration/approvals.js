@@ -32,6 +32,9 @@ const { setCookie } = require("../../middleware/utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../../middleware/core/ui-notice");
 const { insertActivityLog } = require("../../utils/audit-log");
 const {
+  updateDcvSfgAvailabilityPolicyTx,
+} = require("../../services/production/dcv-sfg-policy-service");
+const {
   logPendingApprovalEditTx,
 } = require("../../utils/approval-activity-log");
 const {
@@ -2213,7 +2216,7 @@ router.get(
     try {
       const [voucherTypes, policyRows] = await Promise.all([
         knex("erp.voucher_type")
-          .select("code", "name", "affects_stock")
+          .select("code", "name", "affects_stock", "enforce_sfg_availability")
           .orderBy("name"),
         knex("erp.approval_policy").select(
           "entity_type",
@@ -2349,6 +2352,9 @@ router.get(
           screenRows,
           policyMap,
           stockVoucherCodes,
+          dcvEnforceSfgAvailability:
+            voucherTypes.find((row) => row.code === "DCV")
+              ?.enforce_sfg_availability === true,
         },
       );
     } catch (err) {
@@ -2365,6 +2371,15 @@ router.post(
     const trx = await knex.transaction();
     try {
       const { ...fields } = req.body;
+
+      if (fields.dcv_sfg_policy_present === "1") {
+        await updateDcvSfgAvailabilityPolicyTx({
+          trx,
+          req,
+          enabled: fields.dcv_enforce_sfg_availability === "1",
+          t: res.locals.t,
+        });
+      }
 
       await trx("erp.approval_policy")
         .whereIn("entity_type", ["VOUCHER_TYPE", "SCREEN"])

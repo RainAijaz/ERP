@@ -19,6 +19,17 @@ const friendlyErrorMessage = (err, t) => {
   if (!err) return typeof t === "function" ? t("error_generic") : DEFAULT_MESSAGE;
   const local = (key, fallback) => (typeof t === "function" ? t(key) : fallback);
 
+  if (err.code === "DCV_SFG_STOCK_SHORTAGE") {
+    const shortage = err.shortage || {};
+    return local(
+      "dcv_sfg_stock_shortage",
+      "DCV cannot post: {sku} needs {required} pairs of SFG in this branch; {available} are available.",
+    )
+      .replace("{sku}", String(shortage.skuLabel || shortage.skuId || "SFG"))
+      .replace("{required}", String(shortage.requiredPairs ?? 0))
+      .replace("{available}", String(shortage.availablePairs ?? 0));
+  }
+
   if (typeof err === "string") {
     if (err.toLowerCase().includes("violates foreign key constraint")) {
       return local("error_record_in_use", "This record is linked to other data and cannot be deleted.");

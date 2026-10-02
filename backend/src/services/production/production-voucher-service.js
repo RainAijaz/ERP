@@ -95,6 +95,7 @@ const RM_BALANCE_CONFLICT_TARGET_SQL =
   "(branch_id, stock_state, item_id, COALESCE(color_id, 0), COALESCE(size_id, 0))";
 // Typed error marker used to route non-admin shortage cases into approval instead of hard failures.
 const RM_STOCK_SHORTAGE_ERROR_CODE = "RM_STOCK_SHORTAGE";
+const DCV_SFG_STOCK_SHORTAGE_ERROR_CODE = "DCV_SFG_STOCK_SHORTAGE";
 
 const toDateOnly = toLocalDateOnly;
 
@@ -214,26 +215,6 @@ const loadOnHandSfgPairsBySkuTx = async ({ trx, branchId, skuIds = [] }) => {
     ...new Set((skuIds || []).map((id) => toPositiveInt(id)).filter(Boolean)),
   ];
   if (!normalizedBranchId || !normalizedSkuIds.length) return new Map();
-
-  if (await hasStockLedgerTableTx(trx)) {
-    const rows = await trx("erp.stock_ledger as sl")
-      .select("sl.sku_id")
-      .sum({
-        qty_pairs: trx.raw(
-          "CASE WHEN sl.direction = 1 THEN COALESCE(sl.qty_pairs, 0) ELSE -COALESCE(sl.qty_pairs, 0) END",
-        ),
-      })
-      .where({
-        "sl.branch_id": Number(normalizedBranchId),
-        "sl.stock_state": "ON_HAND",
-        "sl.category": "SFG",
-      })
-      .whereIn("sl.sku_id", normalizedSkuIds)
-      .groupBy("sl.sku_id");
-    return new Map(
-      rows.map((row) => [Number(row.sku_id), Number(row.qty_pairs || 0)]),
-    );
-  }
 
   if (!(await hasStockBalanceSkuTableTx(trx))) {
     throw new HttpError(
@@ -2310,141 +2291,6 @@ const buildSfgRequirementsForStage = ({
   return requirements;
 };
 
-const validateDcvSfgAvailabilityTx = async ({
-  trx,
-  req,
-  stageId,
-  voucherId = null,
-  lines = [],
-}) => {
-  const normalizedStageId = toPositiveInt(stageId);
-  const normalizedLines = Array.isArray(lines) ? lines : [];
-  const normalizedVoucherId = toPositiveInt(voucherId);
-  if (!normalizedStageId || !normalizedLines.length) return;
-
-  const skuIds = [
-    ...new Set(
-      normalizedLines
-        .map((line) => toPositiveInt(line?.sku_id))
-        .filter(Boolean),
-    ),
-  ];
-  if (!skuIds.length) return;
-
-  const skuDisplayMap = await loadSkuDisplayMapTx({ trx, skuIds });
-  const bomBySku = new Map();
-  const requiredPairsBySfgSku = new Map();
-
-  for (const line of normalizedLines) {
-    const fgSkuId = toPositiveInt(line?.sku_id);
-    const lineNo = Number(line?.line_no || 0) || null;
-    const producedPairs = Number(line?.total_pairs || line?.qty || 0);
-    if (!fgSkuId || !Number.isInteger(producedPairs) || producedPairs <= 0)
-      continue;
-
-    let bomProfile = bomBySku.get(fgSkuId);
-    if (!bomProfile) {
-      bomProfile = await loadBomProfileBySkuTx({ trx, skuId: fgSkuId });
-      if (!bomProfile) {
-        const skuLabel = buildSkuDisplayLabel(
-          skuDisplayMap.get(fgSkuId) || { sku_code: `#${fgSkuId}` },
-        );
-        throw new HttpError(400, `Approved BOM not found for SKU ${skuLabel}`);
-      }
-      bomBySku.set(fgSkuId, bomProfile);
-    }
-
-    const skuLabel = buildSkuDisplayLabel(
-      skuDisplayMap.get(fgSkuId) || { sku_code: `#${fgSkuId}` },
-    );
-    const requirements = buildSfgRequirementsForStage({
-      bomProfile,
-      stageId: normalizedStageId,
-      producedPairs,
-      lineNo,
-      skuLabel,
-    });
-
-    requirements.forEach((row) => {
-      const nextQty =
-        Number(requiredPairsBySfgSku.get(row.sfg_sku_id) || 0) +
-        Number(row.required_pairs || 0);
-      requiredPairsBySfgSku.set(Number(row.sfg_sku_id), Number(nextQty));
-    });
-  }
-
-  if (!requiredPairsBySfgSku.size) return;
-
-  const requiredSkuIds = [...requiredPairsBySfgSku.keys()];
-  let addBackBySku = new Map();
-  if (normalizedVoucherId && (await hasStockLedgerTableTx(trx))) {
-    const generatedLink = await trx("erp.production_generated_links")
-      .select("consumption_voucher_id")
-      .where({ production_voucher_id: Number(normalizedVoucherId) })
-      .first();
-    const addBackVoucherIds = [
-      Number(normalizedVoucherId),
-      toPositiveInt(generatedLink?.consumption_voucher_id),
-    ].filter(Boolean);
-    if (addBackVoucherIds.length) {
-      // Edit-mode add-back:
-      // include SFG stock already consumed by this DCV (and its generated
-      // consumption voucher) so a qty reduction does not falsely fail.
-      const addBackRows = await trx("erp.stock_ledger as sl")
-        .select("sl.sku_id")
-        .sum({ qty_pairs: trx.raw("COALESCE(sl.qty_pairs, 0)") })
-        .where({
-          "sl.branch_id": Number(req.branchId),
-          "sl.stock_state": "ON_HAND",
-          "sl.category": "SFG",
-          "sl.direction": -1,
-        })
-        .whereIn("sl.voucher_header_id", addBackVoucherIds)
-        .whereIn("sl.sku_id", requiredSkuIds)
-        .groupBy("sl.sku_id");
-      addBackBySku = new Map(
-        addBackRows.map((row) => [
-          Number(row.sku_id),
-          Number(row.qty_pairs || 0),
-        ]),
-      );
-    }
-  }
-  const availableBySku = await loadOnHandSfgPairsBySkuTx({
-    trx,
-    branchId: req.branchId,
-    skuIds: requiredSkuIds,
-  });
-  const requiredSkuDisplayMap = await loadSkuDisplayMapTx({
-    trx,
-    skuIds: requiredSkuIds,
-  });
-  const deficits = requiredSkuIds
-    .map((sfgSkuId) => {
-      const requiredPairs = Number(requiredPairsBySfgSku.get(sfgSkuId) || 0);
-      const availablePairs = Number(
-        Number(availableBySku.get(sfgSkuId) || 0) +
-          Number(addBackBySku.get(Number(sfgSkuId)) || 0),
-      );
-      const deficitPairs = Math.max(0, requiredPairs - availablePairs);
-      if (deficitPairs <= 0) return null;
-      const skuLabel = buildSkuDisplayLabel(
-        requiredSkuDisplayMap.get(sfgSkuId) || { sku_code: `#${sfgSkuId}` },
-      );
-      return `${skuLabel} deficit ${deficitPairs} pair(s) (required ${requiredPairs}, available ${availablePairs})`;
-    })
-    .filter(Boolean);
-
-  if (deficits.length) {
-    const shortageError = new HttpError(
-      400,
-      `SFG stock is insufficient for selected stage. ${deficits.join("; ")}`,
-    );
-    shortageError.code = RM_STOCK_SHORTAGE_ERROR_CODE;
-    throw shortageError;
-  }
-};
-
 const validateLossLinesTx = async ({
   trx,
   req,
@@ -2841,15 +2687,6 @@ const normalizeAndValidatePayloadTx = async ({
       stageId,
       departmentId: deptId,
       voucherDate,
-      voucherId,
-      lines: lines.filter(
-        (line) => Number(line.dcv_dept_id) === Number(deptId),
-      ),
-    });
-    await validateDcvSfgAvailabilityTx({
-      trx,
-      req,
-      stageId,
       voucherId,
       lines: lines.filter(
         (line) => Number(line.dcv_dept_id) === Number(deptId),
@@ -3478,6 +3315,7 @@ const applySkuStockOutTx = async ({
   voucherDate,
   writeLedger = true,
   allowNegativeStock = false,
+  shortageErrorCode = RM_STOCK_SHORTAGE_ERROR_CODE,
   // Failure-path wording only: `shortagePrefix` locates the voucher row
   // ("Line 2:"), `shortagePurpose` says why this stock was being drawn, and
   // `shortageHint` closes with what the user can do about it.
@@ -3541,7 +3379,7 @@ const applySkuStockOutTx = async ({
       400,
       `${linePrefix}Not enough ${normalizedCategory} stock for ${skuLabel}.${purposeSentence} Required ${normalizedQtyPairsOut} pair(s), but this branch has ${totalAvailablePairs} pair(s) on hand - short by ${shortPairs} pair(s).${hintSentence}`,
     );
-    shortageError.code = RM_STOCK_SHORTAGE_ERROR_CODE;
+    shortageError.code = shortageErrorCode;
     shortageError.shortage = {
       category: normalizedCategory,
       skuId: normalizedSkuId,
@@ -5102,6 +4940,12 @@ const applyDcvToWipTx = async ({
   });
   if (!allLines.length) return;
 
+  const dcvStockPolicy = await trx("erp.voucher_type")
+    .select("enforce_sfg_availability")
+    .where({ code: "DCV" })
+    .first();
+  const enforceSfgAvailability = dcvStockPolicy?.enforce_sfg_availability !== false;
+
   // A voucher may complete several consecutive departments at once. Post them in BOM
   // routing order: department N draws the pairs department N-1 credits earlier in this
   // same transaction, so the chain settles with no special handling.
@@ -5119,15 +4963,6 @@ const applyDcvToWipTx = async ({
       qty: Number(line.qty || 0),
       total_pairs: Number(meta.total_pairs || line.qty || 0),
     };
-  });
-  // Only the first department is checked against the balance as it stands. Later
-  // departments consume pairs this voucher has not created yet, so checking them here
-  // would reject every multi-department voucher.
-  await validateDcvSfgAvailabilityTx({
-    trx,
-    req: { branchId: Number(branchId) },
-    stageId: firstGroup.stageId,
-    lines: normalizedFirstLines,
   });
   await validateDcvStageFlowTx({
     trx,
@@ -5275,7 +5110,10 @@ const applyDcvToWipTx = async ({
         voucherLineId: toPositiveInt(line.id),
         voucherDate,
         writeLedger: true,
-        allowNegativeStock: allowNegativeRm === true,
+        allowNegativeStock: !enforceSfgAvailability && allowNegativeRm === true,
+        shortageErrorCode: enforceSfgAvailability
+          ? DCV_SFG_STOCK_SHORTAGE_ERROR_CODE
+          : RM_STOCK_SHORTAGE_ERROR_CODE,
         shortagePrefix: lineNo ? `Line ${lineNo}:` : "",
         // This is a BOM component consumption, not a loss: name the finished
         // article and stage that pulled it so the message is actionable.
@@ -7971,7 +7809,7 @@ const loadDcvRatedSkuIdsForLabour = async ({ req, labourId, deptId }) => {
   };
 };
 
-const resolveDcvAvailabilityForLine = async ({
+const resolveDcvAvailabilityForStage = async ({
   req,
   labourId,
   deptId,
@@ -8299,6 +8137,75 @@ const resolveDcvAvailabilityForLine = async ({
       checked_on: voucherDate || null,
     };
   });
+
+const resolveDcvAvailabilityForLine = async (params = {}) => {
+  const rawStages = params.dcvStages;
+  let selectedStages = [];
+  if (rawStages) {
+    try {
+      selectedStages = typeof rawStages === "string"
+        ? JSON.parse(rawStages)
+        : rawStages;
+    } catch (_err) {
+      throw new HttpError(400, "Invalid DCV stages");
+    }
+    if (!Array.isArray(selectedStages) || selectedStages.length > 20) {
+      throw new HttpError(400, "Invalid DCV stages");
+    }
+  }
+  if (!selectedStages.length) return resolveDcvAvailabilityForStage(params);
+
+  const stages = selectedStages.map((row) => ({
+    deptId: toPositiveInt(row?.dept_id),
+    labourId: toPositiveInt(row?.labour_id),
+  }));
+  if (stages.some((row) => !row.deptId || !row.labourId)) {
+    throw new HttpError(400, "Invalid DCV stages");
+  }
+
+  const stageResults = await Promise.all(stages.map((stage) =>
+    resolveDcvAvailabilityForStage({
+      ...params,
+      deptId: stage.deptId,
+      labourId: stage.labourId,
+      stageId: null,
+    }),
+  ));
+  const [first] = stageResults;
+  const sfgBySku = new Map();
+  for (const result of stageResults) {
+    for (const row of result?.sfg?.rows || []) {
+      const skuId = Number(row.sfg_sku_id);
+      const existing = sfgBySku.get(skuId);
+      if (existing) {
+        existing.required_pairs += Number(row.required_pairs || 0);
+      } else {
+        sfgBySku.set(skuId, {
+          ...row,
+          required_pairs: Number(row.required_pairs || 0),
+          available_pairs: Number(row.available_pairs || 0),
+        });
+      }
+    }
+  }
+  const sfgRows = [...sfgBySku.values()].map((row) => ({
+    ...row,
+    deficit_pairs: Math.max(0, row.required_pairs - row.available_pairs),
+  }));
+  const sfgDeficitPairs = sfgRows.reduce(
+    (sum, row) => sum + Number(row.deficit_pairs || 0),
+    0,
+  );
+  // Later departments may consume WIP produced earlier in this same DCV.
+  const previousDeficitPairs = Number(first?.previous_stage?.deficit_pairs || 0);
+  const totalDeficitPairs = previousDeficitPairs + sfgDeficitPairs;
+  return {
+    ...first,
+    status: totalDeficitPairs > 0 ? "SHORT" : "OK",
+    sfg: { rows: sfgRows, total_deficit_pairs: sfgDeficitPairs },
+    total_deficit_pairs: totalDeficitPairs,
+  };
+};
 
 module.exports = {
   PRODUCTION_VOUCHER_TYPES,
