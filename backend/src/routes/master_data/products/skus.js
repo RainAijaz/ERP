@@ -20,6 +20,7 @@ const { setCookie } = require("../../../middleware/utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../../../middleware/core/ui-notice");
 
 const router = express.Router();
+router.use("/repack-rules", require("./packaging-repack"));
 
 const normalizeSkuPart = (value) =>
   (value || "").toString().trim().toUpperCase();

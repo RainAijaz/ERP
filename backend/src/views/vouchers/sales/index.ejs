@@ -50,6 +50,14 @@
     </div>
   </section>
 
+  <% if (!isSalesOrder && selectedVoucher?.auto_repacks?.length) { %>
+    <section class="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900" aria-live="polite">
+      <% selectedVoucher.auto_repacks.forEach((repack) => { %>
+        <p><%= t('repack_sale_detail').replace('{qty}', repack.qty_pairs).replace('{source}', repack.source_sku_code).replace('{target}', repack.target_sku_code) %></p>
+      <% }) %>
+    </section>
+  <% } %>
+
   <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
     <form method="post" action="<%= basePath || '' %>" class="space-y-4" data-sales-voucher-form>
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">

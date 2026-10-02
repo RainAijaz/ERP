@@ -19,6 +19,10 @@ const friendlyErrorMessage = (err, t) => {
   if (!err) return typeof t === "function" ? t("error_generic") : DEFAULT_MESSAGE;
   const local = (key, fallback) => (typeof t === "function" ? t(key) : fallback);
 
+  if (String(err.code || "").startsWith("repack_")) {
+    return local(err.code, DEFAULT_MESSAGE);
+  }
+
   if (err.code === "DCV_SFG_STOCK_SHORTAGE") {
     const shortage = err.shortage || {};
     return local(

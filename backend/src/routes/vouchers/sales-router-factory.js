@@ -181,11 +181,6 @@ const createSalesVoucherRouter = ({
   router.post("/", async (req, res, next) => {
     try {
       const voucherId = Number(req.body?.voucher_id || 0) || null;
-      if (voucherId && !canVoucherAction(res, scopeKey, "edit")) {
-        setNotice(res, actionDeniedMessage(res), true);
-        return res.redirect(req.baseUrl);
-      }
-
       const payload = {
         voucher_date: req.body?.voucher_date,
         book_no: req.body?.book_no,
@@ -240,7 +235,11 @@ const createSalesVoucherRouter = ({
         }
         setNotice(res, msg, true);
       } else {
-        setNotice(res, res.locals.t("saved_successfully"));
+        const repackQty = Number(saved.repackQty || 0);
+        const repackMessage = repackQty > 0
+          ? ` ${res.locals.t("repack_sale_notice").replace("{qty}", String(repackQty))}`
+          : "";
+        setNotice(res, `${res.locals.t("saved_successfully")}${repackMessage}`);
       }
 
       const savedVoucherNo = Number(saved?.voucherNo || 0) || null;

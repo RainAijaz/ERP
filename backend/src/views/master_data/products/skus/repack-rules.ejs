@@ -1,0 +1,107 @@
+<div class="mx-auto w-full max-w-7xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h1 class="text-2xl font-display text-ink"><%= t('repack_rules') %></h1>
+        <p class="mt-2 text-sm text-muted"><%= t('repack_rules_help') %></p>
+      </div>
+      <a href="<%= basePath.replace(/\/repack-rules$/, '') %>?item_type=FG" class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"><%= t('back_to_skus') %></a>
+    </div>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-lg font-semibold text-slate-800"><%= selected ? t('edit_repack_rule') : t('add_repack_rule') %></h2>
+    <p class="mt-1 text-sm text-slate-600"><%= t('repack_rule_material_help') %></p>
+    <form method="post" action="<%= basePath %>" class="mt-5 space-y-5">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <% if (selected) { %>
+        <input type="hidden" name="item_id" value="<%= selected.item_id %>">
+        <input type="hidden" name="source_packing_type_id" value="<%= selected.source_packing_type_id %>">
+        <input type="hidden" name="target_packing_type_id" value="<%= selected.target_packing_type_id %>">
+      <% } %>
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <label class="text-sm font-medium text-slate-700"><%= t('article') %>
+          <select name="item_id" required <%= selected ? 'disabled' : '' %> data-searchable-select="true" data-searchable-variant="unified" class="mt-1 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+            <option value=""><%= t('select_item') %></option>
+            <% page.items.forEach((item) => { %><option value="<%= item.id %>" <%= Number(selected?.item_id) === Number(item.id) ? 'selected' : '' %>><%= item.code %> — <%= item.name %></option><% }) %>
+          </select>
+        </label>
+        <label class="text-sm font-medium text-slate-700"><%= t('repack_from') %>
+          <select name="source_packing_type_id" required <%= selected ? 'disabled' : '' %> data-searchable-select="true" data-searchable-variant="unified" class="mt-1 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+            <option value=""><%= t('select_packing') %></option>
+            <% page.packings.forEach((packing) => { %><option value="<%= packing.id %>" <%= Number(selected?.source_packing_type_id) === Number(packing.id) ? 'selected' : '' %>><%= packing.name %></option><% }) %>
+          </select>
+        </label>
+        <label class="text-sm font-medium text-slate-700"><%= t('repack_to') %>
+          <select name="target_packing_type_id" required <%= selected ? 'disabled' : '' %> data-searchable-select="true" data-searchable-variant="unified" class="mt-1 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+            <option value=""><%= t('select_packing') %></option>
+            <% page.packings.forEach((packing) => { %><option value="<%= packing.id %>" <%= Number(selected?.target_packing_type_id) === Number(packing.id) ? 'selected' : '' %>><%= packing.name %></option><% }) %>
+          </select>
+        </label>
+      </div>
+
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <label class="text-sm font-medium text-slate-700"><%= t('repack_consume_material') %>
+          <select name="consume_rm_item_id" required data-searchable-select="true" data-searchable-variant="unified" class="mt-1 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+            <option value=""><%= t('select_item') %></option>
+            <% page.materials.forEach((item) => { %><option value="<%= item.id %>" <%= Number(selected?.consume_rm_item_id) === Number(item.id) ? 'selected' : '' %>><%= item.code %> — <%= item.name %> (<%= item.uom_code %>)</option><% }) %>
+          </select>
+        </label>
+        <label class="text-sm font-medium text-slate-700"><%= t('repack_pairs_per_pack') %>
+          <input type="number" name="pairs_per_pack" min="1" step="1" required value="<%= selected?.pairs_per_pack || 1 %>" class="mt-1 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+        </label>
+        <label class="text-sm font-medium text-slate-700"><%= t('repack_qty_per_pack') %>
+          <input type="number" name="consume_qty_per_pack" min="0.001" step="0.001" required value="<%= selected?.consume_qty_per_pack || 1 %>" class="mt-1 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+        </label>
+      </div>
+
+      <details class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <summary class="cursor-pointer text-sm font-semibold text-slate-700"><%= t('repack_optional_details') %></summary>
+        <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <label class="text-sm text-slate-700"><%= t('repack_material_color') %>
+            <select name="consume_color_id" data-searchable-select="true" data-searchable-variant="unified" class="mt-1 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value=""><%= t('repack_no_color') %></option><% page.colors.forEach((row) => { %><option value="<%= row.id %>" <%= Number(selected?.consume_color_id) === Number(row.id) ? 'selected' : '' %>><%= row.name %></option><% }) %></select>
+          </label>
+          <label class="text-sm text-slate-700"><%= t('repack_material_size') %>
+            <select name="consume_size_id" data-searchable-select="true" data-searchable-variant="unified" class="mt-1 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value=""><%= t('repack_no_size') %></option><% page.sizes.forEach((row) => { %><option value="<%= row.id %>" <%= Number(selected?.consume_size_id) === Number(row.id) ? 'selected' : '' %>><%= row.name %></option><% }) %></select>
+          </label>
+          <label class="text-sm text-slate-700"><%= t('repack_recover_material') %>
+            <select name="recover_rm_item_id" data-searchable-select="true" data-searchable-variant="unified" class="mt-1 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value=""><%= t('repack_no_recovery') %></option><% page.materials.forEach((item) => { %><option value="<%= item.id %>" <%= Number(selected?.recover_rm_item_id) === Number(item.id) ? 'selected' : '' %>><%= item.code %> — <%= item.name %> (<%= item.uom_code %>)</option><% }) %></select>
+          </label>
+          <label class="text-sm text-slate-700"><%= t('repack_recover_qty_per_pair') %>
+            <input type="number" name="recover_qty_per_pair" min="0" step="0.001" value="<%= selected?.recover_qty_per_pair || 0 %>" class="mt-1 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+          </label>
+          <label class="text-sm text-slate-700"><%= t('repack_recover_color') %>
+            <select name="recover_color_id" data-searchable-select="true" data-searchable-variant="unified" class="mt-1 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value=""><%= t('repack_no_color') %></option><% page.colors.forEach((row) => { %><option value="<%= row.id %>" <%= Number(selected?.recover_color_id) === Number(row.id) ? 'selected' : '' %>><%= row.name %></option><% }) %></select>
+          </label>
+          <label class="text-sm text-slate-700"><%= t('repack_recover_size') %>
+            <select name="recover_size_id" data-searchable-select="true" data-searchable-variant="unified" class="mt-1 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value=""><%= t('repack_no_size') %></option><% page.sizes.forEach((row) => { %><option value="<%= row.id %>" <%= Number(selected?.recover_size_id) === Number(row.id) ? 'selected' : '' %>><%= row.name %></option><% }) %></select>
+          </label>
+        </div>
+      </details>
+
+      <label class="flex items-center gap-3 text-sm font-medium text-slate-700">
+        <input type="checkbox" name="is_active" <%= selected?.is_active ? 'checked' : '' %> class="h-4 w-4 rounded border-slate-300">
+        <%= t('repack_enable_on_sale') %>
+      </label>
+      <div class="flex flex-wrap gap-2">
+        <button type="submit" class="rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white"><%= t('save') %></button>
+        <% if (selected) { %><a href="<%= basePath %>" class="rounded-xl border border-slate-300 bg-white px-5 py-2 text-sm font-semibold text-slate-700"><%= t('add_repack_rule') %></a><% } %>
+      </div>
+    </form>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-lg font-semibold text-slate-800"><%= t('repack_existing_rules') %></h2>
+    <div class="mt-4 overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50 text-left text-slate-600"><tr><th class="p-3"><%= t('article') %></th><th class="p-3"><%= t('repack_conversion') %></th><th class="p-3"><%= t('repack_consume_material') %></th><th class="p-3"><%= t('status') %></th><th class="p-3"><%= t('actions') %></th></tr></thead>
+        <tbody class="divide-y divide-slate-100">
+          <% page.rules.forEach((rule) => { %>
+            <tr><td class="p-3"><%= rule.item_code %> — <%= rule.item_name %></td><td class="p-3"><%= rule.source_name %> → <%= rule.target_name %></td><td class="p-3"><%= rule.consume_name %> × <%= rule.consume_qty_per_pack %> / <%= rule.pairs_per_pack %> <%= t('unit_pair') %><% if (rule.recover_name) { %><br><span class="text-slate-500"><%= t('repack_recover_material') %>: <%= rule.recover_name %> × <%= rule.recover_qty_per_pair %> / <%= t('unit_pair') %></span><% } %></td><td class="p-3"><%= t(rule.is_active ? 'active' : 'inactive') %></td><td class="p-3"><a class="font-semibold text-indigo-700" href="<%= basePath %>?rule=<%= rule.id %>"><%= t('edit') %></a></td></tr>
+          <% }) %>
+        </tbody>
+      </table>
+      <% if (!page.rules.length) { %><p class="p-4 text-sm text-slate-500"><%= t('no_entries') %></p><% } %>
+    </div>
+  </section>
+</div>

@@ -11,6 +11,7 @@
 
 const { BASIC_INFO_ENTITY_TYPES } = require("./approval-entity-map");
 const { applyApprovedBomChange } = require("../services/bom/service");
+const { saveRuleTx: savePackagingRepackRuleTx } = require("../services/sales/packaging-repack-service");
 const {
   applyBulkSkuRateUpsert: applyCommissionBulkSkuRateUpsert,
   deriveValueTypeFromBasis,
@@ -2250,6 +2251,10 @@ const applyMasterDataChange = async (trx, request, userId) => {
   }
   if (entityType === "SKU") {
     return applySkuChange(trx, request, userId);
+  }
+  if (entityType === "PACKAGING_CONVERSION_RULE") {
+    const saved = await savePackagingRepackRuleTx({ trx, input: newValue, userId });
+    return { applied: true, entityId: String(saved.id) };
   }
   if (entityType === "SKU_BULK_CREATE") {
     // Every variant of one "Add SKUs" submission arrives in a single request,

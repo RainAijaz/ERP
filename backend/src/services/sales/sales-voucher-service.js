@@ -23,6 +23,11 @@ const {
   loadActiveSalesDiscountPolicyMapTx,
 } = require("./sales-discount-policy-service");
 const {
+  maybeRepackSaleLineTx,
+  rollbackRepackMaterialsTx,
+  canCoverRepackShortfallTx,
+} = require("./packaging-repack-service");
+const {
   prepareSalesVoucherData,
   computeLedgerEntriesForBranch,
   writeCommissionLedgerTx,
@@ -497,6 +502,7 @@ const collectSalesNegativeStockShortfallsTx = async ({
   branchId,
   validated,
   currentVoucherId = null,
+  allowRepack = false,
 }) => {
   const toPositiveIntLocal = (v) => {
     const n = Number(v);
@@ -511,20 +517,21 @@ const collectSalesNegativeStockShortfallsTx = async ({
     const skuId = toPositiveIntLocal(line?.sku_id);
     const pairs = Number(line?.meta?.total_pairs || 0);
     if (!skuId || !(pairs > 0)) return;
-    deductions.set(skuId, (deductions.get(skuId) || 0) + pairs);
+    const bucket = `${skuId}:${toBool(line?.meta?.is_packed) ? 1 : 0}`;
+    deductions.set(bucket, (deductions.get(bucket) || 0) + pairs);
   });
   if (!deductions.size) return [];
 
-  const skuIds = [...deductions.keys()];
+  const skuIds = [...new Set([...deductions.keys()].map((key) => Number(key.split(":")[0])))];
 
   // Current stock balances
   const stockRows = await trx("erp.stock_balance_sku")
-    .select("sku_id", trx.raw("sum(coalesce(qty_pairs, 0)) as total_qty"))
+    .select("sku_id", "is_packed", trx.raw("sum(coalesce(qty_pairs, 0)) as total_qty"))
     .where({ branch_id: Number(branchId), stock_state: "ON_HAND" })
     .whereIn("sku_id", skuIds)
-    .groupBy("sku_id");
+    .groupBy("sku_id", "is_packed");
   const stockMap = new Map(
-    stockRows.map((r) => [Number(r.sku_id), Number(r.total_qty || 0)]),
+    stockRows.map((r) => [`${Number(r.sku_id)}:${r.is_packed ? 1 : 0}`, Number(r.total_qty || 0)]),
   );
 
   // For edit: add back the current voucher's committed pairs so we compare fairly
@@ -539,7 +546,8 @@ const collectSalesNegativeStockShortfallsTx = async ({
       const skuId = toPositiveIntLocal(line?.sku_id);
       const pairs = Number(meta?.total_pairs || 0);
       if (!skuId || !(pairs > 0)) return;
-      stockMap.set(skuId, (stockMap.get(skuId) || 0) + pairs);
+      const bucket = `${skuId}:${toBool(meta?.is_packed) ? 1 : 0}`;
+      stockMap.set(bucket, (stockMap.get(bucket) || 0) + pairs);
     });
   }
 
@@ -551,9 +559,20 @@ const collectSalesNegativeStockShortfallsTx = async ({
   );
 
   const shortfalls = [];
-  for (const [skuId, deductPairs] of deductions) {
-    const available = stockMap.get(skuId) || 0;
+  const repackReservations = new Map();
+  const repackMaterialReservations = new Map();
+  for (const [bucket, deductPairs] of deductions) {
+    const [skuIdText, packedText] = bucket.split(":");
+    const skuId = Number(skuIdText);
+    const isPacked = packedText === "1";
+    const available = stockMap.get(bucket) || 0;
     if (available - deductPairs < -0.0005) {
+      if (allowRepack && await canCoverRepackShortfallTx({
+        trx, branchId: Number(branchId), targetSkuId: skuId,
+        shortage: deductPairs - available, isPacked,
+        currentVoucherId, plannedSourceDeductions: deductions,
+        repackReservations, repackMaterialReservations,
+      })) continue;
       shortfalls.push({
         line_no: null,
         item_name: skuCodeMap.get(Number(skuId)) || `SKU ${skuId}`,
@@ -2861,6 +2880,7 @@ const applySalesSkuStockOutTx = async ({
     value: -totalConsumedValue,
     isPacked: targetIsPacked,
   });
+  return totalConsumedValue;
 };
 
 const applySalesSkuStockInTx = async ({
@@ -3149,6 +3169,7 @@ const syncSalesVoucherStockTx = async ({
   if (!header) return;
 
   await ensureSalesStockInfraTx(trx);
+  await rollbackRepackMaterialsTx({ trx, voucherId: normalizedVoucherId });
   await rollbackSalesStockLedgerByVoucherTx({
     trx,
     voucherId: normalizedVoucherId,
@@ -3194,6 +3215,27 @@ const syncSalesVoucherStockTx = async ({
         ? "RETURN"
         : "SALE";
     if (effectiveMovementKind === "SALE") {
+      if (category === "FG") {
+        await ensureSkuBalanceSeedTx({
+          trx,
+          branchId: Number(header.branch_id),
+          skuId: Number(skuId),
+          category,
+          isPacked: isPackedLine,
+        });
+        await maybeRepackSaleLineTx({
+          trx,
+          branchId: Number(header.branch_id),
+          voucherId: normalizedVoucherId,
+          voucherLineId: Number(line.id),
+          voucherDate: toDateOnly(header.voucher_date),
+          targetSkuId: Number(skuId),
+          qtyPairs,
+          isPacked: isPackedLine,
+          stockOut: applySalesSkuStockOutTx,
+          stockIn: applySalesSkuStockInTx,
+        });
+      }
       await applySalesSkuStockOutTx({
         trx,
         branchId: Number(header.branch_id),
@@ -3463,6 +3505,7 @@ const saveSalesVoucherTx = async ({
         branchId: req.branchId,
         validated,
         currentVoucherId: isCreate ? null : headerId,
+        allowRepack: voucherTypeCode === SALES_VOUCHER_TYPES.salesVoucher,
       }),
   });
 
@@ -3567,6 +3610,12 @@ const saveSalesVoucherTx = async ({
       voucherId: headerId,
       voucherTypeCode,
     });
+    const repackQty = voucherTypeCode === SALES_VOUCHER_TYPES.salesVoucher
+      ? Number((await trx("erp.sales_packaging_conversion")
+          .sum("qty_pairs as qty")
+          .where({ voucher_header_id: headerId })
+          .first())?.qty || 0)
+      : 0;
     return {
       id: headerId,
       voucherNo,
@@ -3575,6 +3624,7 @@ const saveSalesVoucherTx = async ({
       totalCommission: postingPrepared.totalCommission,
       queuedForApproval,
       approvalRequestId: null,
+      repackQty,
     };
   }
 
@@ -4354,6 +4404,16 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
       };
     }),
   };
+
+  if (voucherTypeCode === SALES_VOUCHER_TYPES.salesVoucher) {
+    details.auto_repacks = await knex("erp.sales_packaging_conversion as pc")
+      .join("erp.skus as source", "source.id", "pc.source_sku_id")
+      .join("erp.skus as target", "target.id", "pc.target_sku_id")
+      .select("pc.qty_pairs", "source.sku_code as source_sku_code",
+        "target.sku_code as target_sku_code")
+      .where({ "pc.voucher_header_id": header.id })
+      .orderBy("pc.id", "asc");
+  }
 
   if (voucherTypeCode === SALES_VOUCHER_TYPES.salesOrder) {
     const ext = await knex("erp.sales_order_header")

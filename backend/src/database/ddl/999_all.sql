@@ -6,6 +6,7 @@ BEGIN;
 \ir 040_gl_stock.sql
 \ir 051_bom_production.sql
 \ir 060_sales_ar.sql
+\ir 060_sales_packaging_repack.sql
 \ir 070_purchase_ap.sql
 \ir 080_inventory.sql
 \ir 050_production.sql
