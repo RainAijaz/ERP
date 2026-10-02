@@ -164,6 +164,16 @@
                       
                       <td class="px-6 py-3 text-right whitespace-nowrap text-sm font-medium">
                         <div class="flex items-center justify-end gap-2">
+                          <% if (row.sku_code_needs_resync && can('SCREEN', 'master_data.products.skus', 'navigate')) { %>
+                            <form method="POST" action="<%= basePath %>/<%= row.id %>/resync-code<%= viewQuery %>" class="inline">
+                              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                              <input type="hidden" name="expected_old_code" value="<%= row.sku_code %>">
+                              <button type="submit" title="<%= t('sku_code_resync') %>: <%= row.sku_code_suggested %>"
+                                class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-indigo-600 transition">
+                                <%= t('sku_code_resync') %>
+                              </button>
+                            </form>
+                          <% } %>
                           <% if (isFinishedView && canDelete) { %>
                             <form method="POST" action="<%= basePath %>/<%= row.id %>/rate-editable-toggle<%= viewQuery %>" class="inline">
                               <input type="hidden" name="_csrf" value="<%= csrfToken %>">
