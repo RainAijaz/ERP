@@ -365,7 +365,8 @@ const fetchTargetSkus = async ({
       "i.subgroup_id",
       "i.group_id",
     )
-    .whereIn("i.item_type", resolveItemTypes(articleType));
+    .whereIn("i.item_type", resolveItemTypes(articleType))
+    .where({ "s.is_active": true, "v.is_active": true, "i.is_active": true });
 
   if (applyOn === APPLY_ON.ARTICLE) {
     const requestedArticleIds = [
@@ -632,6 +633,7 @@ const applyBulkSkuRateUpsert = async ({
   status,
   rows,
   appliesToAllLabours = false,
+  t = (key) => key,
   debugLog,
 }) => {
   const stage = async (name, fn) => {
@@ -667,6 +669,16 @@ const applyBulkSkuRateUpsert = async ({
 
   if (!labourList.length || !skuIds.length) {
     return { created: 0, updated: 0 };
+  }
+
+  const activeSkuRows = await trx("erp.skus as s")
+    .join("erp.variants as v", "v.id", "s.variant_id")
+    .join("erp.items as i", "i.id", "v.item_id")
+    .select("s.id")
+    .whereIn("s.id", skuIds)
+    .where({ "s.is_active": true, "v.is_active": true, "i.is_active": true });
+  if (activeSkuRows.length !== skuIds.length) {
+    throw new Error(t("error_invalid_bulk_labour_rate_payload"));
   }
 
   if (appliesToAllLabours) {

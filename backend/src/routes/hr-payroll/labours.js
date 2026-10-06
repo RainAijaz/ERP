@@ -555,6 +555,11 @@ const labourRatesPage = {
   applyExtraFilters: (query, { filters = {} } = {}) => {
     // Zero-value rules are considered non-effective; hide them from list view.
     query = query.whereRaw("COALESCE(t.rate_value, 0) > 0");
+    query = query.where(function activeSkuOrScopeRule() {
+      this.whereNull("t.sku_id").orWhere(function activeSkuRule() {
+        this.where({ "s.is_active": true, "v.is_active": true, "i.is_active": true });
+      });
+    });
 
     const subgroupIds = Array.isArray(filters.subgroupValues)
       ? filters.subgroupValues
@@ -894,7 +899,7 @@ const labourRatesPage = {
         field: "apply_on",
         message: req.res.locals.t("error_invalid_apply_on"),
       };
-    if (values.apply_on === "ARTICLE" && !values.sku_id)
+    if (["ARTICLE", "SKU"].includes(values.apply_on) && !values.sku_id)
       return { field: "sku_id", message: req.res.locals.t("error_select_sku") };
     if (values.apply_on === "SUBGROUP" && !values.subgroup_id)
       return {
@@ -919,7 +924,7 @@ const labourRatesPage = {
       };
     }
 
-    if (!isUpdate && values.apply_on !== "ARTICLE") {
+    if (!isUpdate && !["ARTICLE", "SKU"].includes(values.apply_on)) {
       values.sku_id = null;
     }
     if (values.apply_on !== "SUBGROUP") {
@@ -930,6 +935,22 @@ const labourRatesPage = {
     }
 
     if (values.sku_id) {
+      const activeSku = await knex("erp.skus as s")
+        .join("erp.variants as v", "v.id", "s.variant_id")
+        .join("erp.items as i", "i.id", "v.item_id")
+        .where({
+          "s.id": Number(values.sku_id),
+          "s.is_active": true,
+          "v.is_active": true,
+          "i.is_active": true,
+        })
+        .first("s.id");
+      if (!activeSku) {
+        return {
+          field: "sku_id",
+          message: req.res.locals.t("error_no_target_skus_found"),
+        };
+      }
       const duplicateQuery = knex("erp.labour_rate_rules as r")
         .where({
           "r.applies_to_all_labours": false,
@@ -1188,7 +1209,14 @@ ratesRouter.get(
         .distinct("i.id as value")
         .select(knex.raw(`${labelExpr} as label`))
         .where({ "i.is_active": true })
-        .whereIn("i.item_type", itemTypes);
+        .whereIn("i.item_type", itemTypes)
+        .whereExists(function activeSkuForArticle() {
+          this.select(1)
+            .from("erp.variants as v")
+            .join("erp.skus as s", "s.variant_id", "v.id")
+            .whereRaw("v.item_id = i.id")
+            .where({ "v.is_active": true, "s.is_active": true });
+        });
 
       if (term) {
         query = query.where(function whereTerm() {
@@ -1479,6 +1507,7 @@ ratesRouter.post(
           status: normalized.status,
           rows: normalizedRowsForSave,
           appliesToAllLabours: normalized.labourSelection?.all === true,
+          t: res.locals.t,
           debugLog: (stage, details = {}) =>
             logLabourRateSaveDebug(req, `bulk_upsert:service_${stage}`, {
               traceId,

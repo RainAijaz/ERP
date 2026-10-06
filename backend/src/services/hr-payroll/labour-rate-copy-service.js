@@ -109,7 +109,15 @@ const fetchSourceDepartments = async ({
   const rows = await whereActive(
     db(`${TABLE} as r`)
       .join("erp.departments as d", "d.id", "r.dept_id")
-      .where({ "r.labour_id": source, "r.applies_to_all_labours": false }),
+      .leftJoin("erp.skus as s", "s.id", "r.sku_id")
+      .leftJoin("erp.variants as v", "v.id", "s.variant_id")
+      .leftJoin("erp.items as i", "i.id", "v.item_id")
+      .where({ "r.labour_id": source, "r.applies_to_all_labours": false })
+      .where(function activeSkuOrScopeRule() {
+        this.whereNull("r.sku_id").orWhere(function activeSkuRule() {
+          this.where({ "s.is_active": true, "v.is_active": true, "i.is_active": true });
+        });
+      }),
     "r.status",
   )
     .groupBy("d.id")
@@ -161,6 +169,11 @@ const fetchCopyableRules = async ({
         "r.labour_id": source,
         "r.dept_id": dept,
         "r.applies_to_all_labours": false,
+      })
+      .where(function activeSkuOrScopeRule() {
+        this.whereNull("r.sku_id").orWhere(function activeSkuRule() {
+          this.where({ "s.is_active": true, "v.is_active": true, "i.is_active": true });
+        });
       }),
     "r.status",
   )
@@ -652,6 +665,9 @@ const applyCopy = async ({
               NULL, NULL, v.rate_type, v.rate_value, v.status
        FROM (VALUES ${placeholders})
          AS v(labour_id, dept_id, sku_id, rate_type, rate_value, status)
+       JOIN erp.skus AS s ON s.id = v.sku_id AND s.is_active = true
+       JOIN erp.variants AS variant ON variant.id = s.variant_id AND variant.is_active = true
+       JOIN erp.items AS item ON item.id = variant.item_id AND item.is_active = true
        ON CONFLICT (labour_id, dept_id, sku_id)
          WHERE applies_to_all_labours = false
            AND labour_id IS NOT NULL

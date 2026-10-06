@@ -1874,6 +1874,20 @@ const applyLabourRateApproval = async (trx, request) => {
     target_item_type: payload.article_type || payload.target_item_type || null,
   };
 
+  if (row.sku_id) {
+    const activeSku = await trx("erp.skus as s")
+      .join("erp.variants as v", "v.id", "s.variant_id")
+      .join("erp.items as i", "i.id", "v.item_id")
+      .where({
+        "s.id": row.sku_id,
+        "s.is_active": true,
+        "v.is_active": true,
+        "i.is_active": true,
+      })
+      .first("s.id");
+    if (!activeSku) return false;
+  }
+
   if (action === "create") {
     const [created] = await trx(LABOUR_RATE_TABLE)
       .insert(row)
@@ -2071,13 +2085,15 @@ const applyLabourRateCopyApproval = async (trx, request) => {
     .filter(Boolean);
   if (!rows.length) return false;
 
-  await applyLabourRateCopy({
+  const result = await applyLabourRateCopy({
     trx,
     deptId,
     rows,
     conflictMode: payload.conflict_mode,
     status: normalizeStatus(payload.status, "active"),
   });
+
+  if (!result.created && !result.updated) return false;
 
   return { applied: true, entityId: String(labourIds[0]) };
 };
@@ -2158,9 +2174,12 @@ const applyBulkLabourRateApproval = async (trx, request) => {
   if (!rows.length) return false;
 
   const skuIds = [...new Set(rows.map((row) => row.skuId))];
-  const existingSkuRows = await trx("erp.skus")
-    .select("id")
-    .whereIn("id", skuIds);
+  const existingSkuRows = await trx("erp.skus as s")
+    .join("erp.variants as v", "v.id", "s.variant_id")
+    .join("erp.items as i", "i.id", "v.item_id")
+    .select("s.id")
+    .whereIn("s.id", skuIds)
+    .where({ "s.is_active": true, "v.is_active": true, "i.is_active": true });
   if (existingSkuRows.length !== skuIds.length) return false;
 
   await applyLabourBulkSkuRateUpsert({
