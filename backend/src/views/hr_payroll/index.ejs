@@ -1436,11 +1436,14 @@
       const headerRate = String(fields.value?.value || "").trim();
       if (!state.rows.length) return;
       state.rows.forEach((row) => {
-        row.new_rate = headerRate;
+        if (row.explicit_rate_edited) return;
+        row.new_rate = row.previous_source === "SKU" && !row.explicit_rate_edited
+          ? row.previous_rate : headerRate;
       });
       const inputs = tbody.querySelectorAll("[data-commission-row-rate]");
       inputs.forEach((input) => {
-        input.value = headerRate;
+        const row = state.rows[Number(input.getAttribute("data-commission-row-index"))];
+        input.value = row?.new_rate ?? headerRate;
       });
     };
 
@@ -1466,6 +1469,7 @@
 
       const params = new URLSearchParams({
         apply_on: applyOn,
+        commission_type: String(fields.commissionType?.value || "SALESMAN_SALE").trim().toUpperCase(),
       });
       if (employeeId) params.set("employee_id", employeeId);
       if (commissionBasis) params.set("commission_basis", commissionBasis);
@@ -1590,6 +1594,7 @@ const currentSeq = ++state.requestSeq;
         const index = Number(target.getAttribute("data-commission-row-index"));
         if (!Number.isInteger(index) || !state.rows[index]) return;
         state.rows[index].new_rate = target.value;
+        state.rows[index].explicit_rate_edited = true;
         return;
       }
       if (target.matches("[data-field='value']")) {
@@ -1612,7 +1617,7 @@ const currentSeq = ++state.requestSeq;
     form.addEventListener("change", (event) => {
       const target = event.target;
       if (!target) return;
-      if (target.matches("[data-field='employee_id'], [data-field='apply_on'], [data-field='subgroup_id'], [data-field='group_id'], [data-field='commission_basis'], [data-field='rate_type'], [data-field='branch_id'], [data-field='effective_from']")) {
+      if (target.matches("[data-field='employee_id'], [data-field='commission_type'], [data-field='apply_on'], [data-field='subgroup_id'], [data-field='group_id'], [data-field='commission_basis'], [data-field='rate_type'], [data-field='branch_id'], [data-field='effective_from']")) {
         schedulePreview();
       }
     });
@@ -3826,7 +3831,7 @@ const currentSeq = ++state.requestSeq;
     el("[data-recalc-preview]").addEventListener("click", runPreview);
     applyBtn.addEventListener("click", apply);
     changedOnlyBox.addEventListener("change", renderRows);
-    clearOrphansBox.addEventListener("change", markPreviewDirty);
+    clearOrphansBox.addEventListener("change", runPreview);
     employeeSel.addEventListener("change", () => {
       markPreviewDirty();
       loadRules();

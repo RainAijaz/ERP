@@ -957,7 +957,7 @@
           const commissionType = row.dataset.commissionType || "";
           const rateType = row.dataset.rateType || "";
           const rateAmount = row.dataset.rateAmount || "";
-          const subKey = empKey + "||" + commissionType + "||" + rateType + "||" + rateAmount;
+          const subKey = empKey + "||" + commissionType + "||" + (row.dataset.commissionBasis || "") + "||" + rateType + "||" + rateAmount + "||" + (row.dataset.branchId || "");
           if (!groups.has(subKey)) groups.set(subKey, { commissionType, rateType, rateAmount, rows: [] });
           groups.get(subKey).rows.push(row);
         });
@@ -1016,7 +1016,7 @@
             commissionType,
             rateType,
             rateAmount,
-            count: groupRows.length,
+            count: groupRows.filter((row) => row.dataset.scopeRule !== "true" && row.dataset.inheritedCopy !== "true").length,
             colspan,
             isOpen: subIsOpen,
             scopeInfoList,
@@ -1888,6 +1888,9 @@
         tr.dataset.applyOn         = row.apply_on || "";
         tr.dataset.selectorDisplay = row.selector_display || "";
         tr.dataset.sourceRuleId    = row.source_rule_id || "";
+        tr.dataset.scopeRule       = row.is_scope_rule ? "true" : "false";
+        tr.dataset.inheritedCopy   = row.inherited_sku_copy ? "true" : "false";
+        tr.dataset.branchId        = row.branch_id || "";
         tr.dataset.skuSubgroupName = row.sku_subgroup_name || "";
         tr.dataset.skuGroupName    = row.sku_group_name || "";
         tr.dataset.commissionType  = row.commission_type || "";
@@ -1919,14 +1922,40 @@
         const skuTd = document.createElement("td");
         skuTd.className = "px-4 py-3 text-slate-700";
         skuTd.textContent = (row.sku_code != null && row.sku_code !== "") ? row.sku_code : _tNone;
+        if (row.sku_code && row.rate_source) {
+          const source = document.createElement("span");
+          source.className = "ml-2 text-[10px] text-slate-500";
+          source.textContent = row.rate_source === "SKU" ? "<%= t('apply_on_sku') %>" :
+            row.rate_source === "SUBGROUP" ? "<%= t('apply_on_subgroup') %>: " + (row.sku_subgroup_name || "") :
+            "<%= t('apply_on_group') %>: " + (row.sku_group_name || "");
+          skuTd.appendChild(source);
+        }
         tr.appendChild(skuTd);
+
+        const branchTd = document.createElement("td");
+        branchTd.className = "px-4 py-3 text-slate-700";
+        branchTd.textContent = row.branch_name || "<%= t('all_branches') %>";
+        tr.appendChild(branchTd);
 
         // value (rate)
         const valTd = document.createElement("td");
         valTd.className = "px-4 py-3 text-slate-700";
         valTd.setAttribute("data-rate-value-cell", "");
         valTd.textContent = (row.value != null && row.value !== "") ? String(row.value) : _tNone;
+        if (row.rate_state === "past" || row.rate_state === "shadowed") {
+          const state = document.createElement("span");
+          state.className = "ml-2 text-[10px] text-slate-500";
+          state.textContent = row.rate_state === "past" ? "<%= t('past_rate') %>" : "<%= t('shadowed_rate') %>";
+          valTd.appendChild(state);
+        }
         tr.appendChild(valTd);
+
+        for (const date of [row.effective_from, row.effective_to]) {
+          const dateTd = document.createElement("td");
+          dateTd.className = "px-4 py-3 text-slate-700";
+          dateTd.textContent = date || _tNone;
+          tr.appendChild(dateTd);
+        }
 
         // reverse_on_returns badge
         const rorTd = document.createElement("td");
@@ -1959,7 +1988,7 @@
           return data;
         };
 
-        if (_canEdit) {
+        if (_canEdit && !row.is_virtual) {
           const btn = document.createElement("button");
           btn.className = "inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 cursor-pointer";
           btn.type = "button";
@@ -1974,7 +2003,7 @@
           actDesktop.appendChild(btn);
         }
 
-        if (_canDelete) {
+        if (_canDelete && !row.is_virtual) {
           const isActive = Boolean(row.is_active);
           const btn = document.createElement("button");
           btn.className = "inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 cursor-pointer";
@@ -1990,7 +2019,7 @@
           actDesktop.appendChild(btn);
         }
 
-        if (_canHardDelete) {
+        if (_canHardDelete && !row.is_virtual) {
           const btn = document.createElement("button");
           btn.className = "inline-flex items-center justify-center rounded-md border border-rose-200 bg-rose-50 p-2 text-rose-600 transition hover:border-rose-300 hover:text-rose-700 cursor-pointer";
           btn.type = "button";
@@ -2027,7 +2056,7 @@
         });
         menuPanel.addEventListener("click", (ev) => ev.stopPropagation());
 
-        if (_canEdit) {
+        if (_canEdit && !row.is_virtual) {
           const btn = document.createElement("button");
           btn.className = "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition hover:bg-slate-100";
           btn.type = "button";
@@ -2041,7 +2070,7 @@
           menuPanel.appendChild(btn);
         }
 
-        if (_canDelete) {
+        if (_canDelete && !row.is_virtual) {
           const isActive = Boolean(row.is_active);
           const btn = document.createElement("button");
           btn.className = "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition hover:bg-slate-100";
@@ -2054,7 +2083,7 @@
           menuPanel.appendChild(btn);
         }
 
-        if (_canHardDelete) {
+        if (_canHardDelete && !row.is_virtual) {
           const btn = document.createElement("button");
           btn.className = "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-rose-600 transition hover:bg-rose-50";
           btn.type = "button";
@@ -2093,7 +2122,8 @@
           if (placeholder) {
             const employeeId = String(placeholder.dataset.employeeId || "").trim();
             if (iconWrap) iconWrap.innerHTML = spinnerHtml;
-            fetch(basePath + "/employee-rules?employee_id=" + encodeURIComponent(employeeId), {
+            fetch(basePath + "/employee-rules?employee_id=" + encodeURIComponent(employeeId) +
+              (new URLSearchParams(window.location.search).get("show_past_rates") === "1" ? "&show_past_rates=1" : ""), {
               method: "GET",
               headers: { Accept: "application/json" },
               credentials: "same-origin",
@@ -2101,6 +2131,10 @@
               .then(function (resp) { return resp.ok ? resp.json() : Promise.reject(resp.status); })
               .then(function (data) {
                 const fetchedRows = Array.isArray(data.rows) ? data.rows : [];
+                const countBadge = header.querySelector("span.rounded-full");
+                if (countBadge && Number.isFinite(Number(data.skuCount))) {
+                  countBadge.textContent = Number(data.skuCount) + " <%= t('skus') %>";
+                }
                 const newRows = fetchedRows.map(function (row, idx) {
                   return buildCommissionRow(row, key, idx);
                 });

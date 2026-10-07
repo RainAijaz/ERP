@@ -2,6 +2,7 @@ const express = require("express");
 const knex = require("../../db/knex");
 const { createHrMasterRouter, hydratePage, fetchRows } = require("./master-router");
 const { toMoney, hasTwoDecimalsOrLess } = require("./validation");
+const { buildCommissionCoverageRows } = require("../../services/hr-payroll/commission-coverage-service");
 const {
   requirePermission,
 } = require("../../middleware/access/role-permissions");
@@ -1118,6 +1119,10 @@ router.post(
           item_name: row.item_name || "",
           previous_rate: row.previous_rate ?? null,
           previous_rate_type: row.previous_rate_type || null,
+          previous_source: row.previous_source || null,
+          previous_rule_id: row.previous_rule_id || null,
+          preserve_explicit: row.previous_source === "SKU" &&
+            Number(row.previous_rate) === Number(nextRate),
           subgroup_id: row.subgroup_id ?? null,
           group_id: row.group_id ?? null,
           new_rate: nextRate ?? null,
@@ -1185,7 +1190,8 @@ router.post(
       const skuSelectorMap = new Map(
         expectedRows.map((row) => [
           Number(row.sku_id),
-          { subgroupId: row.subgroup_id ?? null, groupId: row.group_id ?? null },
+          { subgroupId: row.subgroup_id ?? null, groupId: row.group_id ?? null,
+            previousSource: row.previous_source, previousRate: row.previous_rate },
         ]),
       );
       const enrichedRows = normalized.rows.map((row) => ({
@@ -1193,6 +1199,8 @@ router.post(
         rate: row.rate,
         subgroupId: skuSelectorMap.get(Number(row.skuId))?.subgroupId ?? null,
         groupId: skuSelectorMap.get(Number(row.skuId))?.groupId ?? null,
+        preserveExplicit: skuSelectorMap.get(Number(row.skuId))?.previousSource === "SKU" &&
+          Number(skuSelectorMap.get(Number(row.skuId))?.previousRate) === Number(row.rate),
       }));
 
       const result = await knex.transaction(async (trx) => {
@@ -1291,7 +1299,14 @@ router.get(
         // "Show past rates" toggle would flip the URL and change nothing.
         requestQuery: req.query || {},
       });
-      return res.json({ rows });
+      const coverage = await buildCommissionCoverageRows({
+        db: knex,
+        rawRows: rows,
+        branchId: req.branchId || null,
+        locale: req.locale || "en",
+        showPast: String(req.query.show_past_rates || "") === "1",
+      });
+      return res.json(coverage);
     } catch (err) {
       return next(err);
     }

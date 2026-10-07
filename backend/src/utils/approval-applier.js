@@ -1962,7 +1962,7 @@ const applyBulkCommissionApproval = async (trx, request, decidedBy = null) => {
           .trim()
           .toUpperCase() || rateTypeDefault;
       if (!skuId || rate === null) return null;
-      return { employeeId, skuId, rate, rateType };
+      return { employeeId, skuId, rate, rateType, preserveExplicit: data.preserve_explicit === true };
     })
     .filter(Boolean);
   if (!rows.length) return false;
@@ -1970,7 +1970,7 @@ const applyBulkCommissionApproval = async (trx, request, decidedBy = null) => {
   for (const employeeId of employeeIds) {
     const rowsForEmployee = rows
       .filter((row) => !row.employeeId || row.employeeId === employeeId)
-      .map((row) => ({ skuId: row.skuId, rate: row.rate }));
+      .map((row) => ({ skuId: row.skuId, rate: row.rate, preserveExplicit: row.preserveExplicit }));
     if (!rowsForEmployee.length) continue;
     const rowRateType =
       rows.find(

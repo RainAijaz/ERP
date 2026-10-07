@@ -1,4 +1,5 @@
 const knex = require("../../db/knex");
+const { attachInheritance } = require("../sales/commission-rule-resolver");
 
 const APPLY_ON = {
   SKU: "SKU",
@@ -449,7 +450,7 @@ const fetchExistingRules = async ({
   const effectiveDate = normalizeRuleDate(onDate) || todayYmd();
   const branch = toBranchKey(branchId);
 
-  return db("erp.employee_commission_rules as ecr")
+  const rows = await db("erp.employee_commission_rules as ecr")
     .select(
       "id",
       "apply_on",
@@ -463,6 +464,9 @@ const fetchExistingRules = async ({
       "status",
       "reverse_on_returns",
       "branch_id",
+      "source_rule_id",
+      "commission_basis",
+      db.raw("(to_jsonb(ecr)->>'inherited_sku_copy')::boolean as inherited_sku_copy"),
     )
     .where({
       employee_id: employee,
@@ -486,44 +490,46 @@ const fetchExistingRules = async ({
       } else {
         builder.whereNull("branch_id");
       }
-    });
+    })
+    .orderBy("effective_from", "desc")
+    .orderBy("id", "desc");
+  return attachInheritance(db, rows);
 };
 
 const indexExistingRules = (existingRules) => {
-  const bySkuId = new Map();
-  const bySubgroupId = new Map();
-  const byGroupId = new Map();
-  let allRule = null;
-  // Each map keeps the FIRST rule it sees for a key, so branch-pinned rules must
-  // be visited first — otherwise a branch-wide rate would shadow the pinned one
-  // and the grid would show the wrong "previous rate".
-  const ordered = [...existingRules].sort(
-    (a, b) => (b.branch_id ? 1 : 0) - (a.branch_id ? 1 : 0),
-  );
-  for (const rule of ordered) {
+  const makeLayer = () => ({ bySkuId: new Map(), bySubgroupId: new Map(), byGroupId: new Map(), allRule: null });
+  const index = { branch: makeLayer(), any: makeLayer() };
+  for (const rule of existingRules) {
+    if (rule.inherited_sku_copy) continue;
+    const layer = rule.branch_id ? index.branch : index.any;
     const scope = String(rule.apply_on || "").toUpperCase();
     if (scope === APPLY_ON.SKU) {
       const key = Number(rule.sku_id);
-      if (!bySkuId.has(key)) bySkuId.set(key, rule);
+      if (!layer.bySkuId.has(key)) layer.bySkuId.set(key, rule);
     } else if (scope === APPLY_ON.SUBGROUP) {
       const key = Number(rule.subgroup_id);
-      if (!bySubgroupId.has(key)) bySubgroupId.set(key, rule);
+      if (!layer.bySubgroupId.has(key)) layer.bySubgroupId.set(key, rule);
     } else if (scope === APPLY_ON.GROUP) {
       const key = Number(rule.group_id);
-      if (!byGroupId.has(key)) byGroupId.set(key, rule);
-    } else if (scope === APPLY_ON.ALL && !allRule) {
-      allRule = rule;
+      if (!layer.byGroupId.has(key)) layer.byGroupId.set(key, rule);
+    } else if (scope === APPLY_ON.ALL && !layer.allRule) {
+      layer.allRule = rule;
     }
   }
-  return { bySkuId, bySubgroupId, byGroupId, allRule };
+  return index;
 };
 
-const resolvePreviousForSkuIndexed = ({ index, sku }) => {
-  const matched =
-    index.bySkuId.get(Number(sku.sku_id)) ||
-    index.bySubgroupId.get(Number(sku.subgroup_id || 0)) ||
-    index.byGroupId.get(Number(sku.group_id || 0)) ||
-    index.allRule;
+const findEffectiveRuleIndexed = ({ index, sku, branchId }) => {
+  const inLayer = (layer) =>
+    layer.bySkuId.get(Number(sku.sku_id)) ||
+    layer.bySubgroupId.get(Number(sku.subgroup_id || 0)) ||
+    layer.byGroupId.get(Number(sku.group_id || 0)) ||
+    layer.allRule;
+  return (branchId ? inLayer(index.branch) : null) || inLayer(index.any);
+};
+
+const resolvePreviousForSkuIndexed = ({ index, sku, branchId }) => {
+  const matched = findEffectiveRuleIndexed({ index, sku, branchId });
   if (!matched) {
     return { previousRate: null, previousRateType: null, previousSource: null, previousRuleId: null };
   }
@@ -582,7 +588,7 @@ const buildBulkPreviewRows = async ({
   const defaultRate = toMoney(baseRate);
 
   return targetSkus.map((sku) => {
-    const previous = resolvePreviousForSkuIndexed({ index, sku });
+    const previous = resolvePreviousForSkuIndexed({ index, sku, branchId });
     return {
       sku_id: Number(sku.sku_id),
       sku_code: sku.sku_code,
@@ -636,14 +642,25 @@ const applyBulkSkuRateUpsert = async ({
 
   let created = 0;
 
-  for (const row of rows) {
-    const selectorId = applyOn === APPLY_ON.SUBGROUP
-      ? Number(row.subgroupId || 0) || null
-      : Number(row.groupId || 0) || null;
-    const sourceRuleId = (selectorId && scopeResult.selectorToRuleId?.get(selectorId)) || null;
+  const targetSkuIds = [...new Set(rows.filter((row) => !row.preserveExplicit)
+    .map((row) => Number(row.skuId)).filter(Boolean))];
+  const skuScope = () => trx("erp.employee_commission_rules")
+    .where({ employee_id: employeeId, commission_type: commissionType, apply_on: APPLY_ON.SKU })
+    .whereIn("sku_id", targetSkuIds)
+    .whereRaw("COALESCE(branch_id, 0) = ?", [toBranchKey(branchId) || 0]);
+  // Retire old SKU snapshots in two set-based writes; their earlier periods
+  // remain available to a voucher-date recalculation.
+  if (targetSkuIds.length) {
+    await skuScope().where("effective_from", ">=", effectiveFrom).del();
+    await skuScope().where("effective_from", "<", effectiveFrom)
+      .andWhere((q) => q.whereNull("effective_to").orWhere("effective_to", ">=", effectiveFrom))
+      .update({ effective_to: addDaysYmd(effectiveFrom, -1) });
+  }
 
-    // supersedeCommissionRule closes the rate this one replaces instead of
-    // overwriting it, so historical rows survive and stay recalculable.
+  for (const row of rows) {
+    if (row.preserveExplicit) continue;
+    // Only a row changed away from the scope rate is an explicit SKU exception.
+    if (Number(row.rate) === Number(scopeRate)) continue;
     await supersedeCommissionRule({
       trx,
       employeeId,
@@ -660,7 +677,7 @@ const applyBulkSkuRateUpsert = async ({
         value_type: valueType,
         reverse_on_returns: reverseOnReturns,
         status,
-        source_rule_id: sourceRuleId,
+        source_rule_id: null,
       },
     });
     created += 1;
@@ -678,6 +695,9 @@ module.exports = {
   deriveValueTypeFromBasis,
   normalizeBulkInput,
   buildBulkPreviewRows,
+  indexExistingRules,
+  findEffectiveRuleIndexed,
+  resolvePreviousForSkuIndexed,
   applyBulkSkuRateUpsert,
   supersedeCommissionRule,
   normalizeRuleDate,

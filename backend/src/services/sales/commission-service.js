@@ -1,7 +1,7 @@
 const { HttpError } = require("../../middleware/errors/http-error");
+const { attachInheritance, pickRuleByPrecedence } = require("./commission-rule-resolver");
 
 const SALES_VOUCHER_CODE = "SALES_VOUCHER";
-const PRECEDENCE = ["SKU", "SUBGROUP", "GROUP", "ALL"];
 const PAIRS_PER_DOZEN = 12;
 const BASIS = {
   NET_SALES_PERCENT: "NET_SALES_PERCENT",
@@ -167,51 +167,24 @@ const buildRuleMatchIndex = async (
     .whereRaw(
       `COALESCE((to_jsonb(ecr)->>'effective_to')::date, ?::date) >= ?::date`,
       [effectiveDate, effectiveDate],
-    )
-    .orderByRaw(`COALESCE((to_jsonb(ecr)->>'effective_from')::date, '1900-01-01'::date) DESC`)
-    .orderBy("ecr.id", "desc");
+    );
 
   // A NULL branch_id means "every branch this employee is mapped to". That is
   // exact rather than merely permissive: validateSalesmanTx already rejects a
   // salesman who is not mapped to the voucher's branch, and the BRANCH_SALE /
   // TRANSFER / PRODUCTION paths only ever iterate employees mapped to it.
   if (normalizedBranchId) {
-    return query.whereRaw(
+    query.whereRaw(
       `((to_jsonb(ecr)->>'branch_id') IS NULL OR (to_jsonb(ecr)->>'branch_id')::bigint = ?)`,
       [normalizedBranchId],
     );
   }
-  return query;
-};
-
-// Two-level precedence: a rule pinned to this branch beats every branch-wide
-// rule, and only then does the scope ladder apply. So a branch-specific GROUP
-// rate outranks a branch-wide SKU rate — "this branch pays differently, full
-// stop" is the whole point of pinning one.
-const BRANCH_PRECEDENCE = ["BRANCH", "ANY"];
-
-const pickRuleByPrecedence = (rules, basis, context) => {
-  for (const branchScope of BRANCH_PRECEDENCE) {
-    for (const scope of PRECEDENCE) {
-      const matched = rules.find((rule) => {
-        if (String(rule.commission_basis) !== basis) return false;
-        if (String(rule.apply_on) !== scope) return false;
-        const ruleBranchId = Number(rule.branch_id) > 0 ? Number(rule.branch_id) : null;
-        if (branchScope === "BRANCH") {
-          if (!ruleBranchId) return false;
-          if (!context.branchId || ruleBranchId !== Number(context.branchId)) return false;
-        } else if (ruleBranchId) {
-          return false;
-        }
-        if (scope === "SKU") return Number(rule.sku_id) === Number(context.skuId);
-        if (scope === "SUBGROUP") return Number(rule.subgroup_id) === Number(context.subgroupId);
-        if (scope === "GROUP") return Number(rule.group_id) === Number(context.groupId);
-        return true;
-      });
-      if (matched) return { rule: matched, precedence: scope };
-    }
-  }
-  return null;
+  const rows = await query
+    .select("ecr.source_rule_id", "ecr.status",
+      trx.raw("(to_jsonb(ecr)->>'inherited_sku_copy')::boolean as inherited_sku_copy"))
+    .orderByRaw(`COALESCE((to_jsonb(ecr)->>'effective_from')::date, '1900-01-01'::date) DESC`)
+    .orderBy("ecr.id", "desc");
+  return attachInheritance(trx, rows);
 };
 
 const evaluateSign = ({ saleQty, returnQty, reverseOnReturns }) => {
