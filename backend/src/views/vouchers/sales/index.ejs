@@ -62,6 +62,7 @@
     <form method="post" action="<%= basePath || '' %>" class="space-y-4" data-sales-voucher-form>
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
+      <input type="hidden" name="submission_key" value="<%= selectedVoucher ? '' : (submissionKey || '') %>">
       <input type="hidden" name="lines_json" value="[]" data-lines-json>
 
       <div class="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
@@ -369,6 +370,13 @@
   const form = document.querySelector("[data-sales-voucher-form]");
   if (!form) return false;
   if (form.dataset.salesVoucherInitDone === "1") return true;
+  const submitButton = form.querySelector('button[type="submit"]');
+  let submissionPending = false;
+  window.addEventListener("pageshow", () => {
+    submissionPending = false;
+    form.removeAttribute("aria-busy");
+    if (submitButton && <%- JSON.stringify(Boolean(canSaveVoucher)) %>) submitButton.disabled = false;
+  });
 
   const isSalesOrderVoucher = <%= isSalesOrder ? "true" : "false" %>;
   const canOverrideRateDiscount = <%= canOverrideRateDiscount ? "true" : "false" %>;
@@ -2161,6 +2169,10 @@
   });
 
   form.addEventListener("submit", (e) => {
+    if (submissionPending) {
+      e.preventDefault();
+      return;
+    }
     if (!canSaveVoucher) {
       e.preventDefault();
       window.showVoucherError(actionNotAllowedMessage);
@@ -2293,6 +2305,9 @@
       field.disabled = false;
     });
     linesJsonInput.value = JSON.stringify(payload);
+    submissionPending = true;
+    form.setAttribute("aria-busy", "true");
+    if (submitButton) submitButton.disabled = true;
   });
 
   try {

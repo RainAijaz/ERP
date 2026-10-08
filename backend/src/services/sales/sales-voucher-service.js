@@ -1,4 +1,5 @@
 const knex = require("../../db/knex");
+const { createHash } = require("node:crypto");
 const { HttpError } = require("../../middleware/errors/http-error");
 const { queueAuditLog } = require("../../utils/audit-log");
 const {
@@ -47,6 +48,7 @@ const ROW_STATUS_VALUES = ["PACKED", "LOOSE"];
 const PAIRS_PER_PACKED_UNIT = 12;
 const SALES_COMMISSION_LINE_DESCRIPTION = "Auto sales commission accrual";
 const SALES_SKU_CATEGORIES = new Set(["FG", "SFG"]);
+const SUBMISSION_KEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 let approvalRequestHasVoucherTypeCodeColumn;
 let stockBalanceSkuTableSupport;
@@ -3470,6 +3472,42 @@ const saveSalesVoucherTx = async ({
 
   const isCreate = mode === "create";
   const action = isCreate ? "create" : "edit";
+  let submissionKey = null;
+  let submissionHash = null;
+  if (isCreate) {
+    submissionKey = String(payload?.submission_key || "").trim().toLowerCase();
+    if (!SUBMISSION_KEY_PATTERN.test(submissionKey)) {
+      throw new HttpError(409, req?.res?.locals?.t?.("error_voucher_form_expired") || "error_voucher_form_expired");
+    }
+    submissionHash = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+    // The lock serializes retries across app workers. The second request reads
+    // the first committed voucher and never repeats stock, GL, or approval work.
+    await trx.raw("SELECT pg_advisory_xact_lock(hashtext(?::text), hashtext(?::text))", [
+      "sales-voucher-submission", submissionKey,
+    ]);
+    const previous = await trx("erp.voucher_header")
+      .select("id", "voucher_no", "status", "branch_id", "voucher_type_code", "created_by", "submission_hash")
+      .where({ submission_key: submissionKey })
+      .first();
+    if (previous) {
+      if (
+        Number(previous.branch_id) !== Number(req.branchId) ||
+        Number(previous.created_by) !== Number(req.user?.id) ||
+        previous.voucher_type_code !== voucherTypeCode ||
+        String(previous.submission_hash || "").trim() !== submissionHash
+      ) {
+        throw new HttpError(409, req?.res?.locals?.t?.("error_voucher_submission_conflict") || "error_voucher_submission_conflict");
+      }
+      return {
+        id: Number(previous.id),
+        voucherNo: Number(previous.voucher_no),
+        status: String(previous.status),
+        queuedForApproval: String(previous.status) === "PENDING",
+        approvalRequestId: null,
+        replayed: true,
+      };
+    }
+  }
   const policyRequiresApproval = await requiresApprovalForAction(
     trx,
     voucherTypeCode,
@@ -3527,6 +3565,8 @@ const saveSalesVoucherTx = async ({
         book_no: validated.bookNo,
         status: queuedForApproval ? "PENDING" : "APPROVED",
         created_by: req.user.id,
+        submission_key: submissionKey,
+        submission_hash: submissionHash,
         approved_by: queuedForApproval ? null : req.user.id,
         approved_at: queuedForApproval ? null : trx.fn.now(),
         remarks: validated.remarks,
@@ -3716,6 +3756,7 @@ const createSalesVoucher = async ({
       mode: "create",
     }),
   );
+  if (result.replayed) return result;
   queueAuditLog(req, {
     entityType: "VOUCHER",
     entityId: result.id,

@@ -69,6 +69,8 @@ CREATE TABLE IF NOT EXISTS erp.voucher_header (
 
   created_by         bigint NOT NULL REFERENCES erp.users(id) ON DELETE RESTRICT,
   created_at         timestamptz NOT NULL DEFAULT now(),
+  submission_key     uuid,
+  submission_hash    char(64),
 
   approved_by        bigint REFERENCES erp.users(id) ON DELETE RESTRICT,
   approved_at        timestamptz,
@@ -88,6 +90,12 @@ CREATE TABLE IF NOT EXISTS erp.voucher_header (
   -- Unique numbering series per branch per voucher type
   UNIQUE (branch_id, voucher_type_code, voucher_no)
 );
+
+ALTER TABLE erp.voucher_header ADD COLUMN IF NOT EXISTS submission_key uuid;
+ALTER TABLE erp.voucher_header ADD COLUMN IF NOT EXISTS submission_hash char(64);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_voucher_header_submission_key
+ON erp.voucher_header (submission_key) WHERE submission_key IS NOT NULL;
 
 -- -----------------------------------------------------------------------------
 -- voucher_line

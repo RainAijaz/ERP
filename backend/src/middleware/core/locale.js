@@ -5581,6 +5581,9 @@ Object.assign(translations.en, {
   repack_sale_notice: "Auto repack: {qty} pairs converted to the requested packing.",
   repack_sale_detail: "Auto repack: {qty} pairs converted from {source} to {target} for this sale.",
   repack_approval_summary: "Packaging conversion: {item} / {source} → {target}",
+  voucher_already_submitted: "This voucher was already saved. The existing voucher has been opened.",
+  error_voucher_form_expired: "This voucher form has expired. Refresh the page before saving.",
+  error_voucher_submission_conflict: "This form was already used for a different voucher. Open a new voucher form.",
 });
 
 Object.assign(translations.ur, {
@@ -5620,4 +5623,7 @@ Object.assign(translations.ur, {
   repack_sale_notice: "خودکار پیکنگ تبدیلی: {qty} جوڑے مطلوبہ پیکنگ میں تبدیل ہوئے۔",
   repack_sale_detail: "خودکار پیکنگ تبدیلی: اس فروخت کے لیے {qty} جوڑے {source} سے {target} میں تبدیل ہوئے۔",
   repack_approval_summary: "پیکنگ کی تبدیلی: {item} / {source} → {target}",
+  voucher_already_submitted: "یہ واؤچر پہلے ہی محفوظ ہو چکا ہے۔ موجودہ واؤچر کھول دیا گیا ہے۔",
+  error_voucher_form_expired: "یہ واؤچر فارم پرانا ہو گیا ہے۔ محفوظ کرنے سے پہلے صفحہ تازہ کریں۔",
+  error_voucher_submission_conflict: "یہ فارم کسی دوسرے واؤچر کے لیے استعمال ہو چکا ہے۔ نیا واؤچر فارم کھولیں۔",
 });

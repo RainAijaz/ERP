@@ -1,4 +1,5 @@
 const express = require("express");
+const { randomUUID } = require("node:crypto");
 const {
   requirePermission,
 } = require("../../middleware/access/role-permissions");
@@ -148,6 +149,7 @@ const createSalesVoucherRouter = ({
           branchId: req.branchId,
           branchScope: req.branchScope,
           csrfToken: res.locals.csrfToken,
+          submissionKey: selectedVoucher ? null : randomUUID(),
           view: "../../vouchers/sales/index",
           t: res.locals.t,
           options,
@@ -182,6 +184,7 @@ const createSalesVoucherRouter = ({
     try {
       const voucherId = Number(req.body?.voucher_id || 0) || null;
       const payload = {
+        submission_key: req.body?.submission_key,
         voucher_date: req.body?.voucher_date,
         book_no: req.body?.book_no,
         reference_no: req.body?.reference_no,
@@ -220,7 +223,9 @@ const createSalesVoucherRouter = ({
             payload,
           });
 
-      if (saved.queuedForApproval) {
+      if (saved.replayed) {
+        setNotice(res, res.locals.t("voucher_already_submitted"));
+      } else if (saved.queuedForApproval) {
         let msg;
         if (saved.negativeStockApprovalReroute === true) {
           msg = res.locals.t("approval_sent_negative_stock");
@@ -243,9 +248,13 @@ const createSalesVoucherRouter = ({
       }
 
       const savedVoucherNo = Number(saved?.voucherNo || 0) || null;
+      if (saved.replayed && savedVoucherNo) {
+        return res.redirect(`${req.baseUrl}?voucher_no=${savedVoucherNo}&view=1`);
+      }
       const canPrintGatePass = canVoucherAction(res, scopeKey, "print");
       const shouldAutoOpenGatePass =
         voucherTypeCode === "SALES_VOUCHER" &&
+        saved.status !== "REJECTED" &&
         canPrintGatePass &&
         Boolean(savedVoucherNo);
 
@@ -258,7 +267,7 @@ const createSalesVoucherRouter = ({
       return res.redirect(`${req.baseUrl}?new=1`);
     } catch (err) {
       console.error("Error in SalesVoucherSaveService:", err);
-      setNotice(res, res.locals.t("generic_error"), true);
+      setNotice(res, err?.status === 409 ? err.message : res.locals.t("generic_error"), true);
       return next(err);
     }
   });
