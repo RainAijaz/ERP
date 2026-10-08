@@ -97,7 +97,7 @@ const AUTO_PAYROLL_DAILY_DESCRIPTION =
 const COMMISSION_TYPE_DESCRIPTIONS = {
   SALESMAN_SALE: "Sales Commission (Salesman's Sale)",
   BRANCH_SALE: "Sales Commission (Branch Sale)",
-  TRANSFER: "Sales Commission (Transfer)",
+  TRANSFER: "FG Transfer Commission",
   PARTY: "Sales Commission (Party)",
   PRODUCTION_FG: "Production Commission (Finished Goods)",
   PRODUCTION_SFG: "Production Commission (Semi-Finished)",

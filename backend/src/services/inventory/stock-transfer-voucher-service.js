@@ -3161,6 +3161,11 @@ const syncStockTransferOutVoucherTx = async ({
   // WIP legs live in wip_dept_ledger, which the stock-ledger rollback above never sees.
   // Without this a re-sync would replay the dispatch on top of itself.
   await rollbackWipLedgerBySourceVoucherTx({ trx, voucherId });
+  // Rebuild commission with each dispatch posting. An edit can remove every
+  // eligible FG line, so an upsert alone would leave the old payable behind.
+  await trx("erp.commission_ledger")
+    .where({ voucher_id: voucherId, commission_type: "TRANSFER" })
+    .del();
   if (String(header.status || "").toUpperCase() !== "APPROVED") return;
 
   const ext = await trx("erp.stock_transfer_out_header")
@@ -3281,7 +3286,8 @@ const syncStockTransferOutVoucherTx = async ({
     }
   }
 
-  // Transfer commission: employees at the source branch with TRANSFER rules earn on transferred SKUs.
+  // FG transfer commission: employees at the source branch earn on finished
+  // stock only; the shared calculator excludes SFG and work-in-process lines.
   const skuLines = lines.filter((l) => String(l.line_kind || "").toUpperCase() === "SKU");
   if (skuLines.length) {
     try {
@@ -3298,7 +3304,8 @@ const syncStockTransferOutVoucherTx = async ({
         await writeCommissionLedgerTx(trx, voucherId, transferEntries);
       }
     } catch (commissionErr) {
-      console.error("[transfer-commission] Failed to write transfer commission:", commissionErr?.message);
+      console.error("Error in StockTransferCommissionService:", commissionErr);
+      throw commissionErr;
     }
   }
 };

@@ -88,7 +88,7 @@ const buildItemContext = async (trx, skuIds) => {
   const rows = await trx("erp.skus as s")
     .join("erp.variants as v", "s.variant_id", "v.id")
     .join("erp.items as i", "v.item_id", "i.id")
-    .select("s.id as sku_id", "i.id as item_id", "i.subgroup_id", "i.group_id", "i.base_uom_id")
+    .select("s.id as sku_id", "i.id as item_id", "i.item_type", "i.subgroup_id", "i.group_id", "i.base_uom_id")
     .whereIn("s.id", skuIds);
   return new Map(rows.map((row) => [Number(row.sku_id), row]));
 };
@@ -291,7 +291,7 @@ const applyInvoiceLevelCommissions = ({ lineBreakdowns, matchedRulesByLine, sale
 // Shared core: calculates commission for one employee's rules against a set of lines.
 // Lines must have sku_id, qty, uom_id, and meta with is_packed/sale_qty/return_qty/total_amount/gross_margin_amount.
 // Returns { totalCommission, lineBreakdowns } — lineBreakdowns is indexed by the original lines array position.
-const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, branchId = null, t }) => {
+const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, branchId = null, commissionType = null, t }) => {
   if (!rules.length) return { totalCommission: 0, lineBreakdowns: [], matchedRuleCount: 0 };
 
   const skuLines = lines
@@ -319,6 +319,16 @@ const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, branchId = 
   for (const { line, idx } of skuLines) {
     const context = itemContextMap.get(Number(line.sku_id));
     if (!context) continue;
+    if (commissionType === "TRANSFER") {
+      const meta = line.meta && typeof line.meta === "object" ? line.meta : {};
+      // Group/subgroup rules may match both FG and SFG SKUs. Transfer commission
+      // is earned only on finished stock leaving the employee's branch.
+      if (
+        String(context.item_type || "").toUpperCase() !== "FG" ||
+        (meta.stock_type && String(meta.stock_type).toUpperCase() !== "FG") ||
+        meta.is_wip === true
+      ) continue;
+    }
     const salesLine = resolveSalesLinePayload(line);
     if (!salesLine.is_packed) continue;
 
@@ -500,7 +510,7 @@ const computeLedgerEntriesForBranch = async ({
     });
     if (!rules.length) continue;
 
-    const { totalCommission, lineBreakdowns, matchedRuleCount } = await computeEmployeeCommissionOnLines({ trx, rules, lines, branchId, t });
+    const { totalCommission, lineBreakdowns, matchedRuleCount } = await computeEmployeeCommissionOnLines({ trx, rules, lines, branchId, commissionType, t });
     if (totalCommission === 0 && !matchedRuleCount) continue;
 
     const linesDetail = lines
