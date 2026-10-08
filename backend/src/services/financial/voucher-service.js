@@ -32,7 +32,15 @@ const VOUCHER_TYPES = {
 // (no maker-checker step), so the approval-endpoint hook never runs for them.
 // Fire the per-person WhatsApp payment notification here in that case. The
 // notifier re-validates type/status and never throws.
-const normalizeNotifyPayeeKinds = ({ notifyPayees, notifyPayeeKinds }) => {
+const normalizeNotifyPayeeKinds = ({ req, voucherTypeCode, notifyPayees, notifyPayeeKinds }) => {
+  // Non-admin makers do not see the notification controls. Their cash/journal
+  // payment requests always carry supplier notification through approval.
+  if (
+    req?.user?.isAdmin !== true &&
+    [VOUCHER_TYPES.cash, VOUCHER_TYPES.journal].includes(String(voucherTypeCode || "").toUpperCase())
+  ) {
+    return ["SUPPLIER"];
+  }
   if (notifyPayeeKinds !== undefined) return normalizeRecipientKinds(notifyPayeeKinds);
   return notifyPayees === true ? normalizeRecipientKinds(true) : [];
 };
@@ -40,8 +48,8 @@ const normalizeNotifyPayeeKinds = ({ notifyPayees, notifyPayeeKinds }) => {
 const maybeNotifyPayeesPostCommit = ({ result, notifyPayees, notifyPayeeKinds }) => {
   if (!result || result.queuedForApproval) return;
   if (String(result.status).toUpperCase() !== "APPROVED") return;
-  // Opt-in: only an explicit true notifies. Anything else (unticked box, caller
-  // that never passed the flag) stays silent.
+  // Admins choose recipient kinds on the form; non-admin cash/journal makers
+  // receive the supplier default before reaching this post-commit hook.
   const recipientKinds = normalizeNotifyPayeeKinds({ notifyPayees, notifyPayeeKinds });
   if (!recipientKinds.length) return;
   if (process.env.WHATSAPP_PAYMENT_NOTIFY_ENABLED === "0") return;
@@ -1078,6 +1086,8 @@ const createVoucher = async ({
   const canCreate = canDo(req, "VOUCHER", scopeKey, "create");
   const canApprove = canApproveVoucherAction(req, scopeKey);
   const normalizedNotifyPayeeKinds = normalizeNotifyPayeeKinds({
+    req,
+    voucherTypeCode,
     notifyPayees,
     notifyPayeeKinds,
   });
@@ -1252,6 +1262,8 @@ const updateVoucher = async ({
   const canEdit = canDo(req, "VOUCHER", scopeKey, "edit");
   const canApprove = canApproveVoucherAction(req, scopeKey);
   const normalizedNotifyPayeeKinds = normalizeNotifyPayeeKinds({
+    req,
+    voucherTypeCode,
     notifyPayees,
     notifyPayeeKinds,
   });

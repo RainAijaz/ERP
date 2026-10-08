@@ -99,15 +99,16 @@ const canNotifyPayeeKind = (res, kind) => {
   return res.locals.can(permission.scopeType, permission.scopeKey, "approve");
 };
 
-const buildNotifyPayeePermissions = (res) =>
+const buildNotifyPayeePermissions = (req, res) =>
   NOTIFY_PAYEE_KINDS.map((kind) => ({
     kind,
     labelKey: NOTIFY_PAYEE_PERMISSION_BY_KIND[kind].labelKey,
     hintKey: NOTIFY_PAYEE_PERMISSION_BY_KIND[kind].hintKey,
-    allowed: canNotifyPayeeKind(res, kind),
+    allowed: req.user?.isAdmin === true && canNotifyPayeeKind(res, kind),
   }));
 
 const parseNotifyPayeeKinds = (req, res) => {
+  if (req.user?.isAdmin !== true) return [];
   if (String(req.body?.notify_payees_present || "") !== "1") return [];
 
   const allowedKinds = new Set(
@@ -755,7 +756,7 @@ const createFinancialVoucherRouter = ({
         const allowCreate = canVoucherAction(res, scopeKey, "create");
         const allowEdit = canVoucherAction(res, scopeKey, "edit");
         const allowDelete = canVoucherAction(res, scopeKey, "hard_delete");
-        const notifyPayeePermissions = buildNotifyPayeePermissions(res);
+        const notifyPayeePermissions = buildNotifyPayeePermissions(req, res);
 
         return res.render("base/layouts/main", {
           title: `${res.locals.t(titleKey)} - ${res.locals.t("financial")}`,
@@ -842,9 +843,8 @@ const createFinancialVoucherRouter = ({
       const voucherDate = String(req.body?.voucher_date || "").trim();
       const remarks = String(req.body?.remarks || "").trim();
       const lines = toLines(req.body);
-      // New cash/journal forms preselect suppliers. The submitted checkboxes
-      // remain authoritative, so users can opt out or select other allowed kinds.
-      // The hidden marker lets an entirely unchecked form mean "do not notify".
+      // Admin checkbox choices are authoritative. For non-admin makers, the
+      // service applies the hidden supplier default after parsing this form.
       const notifyPayeeKinds = parseNotifyPayeeKinds(req, res);
       const notifyPayees = notifyPayeeKinds.length > 0;
       if (!voucherDate) {

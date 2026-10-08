@@ -2660,11 +2660,10 @@ router.post(
       }
 
       // Notify suppliers/labours/employees paid on an approved cash/journal
-      // voucher. Opt-in checkbox defaults OFF, so only an explicit true notifies
-      // — a snapshot predating the checkbox therefore stays silent rather than
-      // messaging payees nobody opted in for. A global env flag can disable the
-      // feature entirely. The service re-validates voucher type/status and never
-      // throws.
+      // voucher. The request snapshot records the maker's supplier default or
+      // an admin's chosen recipient kinds. Older snapshots without that choice
+      // stay silent. A global env flag can disable the feature entirely. The
+      // service re-validates voucher type/status and never throws.
       if (
         requestSnapshot?.entity_type === "VOUCHER" &&
         process.env.WHATSAPP_PAYMENT_NOTIFY_ENABLED !== "0" &&
