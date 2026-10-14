@@ -1991,6 +1991,7 @@ const applyBulkCommissionApproval = async (trx, request, decidedBy = null) => {
       rateType: rowRateType,
       valueType,
       scopeRate,
+      replaceExistingSkuRates: payload.replace_existing_sku_rates === true,
       reverseOnReturns,
       status,
       rows: rowsForEmployee,

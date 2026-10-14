@@ -1127,6 +1127,7 @@
     const panel = document.querySelector("[data-commission-bulk-panel]");
     const summary = document.querySelector("[data-commission-bulk-summary]");
     const tbody = document.querySelector("[data-commission-bulk-body]");
+    const replaceSkuRates = form?.querySelector("[data-commission-replace-sku-rates]");
     if (!form || !modal || !panel || !summary || !tbody) return;
 
     const basePath = "<%= basePath %>";
@@ -1270,6 +1271,7 @@
       }
       if (fields.value) fields.value.value = "";
       if (fields.reverseOnReturns) fields.reverseOnReturns.checked = true;
+      if (replaceSkuRates) replaceSkuRates.checked = false;
       if (fields.status) {
         fields.status.value = "active";
         fields.status.dispatchEvent(new Event("change", { bubbles: true }));
@@ -1437,7 +1439,7 @@
       if (!state.rows.length) return;
       state.rows.forEach((row) => {
         if (row.explicit_rate_edited) return;
-        row.new_rate = row.previous_source === "SKU" && !row.explicit_rate_edited
+        row.new_rate = row.previous_source === "SKU" && !replaceSkuRates?.checked
           ? row.previous_rate : headerRate;
       });
       const inputs = tbody.querySelectorAll("[data-commission-row-rate]");
@@ -1617,6 +1619,10 @@ const currentSeq = ++state.requestSeq;
     form.addEventListener("change", (event) => {
       const target = event.target;
       if (!target) return;
+      if (target === replaceSkuRates) {
+        applyHeaderRateToRows();
+        return;
+      }
       if (target.matches("[data-field='employee_id'], [data-field='commission_type'], [data-field='apply_on'], [data-field='subgroup_id'], [data-field='group_id'], [data-field='commission_basis'], [data-field='rate_type'], [data-field='branch_id'], [data-field='effective_from']")) {
         schedulePreview();
       }
@@ -1678,6 +1684,7 @@ const currentSeq = ++state.requestSeq;
           subgroup_ids: getSelectedValues(fields.subgroupId),
           group_ids: getSelectedValues(fields.groupId),
           scope_rate: String(fields.value?.value || state.rows[0]?.new_rate || "").trim(),
+          replace_existing_sku_rates: Boolean(replaceSkuRates?.checked),
           commission_basis: commissionBasis,
           rate_type: rateType,
           reverse_on_returns: Boolean(fields.reverseOnReturns?.checked),

@@ -5,6 +5,7 @@ const { toMoney, hasTwoDecimalsOrLess } = require("./validation");
 const { buildCommissionCoverageRows } = require("../../services/hr-payroll/commission-coverage-service");
 const {
   requirePermission,
+  canAccessScope,
 } = require("../../middleware/access/role-permissions");
 const {
   handleScreenApproval,
@@ -1076,13 +1077,15 @@ router.get(
 
 router.post(
   "/bulk-upsert",
-  requirePermission("SCREEN", page.scopeKey, "create"),
+  requirePermission("SCREEN", page.scopeKey, "view"),
   async (req, res) => {
+    let validationComplete = false;
     try {
       const normalized = normalizeBulkInput({
         payload: req.body || {},
         t: res.locals.t,
       });
+      validationComplete = true;
       if (
         normalized.employeeId &&
         !(await isEmployeeInScope({ employeeId: normalized.employeeId, req }))
@@ -1121,7 +1124,7 @@ router.post(
           previous_rate_type: row.previous_rate_type || null,
           previous_source: row.previous_source || null,
           previous_rule_id: row.previous_rule_id || null,
-          preserve_explicit: row.previous_source === "SKU" &&
+          preserve_explicit: !normalized.replaceExistingSkuRates && row.previous_source === "SKU" &&
             Number(row.previous_rate) === Number(nextRate),
           subgroup_id: row.subgroup_id ?? null,
           group_id: row.group_id ?? null,
@@ -1165,11 +1168,14 @@ router.post(
           group_id: normalized.groupId,
           group_ids: normalized.groupIds,
           scope_rate: normalized.scopeRate,
+          replace_existing_sku_rates: normalized.replaceExistingSkuRates,
           rate_type: normalized.rateType,
           reverse_on_returns: normalized.reverseOnReturns,
           status: normalized.status,
           rows: queuedRows,
         },
+        forceQueue: normalized.replaceExistingSkuRates &&
+          !canAccessScope(req, "SCREEN", page.scopeKey, "edit"),
         t: res.locals.t,
       });
 
@@ -1199,7 +1205,7 @@ router.post(
         rate: row.rate,
         subgroupId: skuSelectorMap.get(Number(row.skuId))?.subgroupId ?? null,
         groupId: skuSelectorMap.get(Number(row.skuId))?.groupId ?? null,
-        preserveExplicit: skuSelectorMap.get(Number(row.skuId))?.previousSource === "SKU" &&
+        preserveExplicit: !normalized.replaceExistingSkuRates && skuSelectorMap.get(Number(row.skuId))?.previousSource === "SKU" &&
           Number(skuSelectorMap.get(Number(row.skuId))?.previousRate) === Number(row.rate),
       }));
 
@@ -1215,6 +1221,7 @@ router.post(
           subgroupIds: normalized.subgroupIds,
           groupIds: normalized.groupIds,
           scopeRate: normalized.scopeRate,
+          replaceExistingSkuRates: normalized.replaceExistingSkuRates,
           rateType: normalized.rateType,
           valueType: normalized.valueType,
           reverseOnReturns: normalized.reverseOnReturns,
@@ -1245,6 +1252,7 @@ router.post(
           source: "commission-bulk-upsert",
           apply_on: normalized.applyOn,
           scope_rate: normalized.scopeRate,
+          replace_existing_sku_rates: normalized.replaceExistingSkuRates,
           created: result.created,
           updated: result.updated,
           row_count: normalized.rows.length,
@@ -1266,8 +1274,8 @@ router.post(
     } catch (err) {
       console.error("Error in CommissionRulesService:", err);
       return res
-        .status(400)
-        .json({ message: err?.message || res.locals.t("generic_error") });
+        .status(validationComplete ? 500 : 400)
+        .json({ message: validationComplete ? res.locals.t("generic_error") : err?.message || res.locals.t("generic_error") });
     }
   },
 );

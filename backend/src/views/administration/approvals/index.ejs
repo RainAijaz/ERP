@@ -1080,6 +1080,13 @@
       const commissionPanel = panel.querySelector("[data-commission-bulk-panel]");
       const commissionBody = panel.querySelector("[data-commission-bulk-body]");
       const commissionSummary = panel.querySelector("[data-commission-bulk-summary]");
+      const replaceControl = panel.querySelector("[data-commission-replace-control]");
+      const replaceSkuRates = panel.querySelector("[data-commission-replace-sku-rates]");
+      if (replaceControl) replaceControl.classList.toggle("hidden", mode !== "BULK_COMMISSION_SKU_UPSERT");
+      if (replaceSkuRates) {
+        replaceSkuRates.checked = values.replace_existing_sku_rates === true;
+        replaceSkuRates.disabled = true;
+      }
       const labourPanel = panel.querySelector("[data-labour-rate-bulk-panel]");
       const labourBody = panel.querySelector("[data-labour-rate-bulk-body]");
       const labourSummary = panel.querySelector("[data-labour-rate-bulk-summary]");

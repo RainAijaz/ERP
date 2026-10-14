@@ -286,6 +286,9 @@ const normalizeBulkInput = ({ payload, t }) => {
   if (!rows.length) {
     throw new Error(t("error_no_target_skus_found"));
   }
+  if (new Set(rows.map((row) => row.skuId)).size !== rows.length) {
+    throw new Error(t("error_invalid_bulk_commission_payload"));
+  }
 
   const scopeRateRaw =
     payload.scope_rate !== undefined && payload.scope_rate !== null
@@ -311,6 +314,7 @@ const normalizeBulkInput = ({ payload, t }) => {
     rateType,
     valueType,
     scopeRate,
+    replaceExistingSkuRates: payload.replace_existing_sku_rates === true,
     reverseOnReturns,
     status: statusRaw,
     rows,
@@ -618,6 +622,7 @@ const applyBulkSkuRateUpsert = async ({
   rateType = "PER_PAIR",
   valueType,
   scopeRate = null,
+  replaceExistingSkuRates = false,
   reverseOnReturns,
   status,
   rows,
@@ -642,7 +647,7 @@ const applyBulkSkuRateUpsert = async ({
 
   let created = 0;
 
-  const targetSkuIds = [...new Set(rows.filter((row) => !row.preserveExplicit)
+  const targetSkuIds = [...new Set(rows.filter((row) => replaceExistingSkuRates || !row.preserveExplicit)
     .map((row) => Number(row.skuId)).filter(Boolean))];
   const skuScope = () => trx("erp.employee_commission_rules")
     .where({ employee_id: employeeId, commission_type: commissionType, apply_on: APPLY_ON.SKU })
@@ -658,7 +663,7 @@ const applyBulkSkuRateUpsert = async ({
   }
 
   for (const row of rows) {
-    if (row.preserveExplicit) continue;
+    if (row.preserveExplicit && !replaceExistingSkuRates) continue;
     // Only a row changed away from the scope rate is an explicit SKU exception.
     if (Number(row.rate) === Number(scopeRate)) continue;
     await supersedeCommissionRule({
