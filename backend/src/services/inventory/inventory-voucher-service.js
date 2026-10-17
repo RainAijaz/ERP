@@ -1404,6 +1404,8 @@ const fetchSkuMapTx = async ({
       "i.name as item_name",
       "i.item_type",
       "i.base_uom_id",
+      "i.group_id",
+      "i.subgroup_id",
       "u.code as base_uom_code",
       "u.name as base_uom_name",
     )
@@ -1437,6 +1439,8 @@ const fetchRmItemMapTx = async ({ trx, itemIds = [] }) => {
       "i.name",
       "i.item_type",
       "i.base_uom_id",
+      "i.group_id",
+      "i.subgroup_id",
       "u.code as base_uom_code",
       "u.name as base_uom_name",
     )
@@ -3176,10 +3180,9 @@ const validateStockCountAdjustmentPayloadTx = async ({
       let physicalQtyBase;
 
       if (usePhysicalCountField) {
-        const countedStockQty = toNonNegativeNumber(
-          raw?.counted_stock_qty ?? raw?.physical_qty ?? raw?.qty,
-          3,
-        );
+        const countedRaw = raw?.counted_stock_qty ?? raw?.physical_qty ?? raw?.qty;
+        const countedStockQty = !["number", "string"].includes(typeof countedRaw) || String(countedRaw).trim() === ""
+          ? null : toNonNegativeNumber(countedRaw, 3);
         if (countedStockQty === null) {
           throw new HttpError(
             400,
@@ -3259,6 +3262,8 @@ const validateStockCountAdjustmentPayloadTx = async ({
           uom_factor_to_base: Number(Number(factorToBase).toFixed(6)),
           system_qty_snapshot: systemQtyBase,
           physical_qty: physicalQtyBase,
+          count_group_id: item.group_id || null,
+          count_subgroup_id: item.subgroup_id || null,
           qty_in_display: roundQty3(Number(qtyInDisplay || 0)),
           qty_out_display: roundQty3(Number(qtyOutDisplay || 0)),
           qty_in_base: roundQty3(Number(qtyInDisplay || 0) * factorToBase),
@@ -3274,7 +3279,7 @@ const validateStockCountAdjustmentPayloadTx = async ({
       };
     });
 
-    if (!hasDifference) {
+    if (!hasDifference && !usePhysicalCountField) {
       throw new HttpError(
         400,
         "At least one line must contain stock difference",
@@ -3404,10 +3409,9 @@ const validateStockCountAdjustmentPayloadTx = async ({
     };
 
     if (usePhysicalCountField) {
-      const countedStockQty = toNonNegativeNumber(
-        raw?.counted_stock_qty ?? raw?.physical_qty ?? raw?.qty,
-        3,
-      );
+      const countedRaw = raw?.counted_stock_qty ?? raw?.physical_qty ?? raw?.qty;
+      const countedStockQty = !["number", "string"].includes(typeof countedRaw) || String(countedRaw).trim() === ""
+        ? null : toNonNegativeNumber(countedRaw, 3);
       if (countedStockQty === null) {
         throw new HttpError(
           400,
@@ -3480,6 +3484,8 @@ const validateStockCountAdjustmentPayloadTx = async ({
         stock_type: stockType,
         row_status: rowStatus,
         requested_row_status: requestedRowStatus,
+        count_group_id: sku.group_id || null,
+        count_subgroup_id: sku.subgroup_id || null,
         uom_id: Number(selectedUnit.id),
         uom_code: selectedUnit.code || null,
         uom_name: selectedUnit.name || null,
@@ -3501,7 +3507,7 @@ const validateStockCountAdjustmentPayloadTx = async ({
     };
   });
 
-  if (!hasDifference) {
+  if (!hasDifference && !usePhysicalCountField) {
     throw new HttpError(400, "At least one line must contain stock difference");
   }
 

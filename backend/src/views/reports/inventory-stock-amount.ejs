@@ -374,6 +374,7 @@
       <button type="button" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm disabled:opacity-40" data-download-report <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("download") %></button>
     </div>
 
+    <%- include("../base/partials/physical-count-summary", { reportData, t }) %>
     <% if (!reportLoaded) { %>
       <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= tt("load_report_to_view", "Load report to view") %></div>
     <% } else if (!hasData) { %>

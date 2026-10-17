@@ -1,6 +1,7 @@
 "use strict";
 
 const knex = require("../../db/knex");
+const { withLatestPhysicalCounts } = require("./physical-count-report-service");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const { normalizeConversionFactor } = require("../../utils/uom-conversion");
 const { toBoolean } = require("../../utils/report-filter-types");
@@ -6106,12 +6107,12 @@ module.exports = {
   RATE_TYPES,
   VIEW_TYPES,
   ALL_MULTI_FILTER_VALUE,
-  getInventoryStockAmountReportPageData,
-  getInventoryStockBalancesReportPageData,
-  getInventoryStockLedgerReportPageData,
-  getInventoryStockMovementReportPageData,
-  getInventoryStockTransferReportPageData,
-  getInventoryDeadStockReportPageData,
+  getInventoryStockAmountReportPageData: withLatestPhysicalCounts(getInventoryStockAmountReportPageData, "stock_amount"),
+  getInventoryStockBalancesReportPageData: withLatestPhysicalCounts(getInventoryStockBalancesReportPageData, "stock_quantity"),
+  getInventoryStockLedgerReportPageData: withLatestPhysicalCounts(getInventoryStockLedgerReportPageData, "stock_ledger"),
+  getInventoryStockMovementReportPageData: withLatestPhysicalCounts(getInventoryStockMovementReportPageData, "stock_item_activity"),
+  getInventoryStockTransferReportPageData: withLatestPhysicalCounts(getInventoryStockTransferReportPageData, "stock_transfer_report"),
+  getInventoryDeadStockReportPageData: withLatestPhysicalCounts(getInventoryDeadStockReportPageData, "dead_stock_report"),
   getInventoryStockCountAccuracyReportPageData,
   __test: {
     parseStockTransferReportFilters,

@@ -437,6 +437,7 @@
       </div>
     <% } %>
 
+    <%- include("../base/partials/physical-count-summary", { reportData, t }) %>
     <% if (!reportLoaded) { %>
       <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= tt("load_report_to_view", "Load report to view") %></div>
     <% } else if (!hasData) { %>
