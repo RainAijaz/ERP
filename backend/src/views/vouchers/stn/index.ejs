@@ -31,6 +31,7 @@
     : formatDateInput(new Date());
   const selectedStatus = String(selectedVoucher?.status || "").toUpperCase();
   const isDeletedVoucher = selectedStatus === "REJECTED";
+  const isReceivedVoucher = currentMode === "out" && selectedVoucher?.is_received === true;
   const statusLabel = selectedStatus === "APPROVED"
     ? t("approved")
     : selectedStatus === "REJECTED"
@@ -47,8 +48,8 @@
   const canCreateVoucher = typeof allowCreate === "boolean" ? allowCreate : true;
   const canEditVoucher = typeof allowEdit === "boolean" ? allowEdit : true;
   const canDeleteVoucher = typeof allowDelete === "boolean" ? allowDelete : true;
-  const canSaveVoucher = !isDeletedVoucher && (selectedVoucher ? canEditVoucher : canCreateVoucher);
-  const canDeleteCurrentVoucher = !!selectedVoucher && !isDeletedVoucher && canDeleteVoucher;
+  const canSaveVoucher = !isDeletedVoucher && !isReceivedVoucher && (selectedVoucher ? canEditVoucher : canCreateVoucher);
+  const canDeleteCurrentVoucher = !!selectedVoucher && !isDeletedVoucher && !isReceivedVoucher && canDeleteVoucher;
 
   const defaultStockType = currentMode === "in"
     ? String(selectedVoucher?.stock_type || "").toUpperCase()
@@ -121,6 +122,11 @@
     </div>
   </section>
 
+  <% if (isReceivedVoucher) { %>
+    <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <p class="text-sm text-slate-700"><%= t('stock_transfer_out_received_locked') %></p>
+    </section>
+  <% } %>
   <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
     <form method="post" action="<%= basePath || '' %>" class="space-y-4" data-stock-transfer-form data-voucher-form>
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">

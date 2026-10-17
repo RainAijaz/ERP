@@ -345,6 +345,10 @@ const createStockTransferVoucherRouter = ({
         return res.redirect(`${req.baseUrl}?new=1`);
       } catch (err) {
         console.error("Error in StockTransferVoucherSaveService:", err);
+        if (err?.code === "stock_transfer_out_received_locked") {
+          setNotice(res, res.locals.t(err.code), true);
+          return res.redirect(req.baseUrl);
+        }
         setNotice(res, res.locals.t("generic_error"), true);
         return next(err);
       }
@@ -390,6 +394,10 @@ const createStockTransferVoucherRouter = ({
         return res.redirect(req.baseUrl);
       } catch (err) {
         console.error("Error in StockTransferVoucherDeleteService:", err);
+        if (err?.code === "stock_transfer_out_received_locked") {
+          setNotice(res, res.locals.t(err.code), true);
+          return res.redirect(req.baseUrl);
+        }
         setNotice(res, res.locals.t("generic_error"), true);
         return next(err);
       }

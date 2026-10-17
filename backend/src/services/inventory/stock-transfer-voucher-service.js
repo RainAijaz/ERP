@@ -170,6 +170,27 @@ const canApproveVoucherAction = (req, scopeKey) =>
 // shortfall error built by stock-rollback-diagnostics.
 const canForceStockRollback = (req) => req?.user?.isAdmin === true;
 
+const isStockTransferOutReceived = (header) =>
+  String(header?.status || "").toUpperCase() === "RECEIVED" ||
+  Boolean(toPositiveInt(header?.received_voucher_id));
+
+const assertStockTransferOutMutableTx = async ({ trx, voucherId, voucherTypeCode }) => {
+  if (voucherTypeCode !== STOCK_TRANSFER_VOUCHER_TYPES.out) return;
+
+  // Receiving and changing a dispatch share this lock. Re-read the receipt state
+  // after acquiring it so a concurrent receipt cannot slip past the guard.
+  await trx("erp.voucher_header").where({ id: voucherId }).forUpdate().first();
+  const transfer = await trx("erp.stock_transfer_out_header")
+    .select("status", "received_voucher_id")
+    .where({ voucher_id: voucherId })
+    .first();
+  if (isStockTransferOutReceived(transfer)) {
+    const err = new HttpError(400, "stock_transfer_out_received_locked");
+    err.code = "stock_transfer_out_received_locked";
+    throw err;
+  }
+};
+
 const requiresApprovalForAction = async (trx, voucherTypeCode, action) => {
   return resolveVoucherApprovalRequiredTx({
     trx,
@@ -1822,7 +1843,13 @@ const fetchTransferOutHeaderTx = async ({
     }
   }
 
-  const row = await query.first();
+  let row = await query.clone().first();
+  if (!row) return null;
+  await trx("erp.voucher_header")
+    .where({ id: row.voucher_id })
+    .forUpdate()
+    .first();
+  row = await query.first();
   if (!row) return null;
 
   // sth.status is stamped DISPATCHED the moment the STN_OUT is saved, but the stock only
@@ -3593,6 +3620,18 @@ const syncStockTransferInVoucherTx = async ({
     return;
   }
 
+  // Approval replay also receives transfers, without going through payload
+  // validation. Serialize it against outgoing edits/deletes before posting.
+  const dispatch = await trx("erp.voucher_header")
+    .select("status")
+    .where({ id: Number(ext.against_stn_out_id) })
+    .forUpdate()
+    .first();
+  if (String(header.status || "").toUpperCase() === "APPROVED" &&
+      String(dispatch?.status || "").toUpperCase() !== "APPROVED") {
+    throw new HttpError(400, "Transfer reference is invalid");
+  }
+
   await trx("erp.stock_transfer_out_header")
     .where({
       voucher_id: Number(ext.against_stn_out_id),
@@ -4308,6 +4347,10 @@ const updateStockTransferVoucher = async ({
       throw new HttpError(400, "Deleted voucher cannot be edited");
     }
 
+    await assertStockTransferOutMutableTx({
+      trx, voucherId: existing.id, voucherTypeCode: normalizedVoucherTypeCode,
+    });
+
     const incomingTransferRefNo = normalizeText(payload?.transfer_ref_no, 120);
     const generatedTransferRefNo = buildTransferRefNo({
       branchId: req.branchId,
@@ -4526,6 +4569,10 @@ const applyStockTransferVoucherDeletePayloadTx = async ({
   if (!existing) throw new HttpError(404, "Voucher not found");
   if (String(existing.status || "").toUpperCase() === "REJECTED") return;
 
+  await assertStockTransferOutMutableTx({
+    trx, voucherId: normalizedVoucherId, voucherTypeCode: normalizedVoucherTypeCode,
+  });
+
   await trx("erp.voucher_header").where({ id: normalizedVoucherId }).update({
     status: "REJECTED",
     approved_by: approverId,
@@ -4579,6 +4626,10 @@ const deleteStockTransferVoucher = async ({
     if (String(existing.status || "").toUpperCase() === "REJECTED") {
       throw new HttpError(400, "Voucher already deleted");
     }
+
+    await assertStockTransferOutMutableTx({
+      trx, voucherId: existing.id, voucherTypeCode: normalizedVoucherTypeCode,
+    });
 
     const policyRequiresApproval = await requiresApprovalForAction(
       trx,
@@ -5235,6 +5286,7 @@ const loadStockTransferVoucherDetails = async ({
         "sth.dest_branch_id",
         "sth.dispatch_date",
         "sth.status as transfer_status",
+        "sth.received_voucher_id",
         "db.name as destination_branch_name",
         hasTransferRef
           ? "sth.transfer_ref_no"
@@ -5303,6 +5355,10 @@ const loadStockTransferVoucherDetails = async ({
       source_branch_id: Number(req.branchId),
       destination_branch_id: toPositiveInt(ext?.dest_branch_id),
       destination_branch_name: String(ext?.destination_branch_name || ""),
+      is_received: isStockTransferOutReceived({
+        status: ext?.transfer_status,
+        received_voucher_id: ext?.received_voucher_id,
+      }),
       transfer_reason: normalizeTransferReason(ext?.transfer_reason),
       transporter_name: ext?.transporter_name || "",
       bill_book_no: normalizeText(ext?.bill_book_no, 120) || null,
@@ -5463,6 +5519,10 @@ const applyStockTransferVoucherUpdatePayloadTx = async ({
     })
     .first();
   if (!existing) throw new HttpError(404, "Voucher not found");
+
+  await assertStockTransferOutMutableTx({
+    trx, voucherId: existing.id, voucherTypeCode: normalizedVoucherTypeCode,
+  });
 
   const approvalReq = {
     ...req,

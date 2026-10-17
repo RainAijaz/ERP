@@ -2735,6 +2735,8 @@ router.post(
       let msg = res.locals.t("approval_apply_failed");
       if (err && err.code === "DUPLICATE_NAME") {
         msg = res.locals.t("error_duplicate_name");
+      } else if (err?.code === "stock_transfer_out_received_locked") {
+        msg = res.locals.t(err.code);
       } else if (err && err.code === "BOM_SNAPSHOT_MISMATCH") {
         msg = res.locals.t("bom_error_snapshot_mismatch");
       } else if (err && String(err.message || "").startsWith("wip_count_")) {
