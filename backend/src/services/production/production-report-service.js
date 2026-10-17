@@ -653,7 +653,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       .toUpperCase();
     const effectiveGroupId = toPositiveInt(sku?.group_id);
     const effectiveSubgroupId = toPositiveInt(sku?.subgroup_id);
-    const lineMeta = row?.meta && typeof row.meta === "object" ? row.meta : {};
+    const lineMeta = toMetaObject(row.meta);
     const lineUnitCode = String(lineMeta.unit || lineMeta.entry_unit || "")
       .trim()
       .toUpperCase();
@@ -676,6 +676,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     return {
       voucher_id: Number(row.voucher_id),
       line_id: Number(row.line_id),
+      dcv_entry_row: toPositiveInt(lineMeta.dcv_entry_row),
       date: row.voucher_date,
       voucher_no: Number(row.voucher_no || 0),
       bill_book_no: String(row.bill_book_no || "").trim() || "-",
@@ -856,6 +857,11 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     };
   };
 
+  // DCV stores one cost/WIP line per department for each original entry. Only
+  // voucher grouping folds those copies; other views retain department quantities.
+  const reportRows = [];
+  const countedRows = new Set();
+  const voucherEntries = new Map();
   const detailGroupMap = new Map();
   sortedRows.forEach((row) => {
     const identity = resolveGroupIdentity(row);
@@ -877,8 +883,6 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       packed_qty: 0,
       loose_qty: 0,
     };
-    existing.rows.push(row);
-    existing.line_count += 1;
     existing.voucher_ids.add(Number(row.voucher_id || 0));
     if (String(row.department_name || "").trim())
       existing.department_names.add(String(row.department_name || "").trim());
@@ -910,6 +914,39 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     ) {
       existing.bill_book_numbers.add(String(row.bill_book_no || "").trim());
     }
+    detailGroupMap.set(identity.key, existing);
+
+    // Never merge by SKU alone: two entered rows may legitimately share a SKU.
+    // Legacy lines without an entry marker remain separate. The signature also
+    // preserves differing quantities/units if stored entry metadata is inconsistent.
+    const entryKey = orderBy === "voucher" && row.dcv_entry_row
+      ? JSON.stringify([
+          row.voucher_id, row.dcv_entry_row, row.effective_sku_id,
+          row.line_kind, row.sku_unit, row.qty,
+        ])
+      : null;
+    const entry = entryKey ? voucherEntries.get(entryKey) : null;
+    if (entry) {
+      if (row.bill_book_no && row.bill_book_no !== "-") {
+        entry.billBookNumbers.add(row.bill_book_no);
+      }
+      entry.row.bill_book_no = summarizeNameSet(entry.billBookNumbers);
+      return;
+    }
+
+    const displayRow = { ...row };
+    if (entryKey) {
+      voucherEntries.set(entryKey, {
+        row: displayRow,
+        billBookNumbers: new Set(
+          row.bill_book_no && row.bill_book_no !== "-" ? [row.bill_book_no] : [],
+        ),
+      });
+    }
+    existing.rows.push(displayRow);
+    existing.line_count += 1;
+    reportRows.push(displayRow);
+    countedRows.add(row);
     existing.qty = Number(existing.qty || 0) + Number(row.qty || 0);
     if (
       String(row.sku_unit || "")
@@ -926,7 +963,6 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       existing.loose_qty =
         Number(existing.loose_qty || 0) + Number(row.qty || 0);
     }
-    detailGroupMap.set(identity.key, existing);
   });
 
   const groups = Array.from(detailGroupMap.values())
@@ -1037,6 +1073,11 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       if (!existing.last_date || rowDate > existing.last_date)
         existing.last_date = rowDate;
     }
+    // Header labels describe every selected department; quantities count entries once.
+    if (!countedRows.has(row)) {
+      summaryMap.set(identity.key, existing);
+      return;
+    }
     existing.qty = Number(existing.qty || 0) + Number(row.qty || 0);
     if (
       String(row.sku_unit || "")
@@ -1096,10 +1137,10 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
 
   const totals = {
     qty: Number(
-      sortedRows.reduce((acc, row) => acc + Number(row.qty || 0), 0).toFixed(3),
+      reportRows.reduce((acc, row) => acc + Number(row.qty || 0), 0).toFixed(3),
     ),
     packedQty: Number(
-      sortedRows
+      reportRows
         .reduce(
           (acc, row) =>
             acc +
@@ -1113,7 +1154,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
         .toFixed(3),
     ),
     looseQty: Number(
-      sortedRows
+      reportRows
         .reduce(
           (acc, row) =>
             acc +
@@ -1126,11 +1167,11 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
         )
         .toFixed(3),
     ),
-    lineCount: sortedRows.length,
-    voucherCount: new Set(sortedRows.map((row) => Number(row.voucher_id || 0)))
+    lineCount: reportRows.length,
+    voucherCount: new Set(reportRows.map((row) => Number(row.voucher_id || 0)))
       .size,
     branchCount: new Set(
-      sortedRows
+      reportRows
         .map((row) => String(row.branch_name || "").trim())
         .filter((name) => name && name !== "-"),
     ).size,
@@ -1140,7 +1181,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     filters,
     options,
     reportData: {
-      rows: sortedRows,
+      rows: reportRows,
       groups,
       summaryRows,
       totals,
