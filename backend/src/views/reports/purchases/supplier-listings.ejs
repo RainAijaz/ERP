@@ -12,6 +12,16 @@
     </div>
   </section>
 
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <form method="get" action="<%= reportPath %>" class="max-w-xl space-y-3">
+      <%- include("../../base/partials/supplier-type-filter", { t, filters, options }) %>
+      <div class="flex gap-2">
+        <button type="submit" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t('load') %></button>
+        <a href="<%= reportPath %>" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t('cancel') %></a>
+      </div>
+    </form>
+  </section>
+
   <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md" data-print-area>
     <div class="px-5 pt-4 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
       <%= t("brand") %>

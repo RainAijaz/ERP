@@ -1,6 +1,7 @@
 "use strict";
 
 const knex = require("../../db/knex");
+const { SUPPLIER_TYPES, parseSupplierTypes, applySupplierTypeFilter } = require("./supplier-report-filter-service");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const {
   localizedNarrativeSql,
@@ -282,6 +283,7 @@ const parseFilters = ({ req, input = {}, scopeKey = "purchase_report" }) => {
     to,
     branchIds,
     canFilterAllBranches,
+    supplierTypes: parseSupplierTypes(input.supplier_types),
     orderBy,
     reportType,
     purchaseType,
@@ -341,7 +343,8 @@ const loadReportFilterOptions = async ({ req, filters }) => {
   let suppliersQuery = knex("erp.parties as p")
     .select("p.id", "p.code", localizedNameSelect("p", "name", locale))
     .where({ "p.is_active": true })
-    .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')");
+    .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')")
+    .modify((qb) => applySupplierTypeFilter(qb, filters.supplierTypes));
 
   if (branchScope.length) {
     suppliersQuery = applyPartyBranchScope(suppliersQuery, branchScope);
@@ -415,6 +418,7 @@ const loadReportFilterOptions = async ({ req, filters }) => {
 
   return {
     branches,
+    supplierTypes: SUPPLIER_TYPES,
     suppliers,
     rawMaterials,
     groups,
@@ -458,6 +462,7 @@ const getPurchaseReportRows = async ({ req, filters }) => {
     if (filters.partyIds.length) {
       next = next.whereIn("pie.supplier_party_id", filters.partyIds);
     }
+    next = applySupplierTypeFilter(next, filters.supplierTypes);
 
     if (filters.purchaseType === PURCHASE_TYPE_FILTERS.cash) {
       next = next.whereRaw(
@@ -1077,6 +1082,7 @@ const parseSupplierBalanceFilters = ({ req, input = {} }) => {
     asOn,
     branchIds,
     canFilterAllBranches,
+    supplierTypes: parseSupplierTypes(input.supplier_types),
     reportLoaded: toBoolean(input.load_report, false),
     invalidAsOnDate: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
     invalidFilterInput: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
@@ -1125,6 +1131,7 @@ const parseSupplierLedgerFilters = ({ req, input = {} }) => {
     ledgerView,
     branchIds,
     canFilterAllBranches,
+    supplierTypes: parseSupplierTypes(input.supplier_types),
     reportLoaded: toBoolean(input.load_report, false),
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
     invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
@@ -1158,7 +1165,8 @@ const loadSupplierLedgerOptions = async ({ req, filters }) => {
   let suppliersQuery = knex("erp.parties as p")
     .select("p.id", "p.code", "p.name", "p.name_ur")
     .where({ "p.is_active": true })
-    .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')");
+    .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')")
+    .modify((qb) => applySupplierTypeFilter(qb, filters.supplierTypes));
 
   if (!canUseAllBranches || scopedBranchIds.length) {
     suppliersQuery = applyPartyBranchScope(suppliersQuery, scopedBranchIds);
@@ -1168,6 +1176,7 @@ const loadSupplierLedgerOptions = async ({ req, filters }) => {
 
   return {
     branches,
+    supplierTypes: SUPPLIER_TYPES,
     suppliers,
   };
 };
@@ -1253,7 +1262,7 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
     canUseAllBranches && filters.branchIds.length !== 1,
   );
 
-  if (!filters.reportLoaded || !filters.partyId) {
+  if (!filters.reportLoaded || !filters.partyId || !(options.suppliers || []).some((supplier) => Number(supplier.id) === filters.partyId)) {
     return {
       supplier: null,
       openingBalance: 0,
@@ -1475,6 +1484,7 @@ const loadSupplierBalanceOptions = async ({ req, filters }) => {
 
   return {
     branches,
+    supplierTypes: SUPPLIER_TYPES,
   };
 };
 
@@ -1509,6 +1519,7 @@ const getSupplierBalanceRows = async ({ req, filters }) => {
     )
     .where({ "p.is_active": true })
     .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')")
+    .modify((qb) => applySupplierTypeFilter(qb, filters.supplierTypes))
     .orderBy("p.name", "asc");
 
   if (scopedBranchIds.length) {
@@ -1571,6 +1582,7 @@ const parsePendingGrnFilters = ({ req, input = {} }) => {
     to,
     branchIds,
     canFilterAllBranches,
+    supplierTypes: parseSupplierTypes(input.supplier_types),
     supplierIds: toIdListWithAll(input.party_ids),
     purchaseCategory: resolvePurchaseCategoryFilter(
       input.purchase_category,
@@ -1609,7 +1621,8 @@ const loadPendingGrnReportOptions = async ({ req, filters }) => {
   let suppliersQuery = knex("erp.parties as p")
     .select("p.id", "p.code", "p.name", "p.name_ur")
     .where({ "p.is_active": true })
-    .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')");
+    .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')")
+    .modify((qb) => applySupplierTypeFilter(qb, filters.supplierTypes));
 
   if (branchScope.length) {
     suppliersQuery = applyPartyBranchScope(suppliersQuery, branchScope);
@@ -1620,7 +1633,7 @@ const loadPendingGrnReportOptions = async ({ req, filters }) => {
     suppliersQuery.orderBy("p.name", "asc"),
   ]);
 
-  return { branches, suppliers };
+  return { branches, suppliers, supplierTypes: SUPPLIER_TYPES };
 };
 
 const daysBetweenYmd = (fromYmd, toYmd) => {
@@ -1663,6 +1676,7 @@ const getPendingGrnReportRows = async ({ req, filters }) => {
     if (filters.supplierIds.length) {
       next = next.whereIn("ghe.supplier_party_id", filters.supplierIds);
     }
+    next = applySupplierTypeFilter(next, filters.supplierTypes);
     return next;
   };
 
@@ -1981,6 +1995,7 @@ const parseSupplierAnalysisFilters = ({ req, input = {} }) => {
     to,
     branchIds,
     canFilterAllBranches,
+    supplierTypes: parseSupplierTypes(input.supplier_types),
     groupBy,
     minSpreadPct,
     onlyMultiSupplier: toBoolean(input.only_multi_supplier, false),
@@ -2086,6 +2101,7 @@ const getSupplierAnalysisRows = async ({ req, filters }) => {
     .where("vh.voucher_date", "<=", filters.to);
 
   if (scopedBranchIds.length) query = query.whereIn("vh.branch_id", scopedBranchIds);
+  query = applySupplierTypeFilter(query, filters.supplierTypes);
   if (filters.partyIds.length)
     query = query.whereIn("pie.supplier_party_id", filters.partyIds);
   if (filters.rawMaterialIds.length)
@@ -2333,7 +2349,33 @@ const getSupplierAnalysisReportPageData = async ({ req, input = {} }) => {
   return { filters, options, reportData };
 };
 
+const getSupplierListingsReportPageData = async ({ req, input = {} }) => {
+  try {
+    const canFilterAllBranches = reportCanFilterAllBranches(req, "supplier_listings_report");
+    const branchIds = normalizeReportBranchIds({ req, input, canAllBranches: canFilterAllBranches });
+    const filters = { branchIds, canFilterAllBranches, supplierTypes: parseSupplierTypes(input.supplier_types) };
+    const locale = String(req?.locale || "en").toLowerCase();
+    let query = knex("erp.parties as p")
+      .leftJoin("erp.party_groups as pg", "pg.id", "p.group_id")
+      .leftJoin("erp.cities as c", "c.id", "p.city_id")
+      .select("p.id", localizedNameSelect("p", "name", locale),
+        knex.raw("COALESCE(" + localizedNameSql("pg", locale) + ", '') as group_name"),
+        knex.raw("COALESCE(" + localizedNameSql("c", locale) + ", p.city, '') as city_name"),
+        knex.raw("COALESCE(NULLIF(p.phone1, ''), NULLIF(p.phone2, '')) as phone_primary"), "p.created_at",
+        knex.raw("(SELECT COALESCE(string_agg(b.name, ', ' ORDER BY b.name), '') FROM erp.party_branch pb JOIN erp.branches b ON b.id = pb.branch_id WHERE pb.party_id = p.id) as branch_names"))
+      .where("p.is_active", true).whereIn("p.party_type", ["SUPPLIER", "BOTH"])
+      .modify((qb) => applySupplierTypeFilter(qb, filters.supplierTypes)).orderBy("p.id", "desc");
+    if (!req.user?.isAdmin && !canFilterAllBranches && !branchIds.length) query.whereRaw("FALSE");
+    query = applyPartyBranchScope(query, branchIds);
+    return { filters, options: { supplierTypes: SUPPLIER_TYPES }, rows: await query };
+  } catch (err) {
+    console.error("Error in SupplierListingsReportService:", err);
+    throw err;
+  }
+};
+
 module.exports = {
+  getSupplierListingsReportPageData,
   PURCHASE_TYPE_FILTERS,
   getPurchaseReportPageData,
   getSupplierBalancesReportPageData,

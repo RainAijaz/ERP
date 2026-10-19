@@ -1,0 +1,19 @@
+<div class="space-y-1.5" data-supplier-type-filter>
+  <label class="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t("supplier_type") %></label>
+  <div class="relative" data-multi-select data-name="supplier_types" data-placeholder="<%= t('all') %>" data-multi-all-value="__ALL__" data-multi-auto-all="1">
+    <button type="button" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 pr-10 text-left text-sm text-slate-700" data-multi-trigger aria-label="<%= t('supplier_type') %>"><%= t("all") %></button>
+    <div class="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 hidden rounded-xl border border-slate-200 bg-white p-2 shadow-xl" data-multi-panel>
+      <div class="max-h-56 overflow-y-auto" data-multi-options>
+        <label class="flex items-center gap-2 rounded-lg px-2 py-1 text-sm text-slate-700 hover:bg-slate-50">
+          <input type="checkbox" value="__ALL__" <%= !filters.supplierTypes?.length ? 'checked' : '' %> class="h-4 w-4 rounded border-slate-300 text-accent"><span><%= t("all") %></span>
+        </label>
+        <% (options.supplierTypes || []).forEach((type) => { %>
+          <label class="flex items-center gap-2 rounded-lg px-2 py-1 text-sm text-slate-700 hover:bg-slate-50">
+            <input type="checkbox" value="<%= type.value %>" <%= filters.supplierTypes?.includes(type.value) ? 'checked' : '' %> class="h-4 w-4 rounded border-slate-300 text-accent"><span><%= t(type.labelKey) %></span>
+          </label>
+        <% }) %>
+      </div>
+    </div>
+    <input type="hidden" name="supplier_types" value="<%= (filters.supplierTypes || []).join(',') %>" data-multi-hidden>
+  </div>
+</div>

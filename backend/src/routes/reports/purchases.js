@@ -1,10 +1,10 @@
 const express = require("express");
-const knex = require("../../db/knex");
 const {
   requirePermission,
 } = require("../../middleware/access/role-permissions");
 const {
   getPurchaseReportPageData,
+  getSupplierListingsReportPageData,
   getSupplierBalancesReportPageData,
   getSupplierLedgerReportPageData,
   getPendingGrnReportPageData,
@@ -88,38 +88,7 @@ router.get(
   requirePermission("REPORT", "supplier_listings_report", "load"),
   async (req, res, next) => {
     try {
-      let query = knex("erp.parties as p")
-        .leftJoin("erp.party_groups as pg", "pg.id", "p.group_id")
-        .leftJoin("erp.cities as c", "c.id", "p.city_id")
-        .select(
-          "p.id",
-          "p.name",
-          knex.raw("COALESCE(pg.name, '') as group_name"),
-          knex.raw("COALESCE(c.name, p.city, '') as city_name"),
-          knex.raw(
-            "COALESCE(NULLIF(p.phone1, ''), NULLIF(p.phone2, '')) as phone_primary",
-          ),
-          "p.created_at",
-          knex.raw(
-            `(SELECT COALESCE(string_agg(b.name, ', ' ORDER BY b.name), '')
-              FROM erp.party_branch pb
-              JOIN erp.branches b ON b.id = pb.branch_id
-              WHERE pb.party_id = p.id) as branch_names`,
-          ),
-        )
-        .where({ "p.is_active": true, "p.party_type": "SUPPLIER" })
-        .orderBy("p.id", "desc");
-
-      if (!req.user?.isAdmin && Number(req.branchId || 0) > 0) {
-        query = query.whereExists(function whereSupplierBranch() {
-          this.select(1)
-            .from("erp.party_branch as pb")
-            .whereRaw("pb.party_id = p.id")
-            .andWhere("pb.branch_id", Number(req.branchId));
-        });
-      }
-
-      const rows = await query;
+      const pageData = await getSupplierListingsReportPageData({ req, input: req.query });
       return res.render("base/layouts/main", {
         title: `${res.locals.t("supplier_listings")} - ${res.locals.t("reports")}`,
         user: req.user,
@@ -128,10 +97,12 @@ router.get(
         csrfToken: res.locals.csrfToken,
         view: "../../reports/purchases/supplier-listings",
         t: res.locals.t,
-        rows,
+        ...pageData,
+        reportPath: `${req.baseUrl}/supplier-listings`,
       });
     } catch (err) {
       console.error("Error in PurchaseReportsService:", err);
+      if (typeof req.flash === "function") req.flash("error", res.locals.t("generic_error"));
       return next(err);
     }
   },
