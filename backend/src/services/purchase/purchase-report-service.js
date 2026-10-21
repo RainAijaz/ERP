@@ -1290,7 +1290,7 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
     .leftJoin("erp.voucher_header as vh", "vh.id", "gb.source_voucher_id")
     .select(
       knex.raw(
-        "COALESCE(SUM(COALESCE(ge.dr, 0) - COALESCE(ge.cr, 0)), 0) as opening_balance",
+        "COALESCE(SUM(COALESCE(ge.cr, 0) - COALESCE(ge.dr, 0)), 0) as opening_balance",
       ),
     )
     .where("ge.party_id", filters.partyId)
@@ -1419,7 +1419,8 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
     totalQty = toQty(totalQty + entry.qty, 3);
     totalDebit = toAmount(totalDebit + entry.debit, 2);
     totalCredit = toAmount(totalCredit + entry.credit, 2);
-    runningBalance = toAmount(runningBalance + entry.debit - entry.credit, 2);
+    // Supplier balances are payable-oriented: positive = owed, negative = advance.
+    runningBalance = toAmount(runningBalance + entry.credit - entry.debit, 2);
 
     return {
       sr_no: index + 1,
@@ -1499,7 +1500,7 @@ const getSupplierBalanceRows = async ({ req, filters }) => {
 
   const balanceSubquery = knex("erp.gl_entry as ge")
     .select("ge.party_id")
-    .sum({ amount: knex.raw("COALESCE(ge.dr, 0) - COALESCE(ge.cr, 0)") })
+    .sum({ amount: knex.raw("COALESCE(ge.cr, 0) - COALESCE(ge.dr, 0)") })
     .where("ge.entry_date", "<=", filters.asOn)
     .modify((queryBuilder) => {
       if (scopedBranchIds.length)
