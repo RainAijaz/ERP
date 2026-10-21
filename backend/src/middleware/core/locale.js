@@ -4434,6 +4434,8 @@ Object.assign(translations.en, {
   outstanding: "Outstanding",
   receivable: "Receivable",
   payable: "Payable",
+  total_payable: "Total Payable",
+  total_receivable: "Total Receivable",
   orders_pending: "Orders Pending",
   // --- Order pipeline (commitments, deliberately NOT revenue) ---
   order_pipeline: "Order Pipeline",
@@ -4711,6 +4713,8 @@ Object.assign(translations.ur, {
   outstanding: "واجبات",
   receivable: "قابل وصول",
   payable: "قابل ادائیگی",
+  total_payable: "کل قابل ادائیگی",
+  total_receivable: "کل قابل وصول",
   orders_pending: "زیر التواء آرڈرز",
   // --- Order pipeline (commitments, deliberately NOT revenue) ---
   order_pipeline: "آرڈر پائپ لائن",

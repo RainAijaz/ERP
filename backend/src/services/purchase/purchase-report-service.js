@@ -1551,6 +1551,8 @@ const getSupplierBalancesReportPageData = async ({ req, input = {} }) => {
     options,
     reportData: {
       rows,
+      totalPayable: toAmount(rows.reduce((sum, row) => sum + Math.max(Number(row.amount || 0), 0), 0), 2),
+      totalReceivable: toAmount(rows.reduce((sum, row) => sum + Math.max(-Number(row.amount || 0), 0), 0), 2),
       totalAmount: toAmount(
         rows.reduce((sum, row) => sum + Number(row.amount || 0), 0),
         2,

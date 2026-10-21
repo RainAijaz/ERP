@@ -1,0 +1,10 @@
+<div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+  <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <div class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('total_payable') %></div>
+    <div class="mt-1 text-2xl font-display font-semibold text-amber-800"><%= formatNumber(totalPayable || 0, 2) %></div>
+  </div>
+  <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <div class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('total_receivable') %></div>
+    <div class="mt-1 text-2xl font-display font-semibold text-emerald-800"><%= formatNumber(totalReceivable || 0, 2) %></div>
+  </div>
+</div>

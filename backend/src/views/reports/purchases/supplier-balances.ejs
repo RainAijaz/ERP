@@ -108,6 +108,9 @@
       </div>
     </div>
 
+    <% if (reportLoaded) { %>
+      <%- include('../../base/partials/payable-summary', { totalPayable: reportData?.totalPayable || 0, totalReceivable: reportData?.totalReceivable || 0, formatNumber, t }) %>
+    <% } %>
     <% if (!reportLoaded) { %>
       <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t('load_report_to_view') %></div>
     <% } else if (!rows.length) { %>
@@ -120,7 +123,7 @@
               <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="__sr">SR.NO</th>
               <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="supplier_code"><%= t('code') %></th>
               <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="supplier_name"><%= t('party_name') %></th>
-              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="amount"><%= t('amount') %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="amount"><%= t('balance') %> (<%= t('payable') %> / <%= t('receivable') %>)</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100" data-table-body>
@@ -129,12 +132,12 @@
                 <td class="px-3 py-2" data-sort-value="<%= rowIndex + 1 %>"><%= rowIndex + 1 %></td>
                 <td class="px-3 py-2"><%= row.supplier_code || '-' %></td>
                 <td class="px-3 py-2"><%= resolveSupplierName(row) %></td>
-                <td class="px-3 py-2 text-right font-semibold" data-sort-value="<%= Number(row.amount || 0) %>"><%= formatNumber(row.amount, 2) %></td>
+                <td class="px-3 py-2 text-right font-semibold" data-sort-value="<%= Number(row.amount || 0) %>"><%- include('../../base/partials/payable-balance', { balance: row.amount || 0, formatNumber, t }) %></td>
               </tr>
             <% }) %>
             <tr class="border-t border-slate-200 bg-slate-100">
-              <td colspan="3" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('total') %></td>
-              <td class="px-3 py-2 text-right font-semibold text-slate-900" data-sort-value="<%= Number(reportData?.totalAmount || 0) %>"><%= formatNumber(reportData?.totalAmount || 0, 2) %></td>
+              <td colspan="3" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('balance') %> (<%= t('payable') %> / <%= t('receivable') %>)</td>
+              <td class="px-3 py-2 text-right font-semibold text-slate-900" data-sort-value="<%= Number(reportData?.totalAmount || 0) %>"><%- include('../../base/partials/payable-balance', { balance: reportData?.totalAmount || 0, formatNumber, t }) %></td>
             </tr>
           </tbody>
         </table>
