@@ -316,7 +316,7 @@
 
       <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
-          <table class="w-full <%= isDcv ? 'min-w-full' : 'min-w-[1080px] xl:min-w-full' %> table-fixed text-xs" data-lines-table>
+          <table class="w-full <%= isDcv ? 'min-w-full' : 'min-w-[1080px] xl:min-w-full' %> table-fixed text-xs" data-lines-table <%= isDcv ? 'data-mobile-entry' : '' %>>
             <thead class="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
               <tr data-lines-head-row></tr>
             </thead>
@@ -447,8 +447,25 @@
     const toQty = (value) => Number(toNum(value, 0).toFixed(3));
     const toAmount = (value) => Number(toNum(value, 0).toFixed(2));
     const toPairs = (value) => Number(toNum(value, 0).toFixed(3));
-    const showError = (message) => {
+    const showError = (message, field = null) => {
       if (!message) return;
+      if (field && mode === "dcv") {
+        field.dispatchEvent(new Event("voucher:reveal-field", { bubbles: true }));
+        const container = field.closest("td") || field.parentElement;
+        let feedback = container.querySelector("[data-voucher-field-error]");
+        if (!feedback) {
+          feedback = document.createElement("p");
+          feedback.className = "mt-2 text-xs font-medium text-rose-700";
+          feedback.setAttribute("data-voucher-field-error", "");
+          feedback.setAttribute("role", "alert");
+          container.appendChild(feedback);
+        }
+        feedback.textContent = message;
+        field.setAttribute("aria-invalid", "true");
+        window.VoucherRowEnterNavigation?.focusFieldElement(field, { openSearchable: false });
+        container.scrollIntoView({ block: "center", behavior: "smooth" });
+        return;
+      }
       if (typeof window.showVoucherError === "function") {
         window.showVoucherError(message);
         return;
@@ -704,13 +721,13 @@
           return `
             <div class="flex flex-col gap-2 sm:flex-row sm:items-center" data-dcv-stage-row data-stage-index="${index}">
               <div class="min-w-0 sm:w-[15rem] sm:shrink">
-                <select data-stage-field="labour_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
+                <select aria-label="${escapeHtml(<%- JSON.stringify(t("labour")) %>)}" data-stage-field="labour_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
                   ${labourOptions}
                 </select>
               </div>
               <span class="hidden shrink-0 text-slate-400 sm:inline">&rarr;</span>
               <div class="min-w-0 sm:w-[15rem] sm:shrink">
-                <select data-stage-field="dept_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified" ${canSave && labourId ? "" : "disabled"}>
+                <select aria-label="${escapeHtml(<%- JSON.stringify(t("department")) %>)}" data-stage-field="dept_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified" ${canSave && labourId ? "" : "disabled"}>
                   ${departmentOptions}
                 </select>
               </div>
@@ -1503,6 +1520,7 @@
       if (totalDozensInput instanceof HTMLInputElement) {
         totalDozensInput.value = totalDozens.toFixed(3);
       }
+      form.dispatchEvent(new Event("voucher:totals"));
     };
 
     const syncRowFromDom = (rowEl) => {
@@ -1917,9 +1935,10 @@
     };
 
     const validateRows = () => {
-      const lines = serializeRows().filter((line) => toNum(line.qty, 0) > 0 || line.sku_id || line.item_id);
+      const sourceLines = serializeRows();
+      const lines = sourceLines.filter((line) => toNum(line.qty, 0) > 0 || line.sku_id || line.item_id);
       if (!lines.length) {
-        showError(<%- JSON.stringify(t("voucher_lines_required") ) %>);
+        showError(<%- JSON.stringify(t("voucher_lines_required") ) %>, linesBody.querySelector('[data-row-field="sku_id"]'));
         return null;
       }
       const headerLossType = isLoss ? getSelectedLossType() : "";
@@ -1939,6 +1958,7 @@
       for (let i = 0; i < lines.length; i += 1) {
         const line = lines[i];
         const lineNo = i + 1;
+        const sourceRow = linesBody.rows[sourceLines.indexOf(line)];
         if (isLoss) {
           if (headerLossType === "RM_LOSS" && !line.item_id) {
             showError(`Line ${lineNo}: ${<%- JSON.stringify(t("raw_material") ) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
@@ -1971,7 +1991,7 @@
             const requiredLabel = isConsumption
               ? <%- JSON.stringify(t("raw_material")) %>
               : <%- JSON.stringify(t("sku")) %>;
-            showError(`Line ${lineNo}: ${requiredLabel} ${<%- JSON.stringify(t("is_required") ) %>}`);
+            showError(`${isDcv ? "" : `Line ${lineNo}: `}${requiredLabel} ${<%- JSON.stringify(t("is_required") ) %>}`, sourceRow?.querySelector('[data-row-field="sku_id"]'));
             return null;
           }
         }
@@ -1980,7 +2000,7 @@
           return null;
         }
         if (toNum(line.qty, 0) <= 0) {
-          showError(`Line ${lineNo}: ${<%- JSON.stringify(t("quantity")) %>} ${<%- JSON.stringify(t("must_be_positive") ) %>}`);
+          showError(`${isDcv ? "" : `Line ${lineNo}: `}${<%- JSON.stringify(t("quantity")) %>} ${<%- JSON.stringify(t("must_be_positive") ) %>}`, sourceRow?.querySelector('[data-row-field="qty"]'));
           return null;
         }
       }
@@ -2252,6 +2272,7 @@
               "{department}",
               departmentNameById.get(Number(incompleteLabour.dept_id)) || "",
             ),
+            dcvStageList?.querySelector(`[data-stage-index="${dcvStagePairs.indexOf(incompleteLabour)}"] [data-stage-field="labour_id"]`),
           );
           event.preventDefault();
           return;
@@ -2260,7 +2281,7 @@
           (pair) => toPositiveInt(pair?.labour_id) && !toPositiveInt(pair?.dept_id),
         );
         if (incompleteDepartment) {
-          showError(`${<%- JSON.stringify(t("department")) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
+          showError(`${<%- JSON.stringify(t("department")) %>} ${<%- JSON.stringify(t("is_required") ) %>}`, dcvStageList?.querySelector(`[data-stage-index="${dcvStagePairs.indexOf(incompleteDepartment)}"] [data-stage-field="dept_id"]`));
           event.preventDefault();
           return;
         }
@@ -2268,12 +2289,12 @@
           (pair) => toPositiveInt(pair?.dept_id) && toPositiveInt(pair?.labour_id) && !String(pair?.bill_book_no || "").trim(),
         );
         if (incompleteBillBook) {
-          showError(<%- JSON.stringify(t("bill_book_no_required")) %>);
+          showError(<%- JSON.stringify(t("bill_book_no_required")) %>, dcvStageList?.querySelector(`[data-stage-index="${dcvStagePairs.indexOf(incompleteBillBook)}"] [data-stage-field="bill_book_no"]`));
           event.preventDefault();
           return;
         }
         if (!completePairs.length) {
-          showError(`${<%- JSON.stringify(t("labour")) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
+          showError(`${<%- JSON.stringify(t("labour")) %>} ${<%- JSON.stringify(t("is_required") ) %>}`, dcvStageList?.querySelector('[data-stage-field="labour_id"]'));
           event.preventDefault();
           return;
         }

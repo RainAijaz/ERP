@@ -35,7 +35,6 @@
     --color-emerald-100: oklch(95% 0.052 163.051);
     --color-emerald-200: oklch(90.5% 0.093 164.15);
     --color-emerald-300: oklch(84.5% 0.143 164.978);
-    --color-emerald-400: oklch(76.5% 0.177 163.223);
     --color-emerald-500: oklch(69.6% 0.17 162.48);
     --color-emerald-600: oklch(59.6% 0.145 163.225);
     --color-emerald-700: oklch(50.8% 0.118 165.612);
@@ -5140,6 +5139,100 @@ html.dark input[type="radio"], html.dark input[type="checkbox"] {
 }
 [data-mobile-add-bar] {
   display: none;
+}
+[data-mobile-item-toggle], [data-mobile-remarks] > summary {
+  display: none;
+}
+select[data-searchable-ready="true"] {
+  width: 1px !important;
+  min-width: 0 !important;
+  max-width: 1px !important;
+  padding: 0 !important;
+}
+@media screen and (max-width: 1023px) {
+  [data-mobile-entry-form] {
+    padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+  }
+  [data-mobile-entry-actions] {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 40;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+    background: #fff;
+    border-top: 1px solid #e2e8f0;
+    box-shadow: 0 -4px 16px rgb(15 23 42 / 0.08);
+  }
+  [data-mobile-entry-actions][data-mobile-keyboard] {
+    display: none !important;
+  }
+  [data-mobile-entry-actions] > button {
+    min-height: 2.75rem;
+    flex: 1;
+  }
+  [data-mobile-entry-totals] {
+    flex-basis: 100%;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    overflow-wrap: anywhere;
+  }
+  [data-mobile-entry] [data-mobile-item-toggle] {
+    display: block;
+    width: 100%;
+    text-align: start;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    margin-bottom: 0.75rem;
+  }
+  [data-mobile-entry] tr[data-mobile-item-collapsed] td {
+    display: none !important;
+  }
+  [data-mobile-entry] tr[data-mobile-item-collapsed] td:first-child {
+    display: block !important;
+    grid-column: 1 / -1;
+  }
+  [data-mobile-entry] tr[data-mobile-item-collapsed] td:first-child::before, [data-mobile-entry] tr[data-mobile-item-collapsed] td:first-child > :not([data-mobile-item-toggle]) {
+    display: none !important;
+  }
+  [data-mobile-card] tfoot td[data-mobile-span="full"] {
+    grid-column: 1 / -1;
+  }
+  [data-mobile-card] tfoot [data-add-row] {
+    display: none;
+  }
+  [data-mobile-card] [data-lines-footer-bar], [data-mobile-card] [data-lines-footer-bar] > div {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  [data-mobile-card] [data-footer-total-pill], [data-mobile-card] [data-footer-amount] {
+    max-width: 7rem;
+    min-width: 0;
+  }
+  [data-mobile-remarks] > summary {
+    display: list-item;
+    cursor: pointer;
+    padding-block: 0.5rem;
+  }
+  [data-mobile-remarks] [data-voucher-grid] > label {
+    display: none;
+  }
+  [data-mobile-entry-form] [data-dcv-stage-row] {
+    padding: 0.75rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.75rem;
+  }
+  [data-mobile-entry-form] input, [data-mobile-entry-form] [data-enhanced-select-trigger], form[data-mobile-entry-form] [data-lines-table] input, form[data-mobile-entry-form] [data-lines-table] button[data-enhanced-select-trigger] {
+    min-height: 2.75rem !important;
+    font-size: 16px !important;
+  }
+  html.dark [data-mobile-entry-actions] {
+    background: #162336;
+    border-color: #1e3148;
+  }
 }
 @media screen and (max-width: 1023px) {
   [data-mobile-lines-wrap] {

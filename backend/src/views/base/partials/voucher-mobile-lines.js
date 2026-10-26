@@ -20,7 +20,9 @@
 
   var MOBILE_QUERY = "(max-width: 1023px)";
   var mq = window.matchMedia(MOBILE_QUERY);
-  var I18N_ADD_ITEM = '<%= t("add_item") %>';
+  var I18N_ADD_ITEM = <%- JSON.stringify(t("add_item")).replace(/</g, "\\u003c") %>;
+  var I18N_EDIT = <%- JSON.stringify(t("edit")).replace(/</g, "\\u003c") %>;
+  var I18N_FIELDS = <%- JSON.stringify({ qty: t("qty"), rate: t("rate"), amount: t("amount") }).replace(/</g, "\\u003c") %>;
 
   // Field names that hold numbers, across all three attribute conventions in
   // use (data-f in sales, data-field in bank/cash/journal/inventory/stock-count,
@@ -63,6 +65,7 @@
    * ------------------------------------------------------------------ */
 
   var isActionCell = function (td) {
+    if (td.hasAttribute("data-dcv-availability-cell")) return false;
     if (td.querySelector("input, select, textarea")) return false;
     return Boolean(td.querySelector("button, a[href]"));
   };
@@ -159,7 +162,7 @@
           col += Math.max(1, Number(td.getAttribute("colspan") || 1));
 
           // The in-table add button is replaced by the sticky bar on mobile.
-          if (td.querySelector("[data-add-row]")) {
+          if (td.querySelector("[data-add-row]") && !td.querySelector("input, select")) {
             td.setAttribute("data-mobile-role", "empty");
             return;
           }
@@ -181,6 +184,10 @@
           pending = "";
           td.removeAttribute("data-mobile-role");
           td.setAttribute("data-mobile-label", label || "");
+          if (td.querySelectorAll("input, select").length > 1) {
+            td.setAttribute("data-mobile-span", "full");
+            td.setAttribute("data-mobile-label", "");
+          }
         });
       });
     }
@@ -234,6 +241,46 @@
       });
     });
     bar.appendChild(btn);
+    var form = table.closest("form");
+    var submit = form && form.querySelector('button[type="submit"]');
+    if (table.hasAttribute("data-mobile-entry") && submit) {
+      bar.setAttribute("data-mobile-entry-actions", "");
+      var totals = document.createElement("div");
+      totals.setAttribute("data-mobile-entry-totals", "");
+      bar.prepend(totals);
+      var syncTotals = function () {
+        totals.textContent = Array.prototype.map.call(form.querySelectorAll("[data-footer-total-pill], [data-footer-amount]"), function (input) {
+          return text(input.previousElementSibling) + ": " + input.value;
+        }).join(" · ");
+      };
+      form.addEventListener("voucher:totals", syncTotals);
+      syncTotals();
+      var confirm = document.createElement("button");
+      confirm.type = "button";
+      confirm.className = submit.className;
+      confirm.textContent = text(submit);
+      confirm.addEventListener("click", function () { submit.click(); });
+      bar.appendChild(confirm);
+      var syncConfirm = function () { confirm.disabled = submit.disabled; };
+      syncConfirm();
+      new MutationObserver(syncConfirm).observe(submit, {
+        attributes: true, attributeFilter: ["disabled"],
+      });
+      // Hide the floating actions while the keyboard or a picker is in use.
+      // The original submit control stays in the form for native validation.
+      var syncKeyboard = function () {
+        var focused = document.activeElement;
+        var editing = focused && form.contains(focused) &&
+          focused.matches('input:not([readonly]), textarea, [data-enhanced-select-trigger]');
+        var keyboard = window.visualViewport &&
+          window.innerHeight - window.visualViewport.height > 150;
+        bar.toggleAttribute("data-mobile-keyboard", Boolean(editing || keyboard));
+      };
+      form.addEventListener("focusin", syncKeyboard);
+      form.addEventListener("focusout", function () { window.requestAnimationFrame(syncKeyboard); });
+      if (window.visualViewport) window.visualViewport.addEventListener("resize", syncKeyboard);
+      form.setAttribute("data-mobile-entry-form", "");
+    }
     anchor.insertAdjacentElement("afterend", bar);
 
     // Mirror the view's own gating (consumption disables adding until a
@@ -249,6 +296,113 @@
       attributeFilter: ["disabled"],
     });
     return bar;
+  };
+
+  // Opt in complex vouchers to one open item at a time. Keep the real table
+  // controls in place so row builders, submission and Enter navigation agree.
+  var enhanceEntry = function (table) {
+    if (!table.hasAttribute("data-mobile-entry")) return;
+    var body = table.querySelector("[data-lines-body]");
+    if (!body) return;
+    var active = 0;
+    var previousCount = 0;
+    var refresh = function () {
+      var rows = Array.prototype.slice.call(body.rows);
+      if (rows.length > previousCount) active = rows.length - 1;
+      active = Math.max(0, Math.min(active, rows.length - 1));
+      previousCount = rows.length;
+      rows.forEach(function (row, index) {
+        var cell = row.cells[0];
+        if (!cell) return;
+        var toggle = cell.querySelector("[data-mobile-item-toggle]");
+        if (!toggle) {
+          toggle = document.createElement("button");
+          toggle.type = "button";
+          toggle.className = "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700";
+          toggle.setAttribute("data-mobile-item-toggle", "");
+          cell.prepend(toggle);
+        }
+        var entity = row.querySelector('select[data-row-field="sku_id"], select[data-row-field="sfg_id"], select');
+        var selected = entity && entity.options[entity.selectedIndex];
+        var parts = ["#" + (index + 1), selected ? text(selected) : I18N_EDIT];
+        ["qty", "rate", "amount"].forEach(function (field) {
+          var input = row.querySelector('[data-row-field="' + field + '"]');
+          if (input) parts.push((input.closest("td").getAttribute("data-mobile-label") || I18N_FIELDS[field]) + ": " + input.value);
+        });
+        toggle.textContent = parts.join(" · ");
+        toggle.setAttribute("aria-label", I18N_EDIT + " " + parts.join(" · "));
+        toggle.setAttribute("aria-expanded", String(index === active));
+        row.toggleAttribute("data-mobile-item-collapsed", index !== active);
+      });
+    };
+    table.addEventListener("click", function (event) {
+      var toggle = event.target.closest("[data-mobile-item-toggle]");
+      if (!toggle) return;
+      active = toggle.closest("tr").sectionRowIndex;
+      refresh();
+    });
+    // Invalid fields must be visible before the browser attempts to focus them.
+    var form = table.closest("form");
+    var headerFields = form ? [form.querySelector('[name="remarks"]'), form.querySelector('[data-voucher-no-input]')] : [];
+    headerFields.forEach(function (input) {
+      var remarksRow = input && input.closest("[data-voucher-grid]");
+      if (!remarksRow) return;
+      var isVoucherHeader = input.hasAttribute("data-voucher-no-input");
+      var details = document.createElement("details");
+      details.setAttribute("data-mobile-remarks", "");
+      if (isVoucherHeader) details.setAttribute("data-mobile-voucher-header", "");
+      var summary = document.createElement("summary");
+      summary.className = "text-sm font-semibold text-slate-700";
+      var label = text(remarksRow.querySelector("label"));
+      summary.textContent = label + (isVoucherHeader ? ": " + input.value : "");
+      if (isVoucherHeader) {
+        input.setAttribute("aria-label", label);
+        input.addEventListener("input", function () { summary.textContent = label + ": " + input.value; });
+      }
+      remarksRow.before(details);
+      details.appendChild(summary);
+      details.appendChild(remarksRow);
+      var syncRemarks = function () { details.open = !mq.matches || (!isVoucherHeader && Boolean(input.value)); };
+      syncRemarks();
+      if (mq.addEventListener) mq.addEventListener("change", syncRemarks);
+      var remarksWasOpen = false;
+      window.addEventListener("beforeprint", function () { remarksWasOpen = details.open; details.open = true; });
+      window.addEventListener("afterprint", function () { details.open = remarksWasOpen; });
+    });
+    if (form) ["input", "change"].forEach(function (name) {
+      form.addEventListener(name, function (event) {
+        var container = event.target.closest("td") || event.target.parentElement;
+        if (!container) return;
+        var feedback = container.querySelector("[data-voucher-field-error]");
+        if (feedback) feedback.remove();
+        Array.prototype.forEach.call(container.querySelectorAll('[aria-invalid="true"]'), function (field) {
+          field.removeAttribute("aria-invalid");
+        });
+      });
+    });
+    if (form) form.addEventListener("invalid", function (event) {
+      var row = event.target.closest("tr");
+      if (row && row.parentElement === body) { active = row.sectionRowIndex; refresh(); }
+    }, true);
+    if (form) form.addEventListener("voucher:reveal-field", function (event) {
+      var row = event.target.closest("tr");
+      if (row && row.parentElement === body) { active = row.sectionRowIndex; refresh(); }
+      var details = event.target.closest("details");
+      if (details) details.open = true;
+    });
+    table.addEventListener("focusin", function (event) {
+      if (!mq.matches || event.target.closest("[data-mobile-item-toggle]")) return;
+      var row = event.target.closest("tr");
+      if (row && row.parentElement === body && row.hasAttribute("data-mobile-item-collapsed")) {
+        active = row.sectionRowIndex;
+        refresh();
+      }
+    });
+    table.addEventListener("input", function () { window.requestAnimationFrame(refresh); });
+    table.addEventListener("change", function () { window.requestAnimationFrame(refresh); });
+    if (form) form.addEventListener("voucher:totals", function () { window.requestAnimationFrame(refresh); });
+    new MutationObserver(refresh).observe(body, { childList: true });
+    refresh();
   };
 
   /* ---------------------------------------------------------------------
@@ -275,6 +429,7 @@
     }
 
     buildAddBar(table);
+    enhanceEntry(table);
   };
 
   var apply = function () {

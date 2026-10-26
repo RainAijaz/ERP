@@ -24,6 +24,9 @@
   };
 
   const focusFieldElement = (field, { openSearchable = true } = {}) => {
+    if (field instanceof HTMLElement) {
+      field.dispatchEvent(new Event("voucher:reveal-field", { bubbles: true }));
+    }
     if (!isFocusableRowField(field)) return false;
     if (field instanceof HTMLSelectElement) {
       const wrapper =
