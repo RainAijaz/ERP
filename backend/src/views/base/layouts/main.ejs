@@ -171,7 +171,7 @@
     </script>
     <div class="flex min-h-screen flex-col">
       <!-- HEADER: Top navigation bar and brand -->
-      <header class="sticky top-0 z-40 overflow-visible border-b border-slate-200 bg-white/90 backdrop-blur">
+      <header class="sticky top-0 z-40 w-full overflow-visible border-b border-slate-200 bg-white/90 backdrop-blur">
         <div class="mx-auto w-full overflow-visible px-4 lg:px-8">
           <input id="nav-toggle" type="checkbox" class="peer sr-only" />
           <div class="flex flex-wrap items-center justify-between gap-4 py-4 lg:py-5">
@@ -240,7 +240,7 @@
             </div>
           </div>
           <!-- NAVIGATION: Main and submenu navigation -->
-          <nav class="hidden w-full flex-col gap-2 overflow-visible pb-4 peer-checked:flex lg:flex lg:flex-row lg:flex-nowrap lg:items-center lg:gap-1 lg:pb-6">
+          <nav class="hidden w-full flex-col gap-2 overflow-visible pb-4 peer-checked:flex lg:flex lg:flex-row lg:flex-wrap lg:items-center lg:gap-2 lg:pb-4">
             <%- include("../partials/nav-menu", { navConfig, can, t }) %>
           </nav>
         </div>

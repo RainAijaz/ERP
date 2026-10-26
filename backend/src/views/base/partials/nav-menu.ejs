@@ -27,7 +27,7 @@
     <% } else if (hasChildren && isVisibleGroup) { %>
       <div class="relative group/sub" data-submenu-wrap>
         <span class="hidden lg:block absolute -right-4 top-0 h-full w-4"></span>
-        <button class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 lg:text-[9px] lg:tracking-widest" type="button" data-submenu-toggle="<%= itemKey %>">
+        <button class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm font-semibold text-slate-700" type="button" data-submenu-toggle="<%= itemKey %>">
           <span><%= t(item.labelKey) %></span>
           <svg class="h-3 w-3 opacity-70" viewBox="0 0 20 20" fill="none" aria-hidden="true">
             <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
@@ -64,9 +64,9 @@
     return false;
   }); %>
   <% if (!moduleVisible) return; %>
-  <div class="relative w-full group/menu lg:w-auto" data-submenu-wrap>
-    <button class="flex w-full items-center justify-between gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 shadow-sm transition hover:border-accent/40 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/30 lg:w-auto lg:px-2.5 lg:py-1 lg:text-[10px] lg:tracking-widest" type="button" data-submenu-toggle="<%= module.key %>">
-      <span><%= t(module.labelKey) %></span>
+  <div class="relative w-full grow group/menu lg:w-auto" data-submenu-wrap>
+    <button class="flex w-full items-center justify-between gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-accent/40 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/30" type="button" data-submenu-toggle="<%= module.key %>">
+      <span class="whitespace-nowrap"><%= t(module.labelKey) %></span>
       <svg class="h-3 w-3 opacity-70" viewBox="0 0 20 20" fill="none" aria-hidden="true">
         <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
