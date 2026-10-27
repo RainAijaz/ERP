@@ -719,7 +719,7 @@
               </div>`
             : "";
           return `
-            <div class="flex flex-col gap-2 sm:flex-row sm:items-center" data-dcv-stage-row data-stage-index="${index}">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center" data-dcv-stage-row data-stage-index="${index}" data-row-index="${index}">
               <div class="min-w-0 sm:w-[15rem] sm:shrink">
                 <select aria-label="${escapeHtml(<%- JSON.stringify(t("labour")) %>)}" data-stage-field="labour_id" data-stage-index="${index}" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
                   ${labourOptions}
@@ -2254,6 +2254,29 @@
       canAppendRow: () => Boolean(canSave),
     });
     rowNavigator?.bind();
+
+    const dcvStageNavigator = isDcv && dcvStageList
+      ? window.createVoucherRowEnterNavigator?.({
+          form,
+          linesBody: dcvStageList,
+          rowSelector: "[data-dcv-stage-row]",
+          fieldAttr: "data-stage-field",
+          fieldOrder: ["labour_id", "dept_id", "bill_book_no"],
+          appendRow: () => {
+            if (!canSave) return false;
+            dcvStagePairs.push({ dept_id: null, labour_id: null, bill_book_no: "" });
+            renderDcvStagePairs();
+            return true;
+          },
+          canAppendRow: ({ rowIndex }) => {
+            const pair = dcvStagePairs[rowIndex];
+            return Boolean(canSave && rowIndex === dcvStagePairs.length - 1 &&
+              toPositiveInt(pair?.labour_id) && toPositiveInt(pair?.dept_id) &&
+              String(pair?.bill_book_no || "").trim());
+          },
+        })
+      : null;
+    dcvStageNavigator?.bind();
 
     form.addEventListener("submit", (event) => {
       if (!canSave) {

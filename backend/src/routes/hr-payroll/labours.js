@@ -1227,7 +1227,9 @@ ratesRouter.get(
         });
       }
 
-      const options = await query.orderByRaw(`${labelExpr} asc`).limit(300);
+      // searchableSelect searches this list locally; truncating it hides valid
+      // articles even when the user types their exact name.
+      const options = await query.orderByRaw(`${labelExpr} asc`);
       return res.json({ options });
     } catch (err) {
       console.error("Error in LabourRateRulesService:", err);

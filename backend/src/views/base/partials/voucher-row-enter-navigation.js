@@ -122,6 +122,7 @@
       ? fieldOrder.map((key) => String(key || "").trim()).filter(Boolean)
       : [];
     const hasConfiguredOrder = normalizedOrder.length > 0;
+    let pendingSearchableEnter = null;
 
     const rowMatches = (row) =>
       row instanceof HTMLElement
@@ -374,9 +375,14 @@
       if (!linesBody.contains(target)) return;
       const wrapper = target.closest("[data-searchable-wrapper]");
       if (!wrapper) return;
+      const row = target.closest(rowSelector);
       const menu = wrapper.querySelector("div.z-50");
       const isOpen = Boolean(menu && !menu.classList.contains("hidden"));
       wrapper.dataset.wasOpenBeforeEnter = isOpen ? "1" : "0";
+      pendingSearchableEnter = rowMatches(row)
+        ? { target, wrapper, linkedSelect: wrapper.querySelector("select"), row,
+            fieldKey: resolveFieldKey(target), wasOpenBeforeEnter: isOpen }
+        : null;
     };
 
     const handleEnter = (event) => {
@@ -384,7 +390,24 @@
       const target = event.target;
       if (!(target instanceof HTMLElement)) return false;
       if (target.matches("textarea")) return false;
-      if (!linesBody.contains(target)) return false;
+      if (!linesBody.contains(target)) {
+        // A dependent select can replace its row while committing the choice.
+        // The event still bubbles through the old path; resolve the fresh row
+        // using its stable index instead of losing focus to the document body.
+        const pending = pendingSearchableEnter?.target === target ? pendingSearchableEnter : null;
+        pendingSearchableEnter = null;
+        if (!pending?.wasOpenBeforeEnter || !pending.fieldKey) return false;
+        event.preventDefault();
+        pending.wrapper.dataset.wasOpenBeforeEnter = "0";
+        const linkedValue = String(pending.linkedSelect?.value || "").trim();
+        const hasSelectableOption = Array.from(pending.linkedSelect?.options || []).some(
+          (opt) => String(opt?.value || "").trim(),
+        );
+        if (linkedValue || !hasSelectableOption) {
+          moveForwardFrom(pending.row, pending.fieldKey, { defer: true });
+        }
+        return false;
+      }
       if (typeof shouldHandle === "function" && !shouldHandle(event, target)) {
         return false;
       }
@@ -478,6 +501,7 @@
 
     const bind = () => {
       linesBody.setAttribute("data-grid-arrow-nav", "true");
+      linesBody.setAttribute("data-voucher-enter-nav", "true");
       form.addEventListener("keydown", captureSearchableState, true);
       linesBody.addEventListener("keydown", handleEnter);
       linesBody.addEventListener("keydown", handleArrows);
@@ -486,6 +510,7 @@
         linesBody.removeEventListener("keydown", handleEnter);
         linesBody.removeEventListener("keydown", handleArrows);
         linesBody.removeAttribute("data-grid-arrow-nav");
+        linesBody.removeAttribute("data-voucher-enter-nav");
       };
     };
 

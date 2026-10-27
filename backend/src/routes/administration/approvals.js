@@ -1,5 +1,6 @@
 const express = require("express");
 const knex = require("../../db/knex");
+const { resolveApprovalVoucherLink } = require("../../services/administration/approval-voucher-link-service");
 const { HttpError } = require("../../middleware/errors/http-error");
 const {
   requirePermission,
@@ -1975,16 +1976,6 @@ router.get(
   },
 );
 
-const VOUCHER_TYPE_URL_MAP = {
-  CASH_VOUCHER: "/vouchers/cash",
-  BANK_VOUCHER: "/vouchers/bank",
-  JOURNAL_VOUCHER: "/vouchers/journal",
-  OPENING_STOCK: "/vouchers/inventory",
-  STOCK_COUNT_ADJ: "/vouchers/stock-count",
-  STN_OUT: "/vouchers/stock-transfer-out",
-  STN_IN: "/vouchers/stock-transfer-in",
-};
-
 router.get(
   "/:id/view-voucher",
   requirePermission("SCREEN", "administration.approvals", "navigate"),
@@ -1996,18 +1987,9 @@ router.get(
       if (!request)
         return next(new HttpError(404, res.locals.t("approval_request_not_found")));
 
-      const newValue = safeJson(request.new_value) || {};
-      const voucherTypeCode = String(
-        newValue.voucher_type_code || request.voucher_type_code || "",
-      ).toUpperCase();
-      const voucherNo = Number(newValue.voucher_no || 0);
-
-      const voucherBasePath = VOUCHER_TYPE_URL_MAP[voucherTypeCode];
-      if (!voucherBasePath || !(voucherNo > 0)) {
-        return res.status(404).send("Voucher not found");
-      }
-
-      return res.redirect(`${voucherBasePath}?view=1&voucher_no=${voucherNo}`);
+      const href = await resolveApprovalVoucherLink({ request, user: req.user, can: res.locals.can });
+      if (!href) return next(new HttpError(404, res.locals.t("approval_request_not_found")));
+      return res.redirect(href);
     } catch (err) {
       next(err);
     }
@@ -2067,6 +2049,7 @@ router.get(
         fieldErrors: {},
         formValues: {},
         ...payload,
+        voucherHref: await resolveApprovalVoucherLink({ request, user: req.user, can: res.locals.can }),
       });
     } catch (err) {
       next(err);

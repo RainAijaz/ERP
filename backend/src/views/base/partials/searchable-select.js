@@ -1101,6 +1101,9 @@
       const isGridArrowNavContext = Boolean(
         input.closest('[data-grid-arrow-nav="true"]'),
       );
+      const isVoucherEnterNavContext = Boolean(
+        input.closest('[data-voucher-enter-nav="true"]'),
+      );
 
       if (e.key === "Enter" && menu.classList.contains("hidden")) {
         if (isGridArrowNavContext) {
@@ -1223,6 +1226,9 @@
       menu.classList.add("hidden");
       keyboardNavigatedMenu = false;
       if (isGridArrowNavContext) {
+        // The shared voucher navigator tracks fields across dependent re-renders.
+        // Let it advance exactly once, including for non-table header rows.
+        if (isVoucherEnterNavContext) return;
         e.stopPropagation();
         if (nextRowFieldMeta) {
           window.setTimeout(() => {
