@@ -77,13 +77,6 @@ const createSalesVoucherRouter = ({
           typeof res.locals.can === "function" &&
           res.locals.can("VOUCHER", scopeKey, "navigate");
 
-        const [rows, stats] = await Promise.all([
-          canListHistory
-            ? loadRecentSalesVouchers({ req, voucherTypeCode })
-            : Promise.resolve([]),
-          getSalesVoucherSeriesStats({ req, voucherTypeCode }),
-        ]);
-
         if (!forceNew && !forceView) {
           return res.redirect(`${req.baseUrl}?new=1`);
         }
@@ -91,6 +84,13 @@ const createSalesVoucherRouter = ({
         if (!canListHistory && !forceNew) {
           return res.redirect(`${req.baseUrl}?new=1`);
         }
+
+        const [rows, stats] = await Promise.all([
+          canListHistory
+            ? loadRecentSalesVouchers({ req, voucherTypeCode })
+            : Promise.resolve([]),
+          getSalesVoucherSeriesStats({ req, voucherTypeCode }),
+        ]);
 
         const latestVoucherNo = Number(stats.latestVoucherNo || 0);
         const latestActiveVoucherNo = Number(stats.latestActiveVoucherNo || 0);

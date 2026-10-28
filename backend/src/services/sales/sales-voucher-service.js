@@ -3969,6 +3969,7 @@ const loadSalesVoucherOptions = async (req, context = {}) => {
   const voucherTypeCode = String(context?.voucherTypeCode || "")
     .trim()
     .toUpperCase();
+  const isSalesOrder = voucherTypeCode === SALES_VOUCHER_TYPES.salesOrder;
   let partyQuery = knex("erp.parties as p")
     .select(
       "p.id",
@@ -4025,9 +4026,9 @@ const loadSalesVoucherOptions = async (req, context = {}) => {
         .andWhere("lb.branch_id", req.branchId);
     });
 
-  const customerQuery = partyQuery
-    .union(employeeBuyerQuery)
-    .union(labourBuyerQuery);
+  const customerQuery = isSalesOrder
+    ? partyQuery
+    : partyQuery.union(employeeBuyerQuery).union(labourBuyerQuery);
 
   const salesmenQuery = knex("erp.employees as e")
     .select("e.id", "e.code", "e.name")
@@ -4092,11 +4093,15 @@ const loadSalesVoucherOptions = async (req, context = {}) => {
       .whereRaw("upper(coalesce(i.item_type::text, 'FG')) = 'FG'")
       .orderBy("i.name", "asc")
       .orderBy("s.sku_code", "asc"),
-    knex("erp.return_reasons")
-      .select("id", "code", "description")
-      .where({ is_active: true })
-      .orderBy("description", "asc"),
-    loadOpenSalesOrderLinesTx({ trx: knex, req }),
+    isSalesOrder
+      ? Promise.resolve([])
+      : knex("erp.return_reasons")
+          .select("id", "code", "description")
+          .where({ is_active: true })
+          .orderBy("description", "asc"),
+    isSalesOrder
+      ? Promise.resolve([])
+      : loadOpenSalesOrderLinesTx({ trx: knex, req }),
   ]);
   const skuUnitOptionsByBase = await loadSkuUnitOptionsByBaseUomIdTx({
     trx: knex,
@@ -4112,6 +4117,20 @@ const loadSalesVoucherOptions = async (req, context = {}) => {
     ...row,
     unit_options: skuUnitOptionsByBase.get(Number(row.base_uom_id || 0)) || [],
   }));
+
+  // Only Sales Vouchers consume the delivery/receivable picker. Loading it for
+  // a Sales Order scans the branch's order and delivery history on every visit.
+  if (isSalesOrder) {
+    return {
+      customers,
+      salesmen,
+      receiveAccounts,
+      skus: enrichedSkus,
+      returnReasons,
+      openSalesOrders: [],
+      openSalesOrderLines: [],
+    };
+  }
 
   let linkedOrderScopedLines = [];
   if (

@@ -2312,7 +2312,7 @@
 
   try {
     if (!rows.length) rows.push(emptyRow());
-    render();
+    // syncHeaderUi renders the rows after setting the header state.
     syncHeaderUi();
     if (autoOpenGatePass && selectedVoucherNo) {
       openGatePassModal(selectedVoucherNo, { cleanUrl: true });
