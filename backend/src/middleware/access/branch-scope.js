@@ -3,44 +3,14 @@ const { HttpError } = require("../errors/http-error");
 const { setCookie } = require("../utils/cookies");
 const { parseCookies } = require("../utils/cookies");
 
-const BRANCH_OPTIONS_CACHE_TTL_MS = Number(
-  process.env.BRANCH_OPTIONS_CACHE_TTL_MS || 300000,
-);
-const BRANCH_OPTIONS_CACHE_MAX_ENTRIES = Number(
-  process.env.BRANCH_OPTIONS_CACHE_MAX_ENTRIES || 200,
-);
-const branchOptionsCache = new Map();
-
-const getBranchCacheKey = (isAdmin, branchIds = []) => {
-  if (isAdmin) return "admin:all";
-  return `user:${[...branchIds].sort((a, b) => a - b).join(",")}`;
-};
-
-const cloneRows = (rows = []) => rows.map((row) => ({ ...row }));
-
-const loadBranchRowsCached = async ({ isAdmin, branchIds }) => {
-  const cacheKey = getBranchCacheKey(isAdmin, branchIds);
-  const cached = branchOptionsCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cloneRows(cached.rows);
-  }
-
+const loadBranchRows = async ({ isAdmin, branchIds }) => {
+  // Availability is an access decision. Read it on every request so a branch
+  // deactivated by another session or worker cannot remain selectable.
   const branchRowsQuery = knex("erp.branches")
     .select("id", "code", "name")
+    .where({ is_active: true })
     .orderBy("name", "asc");
-  const rows = isAdmin
-    ? await branchRowsQuery
-    : await branchRowsQuery.whereIn("id", branchIds);
-
-  branchOptionsCache.set(cacheKey, {
-    rows: cloneRows(rows),
-    expiresAt: Date.now() + BRANCH_OPTIONS_CACHE_TTL_MS,
-  });
-  if (branchOptionsCache.size > BRANCH_OPTIONS_CACHE_MAX_ENTRIES) {
-    const firstKey = branchOptionsCache.keys().next()?.value;
-    if (firstKey) branchOptionsCache.delete(firstKey);
-  }
-  return rows;
+  return isAdmin ? branchRowsQuery : branchRowsQuery.whereIn("id", branchIds);
 };
 
 const toNumber = (value) => {
@@ -74,40 +44,43 @@ module.exports = async (req, res, next) => {
     .map((id) => toNumber(id))
     .filter((id) => Number.isInteger(id) && id > 0);
   if (!branchIds.length && !isAdmin) {
-    return next(new HttpError(403, "No branches assigned"));
+    return next(new HttpError(403, res.locals.t("permission_denied")));
   }
 
   const requested = toNumber(req.branchContext?.requestedBranchId);
   let activeBranch = requested || branchIds[0];
 
   const submittedBranches = [
+    ...toNumberList(req.get("x-branch-id")),
     ...toNumberList(req.query?.branch_id),
     ...toNumberList(req.body?.branch_id),
   ];
-  if (
-    submittedBranches.length &&
-    !isAdmin &&
-    submittedBranches.some((branchId) => !branchIds.includes(branchId))
-  ) {
-    return next(new HttpError(403, "Branch not assigned"));
-  }
 
   try {
-    const branchRows = await loadBranchRowsCached({ isAdmin, branchIds });
-
-    if (isAdmin) {
-      branchIds = branchRows.map((row) => Number(row.id));
-      if (requested && branchIds.length && !branchIds.includes(requested)) {
-        return next(new HttpError(403, "Branch not assigned"));
-      }
-      if (!activeBranch && branchIds.length) {
-        activeBranch = branchIds[0];
-      }
+    const branchRows = await loadBranchRows({ isAdmin, branchIds });
+    branchIds = branchRows.map((row) => Number(row.id));
+    if (submittedBranches.some((branchId) => !branchIds.includes(branchId))) {
+      return next(new HttpError(403, res.locals.t("permission_denied")));
     }
 
-    if (!isAdmin && activeBranch && !branchIds.includes(activeBranch)) {
-      // Ignore stale branch cookie/query and fall back to first allowed branch.
-      activeBranch = branchIds[0];
+    // Administrators must still be able to reactivate branches when none remain.
+    const canManageBranches = isAdmin && /^\/administration\/branches(?:\/|$)/.test(req.path);
+    if (!branchIds.length && !canManageBranches) {
+      return next(new HttpError(403, res.locals.t("permission_denied")));
+    }
+    if (
+      requested &&
+      !branchIds.includes(requested) &&
+      !["GET", "HEAD", "OPTIONS"].includes(req.method) &&
+      !canManageBranches
+    ) {
+      // Never save a form opened in a deactivated branch into another branch.
+      return next(new HttpError(403, res.locals.t("permission_denied")));
+    }
+    if (!branchIds.includes(activeBranch)) {
+      // A cookie can outlive a deactivation or reassignment. Explicit query,
+      // body and header selections were validated above; only cookies fall back.
+      activeBranch = branchIds[0] || null;
     }
 
     const branchById = branchRows.reduce((acc, row) => {
@@ -124,7 +97,8 @@ module.exports = async (req, res, next) => {
     res.locals.branchOptions = branchRows;
     res.locals.branchName = branchById[activeBranch]?.name || null;
   } catch (err) {
-    return next(err);
+    console.error("Error in BranchScopeService:", err);
+    return next(new HttpError(500, res.locals.t("generic_error")));
   }
 
   req.applyBranchScope = (qb, column = "branch_id") => {
@@ -135,10 +109,10 @@ module.exports = async (req, res, next) => {
 
   const cookies = parseCookies(req);
   if (String(cookies.active_branch_id || "") !== String(activeBranch || "")) {
-    setCookie(res, "active_branch_id", String(activeBranch), {
+    setCookie(res, "active_branch_id", activeBranch ? String(activeBranch) : "", {
       path: "/",
       sameSite: "Lax",
-      maxAge: 60 * 60 * 24 * 30,
+      maxAge: activeBranch ? 60 * 60 * 24 * 30 : 0,
     });
   }
 
