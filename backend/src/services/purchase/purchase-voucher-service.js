@@ -6,6 +6,7 @@ const {
 } = require("../../utils/approval-activity-log");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const { resolveLocale } = require("../../utils/localized-name");
+const { resolveTranslation } = require("../../middleware/core/locale");
 const {
   resolveVoucherApprovalRequiredTx,
 } = require("../../utils/voucher-approval-policy");
@@ -3640,9 +3641,25 @@ const validatePurchaseVoucherPayloadTx = async ({
     supplierPartyId = supplier.id;
   }
 
-  const finalDiscount = (voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase || voucherTypeCode === PURCHASE_VOUCHER_TYPES.purchaseReturn)
-    ? Math.max(Number(payload.final_discount || 0), 0)
-    : 0;
+  let finalDiscount = 0;
+  if (
+    voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase ||
+    voucherTypeCode === PURCHASE_VOUCHER_TYPES.purchaseReturn
+  ) {
+    const rawDiscount = payload.final_discount ?? 0;
+    const discount = Number(rawDiscount);
+    if (
+      !["string", "number"].includes(typeof rawDiscount) ||
+      !Number.isFinite(discount) ||
+      discount < 0
+    ) {
+      throw new HttpError(
+        400,
+        resolveTranslation(resolveLocale(req?.locale), "error_invalid_value"),
+      );
+    }
+    finalDiscount = Number(discount.toFixed(2));
+  }
 
   return {
     voucherDate,
@@ -3778,6 +3795,7 @@ const createPurchaseVoucher = async ({
           supplier_party_id: validated.supplierPartyId,
           payment_type: validated.paymentType,
           cash_paid_account_id: validated.cashPaidAccountId,
+          final_discount: validated.finalDiscount,
           return_reason: validated.returnReason,
           grn_reference_voucher_no: validated.grnReferenceVoucherNo,
           grn_allocations: validated.grnAllocationsPayload || null,
@@ -3896,6 +3914,7 @@ const updatePurchaseVoucher = async ({
       supplier_party_id: validated.supplierPartyId,
       payment_type: validated.paymentType,
       cash_paid_account_id: validated.cashPaidAccountId,
+      final_discount: validated.finalDiscount,
       return_reason: validated.returnReason,
       grn_reference_voucher_no: validated.grnReferenceVoucherNo,
       grn_allocations: validated.grnAllocationsPayload || null,
@@ -5230,6 +5249,7 @@ const applyPurchaseVoucherUpdatePayloadTx = async ({
     cashPaidAccountId: validated.cashPaidAccountId,
     returnReason: validated.returnReason,
     grnReferenceVoucherNo: validated.grnReferenceVoucherNo,
+    finalDiscount: validated.finalDiscount,
   });
 
   await ensurePurchaseVoucherDerivedDataTx({

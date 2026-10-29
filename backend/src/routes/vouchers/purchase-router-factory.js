@@ -227,6 +227,7 @@ const createPurchaseVoucherRouter = ({
         description: req.body?.description,
         payment_type: req.body?.payment_type,
         cash_paid_account_id: req.body?.cash_paid_account_id,
+        final_discount: req.body?.final_discount,
         return_reason: req.body?.return_reason,
         grn_reference_voucher_no: req.body?.grn_reference_voucher_no,
         grn_allocations: toGrnAllocations(req.body),
