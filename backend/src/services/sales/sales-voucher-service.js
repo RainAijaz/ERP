@@ -2593,6 +2593,11 @@ const upsertSalesHeaderExtensionsTx = async ({
     return;
   }
 
+  const previousExtension = await trx("erp.sales_header")
+    .select("linked_sales_order_id")
+    .where({ voucher_id: voucherId })
+    .first();
+
   const cashCustomerName = validated.customerPartyId ? null : (validated.customerName || null);
   let cashCustomerNameUr = null;
   if (cashCustomerName) {
@@ -2641,6 +2646,12 @@ const upsertSalesHeaderExtensionsTx = async ({
       delivery_method: validated.deliveryMethod,
       extra_discount: validated.extraDiscount,
     });
+  // An approved edit can move a delivery to another order or to a direct sale.
+  // Its former order must assign the discount to its next approved delivery.
+  const previousOrderId = Number(previousExtension?.linked_sales_order_id || 0);
+  if (previousOrderId && previousOrderId !== Number(validated.linkedSalesOrderId || 0)) {
+    await syncVoucherGlPostingTx({ trx, voucherId: previousOrderId });
+  }
 };
 
 const syncSalesLineExtensionsTx = async ({
