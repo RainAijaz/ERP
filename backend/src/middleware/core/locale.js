@@ -2,6 +2,13 @@ const { parseCookies, setCookie } = require("../utils/cookies");
 
 const translations = {
   en: {
+    sfg_transfer_cost_missing: "The source cost for this SFG is missing. Record or reconcile its production/opening stock cost before transferring it.",
+    stock_value_adjustment: "Stock value adjustment (quantity unchanged)",
+    valuation_reconciliation: "Reconcile historical SFG transfer valuation",
+    valuation_preview_changed: "Stock records changed since the preview. Generate and review a fresh valuation preview.",
+    valuation_unresolved: "Some stock costs or production links are unresolved. Review the valuation preview before applying corrections.",
+    valuation_reconciled: "Historical stock valuation has been reconciled. Quantities are unchanged.",
+
     // --- USERS MODULE ---
     add_user: "Add User",
     edit_user: "Edit User",
@@ -2211,7 +2218,14 @@ const translations = {
     add_new_combinations: "Add Variants",
     variants_sent_approval: "Variants will be added once approved.",
   },
-  ur: {},
+  ur: {
+  sfg_transfer_cost_missing: "اس نیم تیار مال کی اصل لاگت موجود نہیں ہے۔ منتقلی سے پہلے پیداوار یا ابتدائی اسٹاک کی لاگت درج یا درست کریں۔",
+  stock_value_adjustment: "اسٹاک کی مالیت کی درستگی (مقدار تبدیل نہیں ہوئی)",
+  valuation_reconciliation: "سابقہ نیم تیار مال کی منتقلی کی مالیت درست کریں",
+  valuation_preview_changed: "پیش نظارہ کے بعد اسٹاک ریکارڈ بدل گیا ہے۔ مالیت کا نیا پیش نظارہ بنا کر جائزہ لیں۔",
+  valuation_unresolved: "اسٹاک کی کچھ لاگت یا پیداواری روابط واضح نہیں ہیں۔ درستگی سے پہلے پیش نظارہ کا جائزہ لیں۔",
+  valuation_reconciled: "اسٹاک کی سابقہ مالیت درست کر دی گئی ہے۔ مقدار تبدیل نہیں ہوئی۔",
+},
 };
 
 const MOJIBAKE_MARKERS =

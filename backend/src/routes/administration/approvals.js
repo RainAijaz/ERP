@@ -166,6 +166,11 @@ const applyVoucherApprovalChangeTx = async ({
     branchId: Number(request.branch_id || req?.branchId || 0),
     user: { ...(req?.user || {}), id: approverId },
   };
+  if (payload.mode === "SFG_VALUATION_RECONCILIATION") {
+    const { applySfgValuationPlanTx } = require("../../services/inventory/sfg-valuation-reconciliation-service");
+    return applySfgValuationPlanTx({ trx, req: approvalReq, skuIds: payload.sku_ids,
+      expectedHash: payload.expected_hash, approvalRequestId: request.id });
+  }
   const requestEntityId = String(request.entity_id || "").trim();
   const voucherId = Number(request.entity_id || payload.voucher_id || 0);
 

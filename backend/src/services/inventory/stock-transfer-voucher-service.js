@@ -69,17 +69,9 @@ let grnInHasReceivedAtColumn;
 
 const RM_BALANCE_CONFLICT_TARGET_SQL =
   "(branch_id, stock_state, item_id, COALESCE(color_id, 0), COALESCE(size_id, 0))";
-const FG_PACKED_FLAG_SQL = `
-CASE
-  WHEN sl.is_packed IS NOT NULL THEN sl.is_packed
-  WHEN sln.is_packed IS NOT NULL THEN sln.is_packed
-  WHEN pl.is_packed IS NOT NULL THEN pl.is_packed
-  WHEN upper(trim(coalesce(vl.meta->>'status', vl.meta->>'row_status', ''))) = 'PACKED' THEN true
-  WHEN upper(trim(coalesce(vl.meta->>'status', vl.meta->>'row_status', ''))) = 'LOOSE' THEN false
-  WHEN lower(trim(coalesce(vl.meta->>'is_packed', ''))) IN ('true','t','1','yes') THEN true
-  WHEN lower(trim(coalesce(vl.meta->>'is_packed', ''))) IN ('false','f','0','no') THEN false
-  ELSE false
-END`;
+const { FG_PACKED_FLAG_SQL } = require("../../utils/stock-packing");
+const { resolveStockUnitCost } = require("../../utils/stock-cost");
+const { resolveTranslation } = require("../../middleware/core/locale");
 
 const toDateOnly = toLocalDateOnly;
 const roundQty3 = (value) => Number(Number(value || 0).toFixed(3));
@@ -1219,6 +1211,7 @@ const moveSkuStockPairsTx = async ({
   voucherLineId,
   voucherDate,
   allowNegativeSource = false,
+  revalueAtSource = false,
 }) => {
   const normalizedQtyPairs = Number(qtyPairs || 0);
   if (!Number.isInteger(normalizedQtyPairs) || normalizedQtyPairs <= 0) return;
@@ -1231,8 +1224,8 @@ const moveSkuStockPairsTx = async ({
   const normalizedRowStatus = normalizeRowStatus(rowStatus);
   const usePackedBucket =
     normalizedCategory === "FG" ? normalizedRowStatus === "PACKED" : false;
-  const normalizedUnitCostBase = roundUnitCost6(unitCostBase);
-  const value = roundCost2(normalizedQtyPairs * normalizedUnitCostBase);
+  let normalizedUnitCostBase = roundUnitCost6(unitCostBase);
+  let value = roundCost2(normalizedQtyPairs * normalizedUnitCostBase);
 
   await ensureSkuBalanceSeedTx({
     trx,
@@ -1275,6 +1268,18 @@ const moveSkuStockPairsTx = async ({
   });
   const availableQtyPairs = Number(fromSnapshot?.qty_pairs || 0);
   const availableValue = Number(fromSnapshot?.value || 0);
+  if (revalueAtSource && normalizedCategory === "SFG") {
+    const lastReceipt = availableQtyPairs > 0 && availableValue > 0 ? null : await trx("erp.stock_ledger as sl")
+      .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
+      .where({ "sl.branch_id": fromBranchId, "sl.category": "SFG", "sl.stock_state": "ON_HAND",
+        "sl.sku_id": skuId, "sl.direction": 1, "vh.status": "APPROVED" })
+      .where("sl.unit_cost", ">", 0).select("sl.unit_cost")
+      .orderBy("sl.txn_date", "desc").orderBy("sl.id", "desc").first();
+    normalizedUnitCostBase = resolveStockUnitCost({ qty: availableQtyPairs, value: availableValue,
+      lastUnitCost: lastReceipt?.unit_cost || 0 });
+    if (!(normalizedUnitCostBase > 0)) throw new HttpError(409, resolveTranslation("en", "sfg_transfer_cost_missing"));
+    value = roundCost2(normalizedQtyPairs * normalizedUnitCostBase);
+  }
   if (!allowNegativeSource && availableQtyPairs < normalizedQtyPairs) {
     throw new HttpError(400, "Insufficient stock quantity for transfer");
   }
@@ -1382,6 +1387,7 @@ const moveSkuStockPairsTx = async ({
     value,
     isPacked: usePackedBucket,
   });
+  return { unitCostBase: normalizedUnitCostBase, value };
 };
 
 const fetchSkuMapTx = async ({
@@ -1542,7 +1548,7 @@ const buildStockMapKey = ({ itemId, colorId = null, sizeId = null }) =>
   `${Number(itemId || 0)}|${Number(colorId || 0)}|${Number(sizeId || 0)}`;
 
 const loadSourceStockMapsTx = async ({ trx, sourceBranchId }) => {
-  const [skuRows, rmRows] = await Promise.all([
+  const [skuRows, rmRows, sfgCostRows] = await Promise.all([
     trx("erp.stock_ledger as sl")
       .leftJoin("erp.voucher_line as vl", "vl.id", "sl.voucher_line_id")
       .leftJoin("erp.sales_line as sln", "sln.voucher_line_id", "vl.id")
@@ -1567,6 +1573,18 @@ const loadSourceStockMapsTx = async ({ trx, sourceBranchId }) => {
         branch_id: sourceBranchId,
         stock_state: "ON_HAND",
       }),
+    // Negative-stock approvals still need a documented cost. Use the latest
+    // approved receipt when no positive on-hand weighted average is available.
+    trx("erp.stock_ledger as sl")
+      .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
+      .distinctOn("sl.sku_id")
+      .select("sl.sku_id", "sl.unit_cost")
+      .where({ "sl.branch_id": sourceBranchId, "sl.category": "SFG",
+        "sl.stock_state": "ON_HAND", "sl.direction": 1, "vh.status": "APPROVED" })
+      .where("sl.unit_cost", ">", 0)
+      .orderBy("sl.sku_id")
+      .orderBy("sl.txn_date", "desc")
+      .orderBy("sl.id", "desc"),
   ]);
 
   const skuMap = {};
@@ -1623,6 +1641,18 @@ const loadSourceStockMapsTx = async ({ trx, sourceBranchId }) => {
         ? roundUnitCost6(current.value / current.qty_pairs)
         : 0;
   });
+
+  const lastSfgCostBySku = new Map(
+    sfgCostRows.map((row) => [Number(row.sku_id), Number(row.unit_cost || 0)]),
+  );
+  for (const [key, stock] of Object.entries(skuMap)) {
+    if (!key.startsWith("SFG:")) continue;
+    const skuId = Number(key.slice(4));
+    stock.transfer_unit_cost = resolveStockUnitCost({
+      qty: stock.qty_pairs, value: stock.value,
+      lastUnitCost: lastSfgCostBySku.get(skuId) || 0,
+    });
+  }
 
   const rmMap = {};
   (rmRows || []).forEach((row) => {
@@ -2485,10 +2515,13 @@ const validateTransferOutPayloadTx = async ({
     );
     const hasNegativeStockRisk = shortageQtyPairs > 0;
     const unitCostBase = roundUnitCost6(
-      stockType === "FG" && Number(sku?.sale_rate || 0) > 0
-        ? Number(sku.sale_rate)
-        : 0,
+      stockType === "SFG"
+        ? Number(stock?.transfer_unit_cost || 0)
+        : Number(sku?.sale_rate || 0),
     );
+    if (stockType === "SFG" && !(unitCostBase > 0)) {
+      throw new HttpError(409, req?.res?.locals?.t?.("sfg_transfer_cost_missing") || resolveTranslation(req?.locale || "en", "sfg_transfer_cost_missing"));
+    }
     const unitCost = roundUnitCost6(unitCostBase * Number(factorToBase));
     const amount = roundCost2(Number(transferQty) * Number(unitCost));
     const availableQty =
@@ -2833,6 +2866,8 @@ const validateTransferInPayloadTx = async ({
     }
 
     const unitCostBase = roundUnitCost6(Number(stnLine?.unit_cost_base || 0));
+    if (stnLine.is_wip !== true && stnLine.stock_type === "SFG" && !(unitCostBase > 0))
+      throw new HttpError(409, req?.res?.locals?.t?.("sfg_transfer_cost_missing") || resolveTranslation(req?.locale || "en", "sfg_transfer_cost_missing"));
     const unitCost = roundUnitCost6(Number(stnLine?.rate || 0));
     const amount = roundCost2(Number(receivedQty) * Number(unitCost));
 
@@ -3294,7 +3329,7 @@ const syncStockTransferOutVoucherTx = async ({
 
     if (lineKind === "SKU") {
       const qtyPairs = Number(meta.transfer_qty_pairs || 0);
-      await moveSkuStockPairsTx({
+      const moved = await moveSkuStockPairsTx({
         trx,
         fromBranchId: header.branch_id,
         fromStockState: "ON_HAND",
@@ -3309,7 +3344,15 @@ const syncStockTransferOutVoucherTx = async ({
         voucherLineId: line.id,
         voucherDate,
         allowNegativeSource: true,
+        revalueAtSource: true,
       });
+      if (String(meta.stock_type).toUpperCase() === "SFG" && moved) {
+        await trx("erp.voucher_line").where({ id: line.id }).update({
+          rate: Number((moved.unitCostBase * factorToBase).toFixed(4)),
+          amount: moved.value,
+          meta: { ...meta, unit_cost_base: moved.unitCostBase },
+        });
+      }
     }
   }
 
@@ -3692,6 +3735,9 @@ const syncStockTransferInVoucherTx = async ({
         : roundUnitCost6(
             Number(line.rate || 0) / Math.max(Number(factorToBase || 1), 1),
           );
+
+    if (meta.is_wip !== true && String(meta.stock_type).toUpperCase() === "SFG" && !(unitCostBase > 0))
+      throw new HttpError(409, resolveTranslation("en", "sfg_transfer_cost_missing"));
 
     if (meta.is_wip === true) {
       // expected_qty/received_qty are in the unit the dispatch was entered in (dozens, say);

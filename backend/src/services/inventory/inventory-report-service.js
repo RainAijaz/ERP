@@ -5056,6 +5056,8 @@ const STOCK_LEDGER_VOUCHER_TYPE_LABELS = Object.freeze({
 // { labelKey, labelFallback, text } is a translated label in front of DB text
 // (never call t() on a DB-stored label).
 const buildStockLedgerDetailSegments = (row) => {
+  if (Number(row?.movement_qty) === 0 && Math.abs(Number(row?.value || 0)) > 0)
+    return [{ key: "stock_value_adjustment" }];
   const segments = [];
   const seen = new Set();
 

@@ -893,11 +893,11 @@
         const availablePairs = stockType === 'FG'
           ? Number(rowStatus === 'LOOSE' ? stock.loose_qty_pairs : stock.packed_qty_pairs)
           : Number(stock.qty_pairs || 0);
-        const unitCostBase = stockType === 'FG' && Number(sku?.sale_rate || 0) > 0
-          ? Number(sku.sale_rate)
-          : 0;
+        const unitCostBase = stockType === 'SFG'
+          ? Number(stock.transfer_unit_cost || 0)
+          : Number(sku?.sale_rate || 0);
         next.available_qty = factorToBase > 0 ? qty3(availablePairs / factorToBase) : 0;
-        next.unit_cost = cost1(unitCostBase * factorToBase);
+        next.unit_cost = stockType === 'SFG' ? Number((unitCostBase * factorToBase).toFixed(6)) : cost1(unitCostBase * factorToBase);
       }
 
       next.transfer_qty = qty3(next.transfer_qty);
@@ -1290,7 +1290,7 @@
           const stockType = activeStockType;
           const variance = qty3(Number(row.expected_qty || 0) - (Number(row.received_qty || 0) + Number(row.rejected_qty || 0)));
           row.variance_qty = variance;
-          row.unit_cost = cost1(row.unit_cost);
+          row.unit_cost = activeStockType === 'SFG' ? Number(Number(row.unit_cost || 0).toFixed(6)) : cost1(row.unit_cost);
           row.amount = amount2(Number(row.received_qty || 0) * Number(row.unit_cost || 0));
           const itemName = resolveLineDisplayName(row);
           const colorName = stockType === 'RM'
