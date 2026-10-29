@@ -926,7 +926,13 @@
           iconHtml =
             '<svg class="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>';
         }
-        btn.innerHTML = `<span class="block min-w-0 flex-1 whitespace-normal wrap-break-word leading-5">${label}</span><span class="mt-0.5 flex-none">${iconHtml}</span>`;
+        const labelNode = document.createElement("span");
+        labelNode.className = "block min-w-0 flex-1 whitespace-normal wrap-break-word leading-5";
+        labelNode.textContent = label;
+        const iconNode = document.createElement("span");
+        iconNode.className = "mt-0.5 flex-none";
+        iconNode.innerHTML = iconHtml;
+        btn.append(labelNode, iconNode);
 
         btn.addEventListener("pointerdown", (e) => {
           e.preventDefault();

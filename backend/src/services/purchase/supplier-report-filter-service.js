@@ -1,27 +1,53 @@
 "use strict";
 
-const SUPPLIER_TYPES = Object.freeze([
-  { value: "MATERIAL", labelKey: "material_vendor" },
-  { value: "REPAIR", labelKey: "repair_vendor" },
-  { value: "SERVICE", labelKey: "service_vendor" },
-]);
-const validTypes = new Set(SUPPLIER_TYPES.map((type) => type.value));
+const knex = require("../../db/knex");
+const { toIdListWithAll } = require("../../utils/report-branch-scope");
+const { localizedNameSelect, localizedNameSql } = require("../../utils/localized-name");
 
-const parseSupplierTypes = (value) => {
-  const raw = Array.isArray(value) ? value : value && typeof value === "object" ? Object.values(value) : [value];
-  const tokens = [...new Set(raw.flatMap((entry) => String(entry ?? "").split(","))
-    .map((entry) => entry.trim().toUpperCase()).filter(Boolean))];
-  if (tokens.includes("ALL") || tokens.includes("__ALL__")) return [];
-  // Invalid selections must never broaden the report to every supplier.
-  return tokens.some((token) => !validTypes.has(token)) ? ["__INVALID__"] : tokens;
+// Supplier Type is the supplier's maintained Party Group, not the obsolete
+// vendor_capabilities array. Keep its IDs separate from raw-material groups.
+const resolveSupplierGroupFilter = async ({ req, input = {} }) => {
+  try {
+    const locale = req?.locale || "en";
+    const supplierGroups = await knex("erp.party_groups as pg")
+      .select("pg.id", localizedNameSelect("pg", "name", locale))
+      .where("pg.is_active", true)
+      .whereIn("pg.party_type", ["SUPPLIER", "BOTH"])
+      .orderByRaw(`${localizedNameSql("pg", locale)} asc`);
+
+    const source = input.supplier_group_ids;
+    const raw = Array.isArray(source) ? source : [source];
+    const invalidShape = raw.some((value) => value != null &&
+      typeof value !== "string" && typeof value !== "number");
+    const tokens = invalidShape ? [] : raw
+      .flatMap((value) => String(value ?? "").split(","))
+      .map((value) => value.trim()).filter(Boolean);
+    const hasAll = tokens.some((value) => ["ALL", "__ALL__"].includes(value.toUpperCase()));
+    const invalidId = !hasAll && tokens.some((value) =>
+      !/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value)));
+    const selectedIds = invalidShape || invalidId ? [] : toIdListWithAll(tokens);
+    const availableIds = new Set(supplierGroups.map((group) => Number(group.id)));
+    const invalidSupplierGroupFilter = invalidShape || invalidId ||
+      selectedIds.some((id) => !availableIds.has(id));
+
+    return {
+      supplierGroups,
+      filters: {
+        supplierGroupIds: selectedIds.filter((id) => availableIds.has(id)),
+        invalidSupplierGroupFilter,
+      },
+    };
+  } catch (err) {
+    console.error("Error in SupplierReportFilterService:", err);
+    throw err;
+  }
 };
 
-const applySupplierTypeFilter = (query, types = [], alias = "p") => {
-  if (!types.length) return query;
-  if (types.some((type) => !validTypes.has(type))) return query.whereRaw("FALSE");
-  // A supplier can have several capabilities. Match any selected capability
-  // without joining/duplicating its transactions or changing report totals.
-  return query.whereRaw("?? && ?::text[]", [`${alias}.vendor_capabilities`, types]);
+const applySupplierGroupFilter = (query, filters) => {
+  if (filters.invalidSupplierGroupFilter) return query.whereRaw("FALSE");
+  if (!filters.supplierGroupIds?.length) return query;
+  return query.whereIn("p.group_id", filters.supplierGroupIds)
+    .whereIn("p.party_type", ["SUPPLIER", "BOTH"]);
 };
 
-module.exports = { SUPPLIER_TYPES, parseSupplierTypes, applySupplierTypeFilter };
+module.exports = { resolveSupplierGroupFilter, applySupplierGroupFilter };

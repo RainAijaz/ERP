@@ -50,7 +50,6 @@
     <form method="post" action="<%= reportPath %>" class="mt-3 max-w-4xl rounded-xl border border-slate-200 bg-slate-50/30 p-3 sm:p-4" data-pending-grn-filter-form>
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <input type="hidden" name="load_report" value="1">
-      <div class="mb-3 w-full max-w-xl"><%- include("../../base/partials/supplier-type-filter", { t, filters, options }) %></div>
 
       <div class="space-y-3">
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
@@ -132,11 +131,13 @@
             <select name="party_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
               <option value="<%= allMultiOptionValue %>" <%= partyAllSelected ? "selected" : "" %>><%= t('all') %></option>
               <% (options?.suppliers || []).forEach((supplier) => { %>
-                <option value="<%= supplier.id %>" <%= (filters?.supplierIds || []).includes(Number(supplier.id)) ? "selected" : "" %>><%= locale === 'ur' ? (supplier.name_ur || supplier.name) : supplier.name %></option>
+                <option value="<%= supplier.id %>" data-supplier-group-id="<%= supplier.group_id || '' %>" <%= (filters?.supplierIds || []).includes(Number(supplier.id)) ? "selected" : "" %>><%= locale === 'ur' ? (supplier.name_ur || supplier.name) : supplier.name %></option>
               <% }) %>
             </select>
           </div>
         </div>
+
+        <%- include('../../base/partials/supplier-type-filter', { filters, options, t }) %>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
           <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canUseBranchFilter ? t('branches') : t('branch') %></label>

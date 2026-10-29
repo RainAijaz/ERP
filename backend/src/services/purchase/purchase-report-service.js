@@ -1,7 +1,10 @@
 "use strict";
 
 const knex = require("../../db/knex");
-const { SUPPLIER_TYPES, parseSupplierTypes, applySupplierTypeFilter } = require("./supplier-report-filter-service");
+const {
+  resolveSupplierGroupFilter,
+  applySupplierGroupFilter,
+} = require("./supplier-report-filter-service");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const {
   localizedNarrativeSql,
@@ -283,7 +286,6 @@ const parseFilters = ({ req, input = {}, scopeKey = "purchase_report" }) => {
     to,
     branchIds,
     canFilterAllBranches,
-    supplierTypes: parseSupplierTypes(input.supplier_types),
     orderBy,
     reportType,
     purchaseType,
@@ -341,10 +343,9 @@ const loadReportFilterOptions = async ({ req, filters }) => {
       );
 
   let suppliersQuery = knex("erp.parties as p")
-    .select("p.id", "p.code", localizedNameSelect("p", "name", locale))
+    .select("p.id", "p.code", "p.group_id", localizedNameSelect("p", "name", locale))
     .where({ "p.is_active": true })
-    .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')")
-    .modify((qb) => applySupplierTypeFilter(qb, filters.supplierTypes));
+    .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')");
 
   if (branchScope.length) {
     suppliersQuery = applyPartyBranchScope(suppliersQuery, branchScope);
@@ -418,7 +419,6 @@ const loadReportFilterOptions = async ({ req, filters }) => {
 
   return {
     branches,
-    supplierTypes: SUPPLIER_TYPES,
     suppliers,
     rawMaterials,
     groups,
@@ -462,7 +462,6 @@ const getPurchaseReportRows = async ({ req, filters }) => {
     if (filters.partyIds.length) {
       next = next.whereIn("pie.supplier_party_id", filters.partyIds);
     }
-    next = applySupplierTypeFilter(next, filters.supplierTypes);
 
     if (filters.purchaseType === PURCHASE_TYPE_FILTERS.cash) {
       next = next.whereRaw(
@@ -477,7 +476,7 @@ const getPurchaseReportRows = async ({ req, filters }) => {
       );
     }
 
-    return next;
+    return applySupplierGroupFilter(next, filters);
   };
 
   const locale = String(req?.locale || "en").toLowerCase();
@@ -1043,7 +1042,8 @@ const buildReportData = ({ rows, filters }) => {
 
 const getPurchaseReportPageData = async ({ req, input = {} }) => {
   try {
-    const filters = parseFilters({ req, input });
+    const supplierType = await resolveSupplierGroupFilter({ req, input });
+    const filters = { ...parseFilters({ req, input }), ...supplierType.filters };
     const [options, rows] = await Promise.all([
       loadReportFilterOptions({ req, filters }),
       getPurchaseReportRows({ req, filters }),
@@ -1052,7 +1052,7 @@ const getPurchaseReportPageData = async ({ req, input = {} }) => {
 
     return {
       filters,
-      options,
+      options: { ...options, supplierGroups: supplierType.supplierGroups },
       reportData,
     };
   } catch (err) {
@@ -1082,7 +1082,6 @@ const parseSupplierBalanceFilters = ({ req, input = {} }) => {
     asOn,
     branchIds,
     canFilterAllBranches,
-    supplierTypes: parseSupplierTypes(input.supplier_types),
     reportLoaded: toBoolean(input.load_report, false),
     invalidAsOnDate: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
     invalidFilterInput: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
@@ -1131,7 +1130,6 @@ const parseSupplierLedgerFilters = ({ req, input = {} }) => {
     ledgerView,
     branchIds,
     canFilterAllBranches,
-    supplierTypes: parseSupplierTypes(input.supplier_types),
     reportLoaded: toBoolean(input.load_report, false),
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
     invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
@@ -1163,10 +1161,9 @@ const loadSupplierLedgerOptions = async ({ req, filters }) => {
       }));
 
   let suppliersQuery = knex("erp.parties as p")
-    .select("p.id", "p.code", "p.name", "p.name_ur")
+    .select("p.id", "p.code", "p.group_id", "p.name", "p.name_ur")
     .where({ "p.is_active": true })
-    .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')")
-    .modify((qb) => applySupplierTypeFilter(qb, filters.supplierTypes));
+    .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')");
 
   if (!canUseAllBranches || scopedBranchIds.length) {
     suppliersQuery = applyPartyBranchScope(suppliersQuery, scopedBranchIds);
@@ -1176,16 +1173,19 @@ const loadSupplierLedgerOptions = async ({ req, filters }) => {
 
   return {
     branches,
-    supplierTypes: SUPPLIER_TYPES,
     suppliers,
   };
 };
 
-const fetchSupplierLedgerDetailLines = async ({ voucherHeaderIds, locale }) => {
-  const ids = [...new Set(voucherHeaderIds.filter((id) => Number(id) > 0))];
-  if (!ids.length) return new Map();
+const fetchSupplierLedgerDetailLines = async ({ voucherHeaderIds, partyId, locale }) => {
+  const ids = toIdList(voucherHeaderIds);
+  const supplierPartyId = toPositiveId(partyId);
+  if (!ids.length || !supplierPartyId) return new Map();
 
   const lineRows = await knex("erp.voucher_line as vl")
+    .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
+    .leftJoin("erp.purchase_invoice_header_ext as pie", "pie.voucher_id", "vh.id")
+    .leftJoin("erp.purchase_return_header_ext as pre", "pre.voucher_id", "vh.id")
     .leftJoin("erp.items as i", "i.id", "vl.item_id")
     .leftJoin("erp.accounts as a", "a.id", "vl.account_id")
     .leftJoin("erp.skus as sk", "sk.id", "vl.sku_id")
@@ -1220,6 +1220,19 @@ const fetchSupplierLedgerDetailLines = async ({ voucherHeaderIds, locale }) => {
       "vl.amount",
     )
     .whereIn("vl.voucher_header_id", ids)
+    .where("vh.status", "APPROVED")
+    // Financial vouchers can contain many unrelated expense and party lines.
+    // Their supplier posting/narration is already the main ledger row. Only
+    // expand purchase documents owned by the selected supplier.
+    .where(function whereSupplierPurchaseDocument() {
+      this.where(function wherePurchaseInvoice() {
+        this.where("vh.voucher_type_code", "PI")
+          .andWhere("pie.supplier_party_id", supplierPartyId);
+      }).orWhere(function wherePurchaseReturn() {
+        this.where("vh.voucher_type_code", "PR")
+          .andWhere("pre.supplier_party_id", supplierPartyId);
+      });
+    })
     .whereIn("vl.line_kind", ["ITEM", "SKU", "ACCOUNT"])
     .orderBy("vl.voucher_header_id", "asc")
     .orderBy("vl.line_no", "asc");
@@ -1262,7 +1275,9 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
     canUseAllBranches && filters.branchIds.length !== 1,
   );
 
-  if (!filters.reportLoaded || !filters.partyId || !(options.suppliers || []).some((supplier) => Number(supplier.id) === filters.partyId)) {
+  if (!filters.reportLoaded || !filters.partyId || filters.invalidSupplierGroupFilter ||
+    !(options.suppliers || []).some((supplier) => Number(supplier.id) === filters.partyId &&
+      (!filters.supplierGroupIds.length || filters.supplierGroupIds.includes(Number(supplier.group_id))))) {
     return {
       supplier: null,
       openingBalance: 0,
@@ -1406,6 +1421,7 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
     filters.ledgerView === "detail"
       ? await fetchSupplierLedgerDetailLines({
           voucherHeaderIds: reportEntries.map((entry) => entry.voucher_header_id),
+          partyId: filters.partyId,
           locale,
         })
       : new Map();
@@ -1458,15 +1474,21 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
 };
 
 const getSupplierLedgerReportPageData = async ({ req, input = {} }) => {
-  const filters = parseSupplierLedgerFilters({ req, input });
-  const options = await loadSupplierLedgerOptions({ req, filters });
-  const ledgerData = await getSupplierLedgerRows({ req, filters, options });
+  try {
+    const supplierType = await resolveSupplierGroupFilter({ req, input });
+    const filters = { ...parseSupplierLedgerFilters({ req, input }), ...supplierType.filters };
+    const options = await loadSupplierLedgerOptions({ req, filters });
+    const ledgerData = await getSupplierLedgerRows({ req, filters, options });
 
-  return {
-    filters,
-    options,
-    reportData: ledgerData,
-  };
+    return {
+      filters,
+      options: { ...options, supplierGroups: supplierType.supplierGroups },
+      reportData: ledgerData,
+    };
+  } catch (err) {
+    console.error("Error in SupplierLedgerReportService:", err);
+    throw err;
+  }
 };
 
 const loadSupplierBalanceOptions = async ({ req, filters }) => {
@@ -1485,7 +1507,6 @@ const loadSupplierBalanceOptions = async ({ req, filters }) => {
 
   return {
     branches,
-    supplierTypes: SUPPLIER_TYPES,
   };
 };
 
@@ -1520,13 +1541,13 @@ const getSupplierBalanceRows = async ({ req, filters }) => {
     )
     .where({ "p.is_active": true })
     .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')")
-    .modify((qb) => applySupplierTypeFilter(qb, filters.supplierTypes))
     .orderBy("p.name", "asc");
 
   if (scopedBranchIds.length) {
     query = applyPartyBranchScope(query, scopedBranchIds);
   }
 
+  query = applySupplierGroupFilter(query, filters);
   const rows = await query;
   return rows
     .map((row) => ({
@@ -1540,25 +1561,31 @@ const getSupplierBalanceRows = async ({ req, filters }) => {
 };
 
 const getSupplierBalancesReportPageData = async ({ req, input = {} }) => {
-  const filters = parseSupplierBalanceFilters({ req, input });
-  const [options, rows] = await Promise.all([
-    loadSupplierBalanceOptions({ req, filters }),
-    getSupplierBalanceRows({ req, filters }),
-  ]);
+  try {
+    const supplierType = await resolveSupplierGroupFilter({ req, input });
+    const filters = { ...parseSupplierBalanceFilters({ req, input }), ...supplierType.filters };
+    const [options, rows] = await Promise.all([
+      loadSupplierBalanceOptions({ req, filters }),
+      getSupplierBalanceRows({ req, filters }),
+    ]);
 
-  return {
-    filters,
-    options,
-    reportData: {
-      rows,
-      totalPayable: toAmount(rows.reduce((sum, row) => sum + Math.max(Number(row.amount || 0), 0), 0), 2),
-      totalReceivable: toAmount(rows.reduce((sum, row) => sum + Math.max(-Number(row.amount || 0), 0), 0), 2),
-      totalAmount: toAmount(
-        rows.reduce((sum, row) => sum + Number(row.amount || 0), 0),
-        2,
-      ),
-    },
-  };
+    return {
+      filters,
+      options: { ...options, supplierGroups: supplierType.supplierGroups },
+      reportData: {
+        rows,
+        totalPayable: toAmount(rows.reduce((sum, row) => sum + Math.max(Number(row.amount || 0), 0), 0), 2),
+        totalReceivable: toAmount(rows.reduce((sum, row) => sum + Math.max(-Number(row.amount || 0), 0), 0), 2),
+        totalAmount: toAmount(
+          rows.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+          2,
+        ),
+      },
+    };
+  } catch (err) {
+    console.error("Error in SupplierBalancesReportService:", err);
+    throw err;
+  }
 };
 
 const parsePendingGrnFilters = ({ req, input = {} }) => {
@@ -1585,7 +1612,6 @@ const parsePendingGrnFilters = ({ req, input = {} }) => {
     to,
     branchIds,
     canFilterAllBranches,
-    supplierTypes: parseSupplierTypes(input.supplier_types),
     supplierIds: toIdListWithAll(input.party_ids),
     purchaseCategory: resolvePurchaseCategoryFilter(
       input.purchase_category,
@@ -1622,10 +1648,9 @@ const loadPendingGrnReportOptions = async ({ req, filters }) => {
       );
 
   let suppliersQuery = knex("erp.parties as p")
-    .select("p.id", "p.code", "p.name", "p.name_ur")
+    .select("p.id", "p.code", "p.group_id", "p.name", "p.name_ur")
     .where({ "p.is_active": true })
-    .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')")
-    .modify((qb) => applySupplierTypeFilter(qb, filters.supplierTypes));
+    .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')");
 
   if (branchScope.length) {
     suppliersQuery = applyPartyBranchScope(suppliersQuery, branchScope);
@@ -1636,7 +1661,7 @@ const loadPendingGrnReportOptions = async ({ req, filters }) => {
     suppliersQuery.orderBy("p.name", "asc"),
   ]);
 
-  return { branches, suppliers, supplierTypes: SUPPLIER_TYPES };
+  return { branches, suppliers };
 };
 
 const daysBetweenYmd = (fromYmd, toYmd) => {
@@ -1679,8 +1704,7 @@ const getPendingGrnReportRows = async ({ req, filters }) => {
     if (filters.supplierIds.length) {
       next = next.whereIn("ghe.supplier_party_id", filters.supplierIds);
     }
-    next = applySupplierTypeFilter(next, filters.supplierTypes);
-    return next;
+    return applySupplierGroupFilter(next, filters);
   };
 
   const rawMaterialRowsPromise = includeRawMaterialRows
@@ -1915,24 +1939,30 @@ const getPendingGrnReportRows = async ({ req, filters }) => {
 };
 
 const getPendingGrnReportPageData = async ({ req, input = {} }) => {
-  const filters = parsePendingGrnFilters({ req, input });
-  const [options, rows] = await Promise.all([
-    loadPendingGrnReportOptions({ req, filters }),
-    getPendingGrnReportRows({ req, filters }),
-  ]);
+  try {
+    const supplierType = await resolveSupplierGroupFilter({ req, input });
+    const filters = { ...parsePendingGrnFilters({ req, input }), ...supplierType.filters };
+    const [options, rows] = await Promise.all([
+      loadPendingGrnReportOptions({ req, filters }),
+      getPendingGrnReportRows({ req, filters }),
+    ]);
 
-  return {
-    filters,
-    options,
-    reportData: {
-      rows,
-      totalOpenQty: toQty(
-        rows.reduce((sum, row) => sum + Number(row.open_qty || 0), 0),
-      ),
-      rowCount: rows.length,
-      grnVoucherCount: new Set(rows.map((row) => row.grn_voucher_id)).size,
-    },
-  };
+    return {
+      filters,
+      options: { ...options, supplierGroups: supplierType.supplierGroups },
+      reportData: {
+        rows,
+        totalOpenQty: toQty(
+          rows.reduce((sum, row) => sum + Number(row.open_qty || 0), 0),
+        ),
+        rowCount: rows.length,
+        grnVoucherCount: new Set(rows.map((row) => row.grn_voucher_id)).size,
+      },
+    };
+  } catch (err) {
+    console.error("Error in PendingGrnReportService:", err);
+    throw err;
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -1998,7 +2028,6 @@ const parseSupplierAnalysisFilters = ({ req, input = {} }) => {
     to,
     branchIds,
     canFilterAllBranches,
-    supplierTypes: parseSupplierTypes(input.supplier_types),
     groupBy,
     minSpreadPct,
     onlyMultiSupplier: toBoolean(input.only_multi_supplier, false),
@@ -2104,7 +2133,6 @@ const getSupplierAnalysisRows = async ({ req, filters }) => {
     .where("vh.voucher_date", "<=", filters.to);
 
   if (scopedBranchIds.length) query = query.whereIn("vh.branch_id", scopedBranchIds);
-  query = applySupplierTypeFilter(query, filters.supplierTypes);
   if (filters.partyIds.length)
     query = query.whereIn("pie.supplier_party_id", filters.partyIds);
   if (filters.rawMaterialIds.length)
@@ -2113,6 +2141,7 @@ const getSupplierAnalysisRows = async ({ req, filters }) => {
   if (filters.subgroupIds.length)
     query = query.whereIn("i.subgroup_id", filters.subgroupIds);
 
+  query = applySupplierGroupFilter(query, filters);
   const supportsPurchaseCategory = await hasPurchaseInvoiceCategoryColumn();
   if (supportsPurchaseCategory) {
     query = query.whereRaw(
@@ -2343,20 +2372,27 @@ const getSupplierAnalysisRows = async ({ req, filters }) => {
 };
 
 const getSupplierAnalysisReportPageData = async ({ req, input = {} }) => {
-  const filters = parseSupplierAnalysisFilters({ req, input });
-  const [options, reportData] = await Promise.all([
-    loadReportFilterOptions({ req, filters }),
-    getSupplierAnalysisRows({ req, filters }),
-  ]);
+  try {
+    const supplierType = await resolveSupplierGroupFilter({ req, input });
+    const filters = { ...parseSupplierAnalysisFilters({ req, input }), ...supplierType.filters };
+    const [options, reportData] = await Promise.all([
+      loadReportFilterOptions({ req, filters }),
+      getSupplierAnalysisRows({ req, filters }),
+    ]);
 
-  return { filters, options, reportData };
+    return { filters, options: { ...options, supplierGroups: supplierType.supplierGroups }, reportData };
+  } catch (err) {
+    console.error("Error in SupplierAnalysisReportService:", err);
+    throw err;
+  }
 };
 
 const getSupplierListingsReportPageData = async ({ req, input = {} }) => {
   try {
     const canFilterAllBranches = reportCanFilterAllBranches(req, "supplier_listings_report");
     const branchIds = normalizeReportBranchIds({ req, input, canAllBranches: canFilterAllBranches });
-    const filters = { branchIds, canFilterAllBranches, supplierTypes: parseSupplierTypes(input.supplier_types) };
+    const supplierType = await resolveSupplierGroupFilter({ req, input });
+    const filters = { branchIds, canFilterAllBranches, ...supplierType.filters };
     const locale = String(req?.locale || "en").toLowerCase();
     let query = knex("erp.parties as p")
       .leftJoin("erp.party_groups as pg", "pg.id", "p.group_id")
@@ -2367,10 +2403,11 @@ const getSupplierListingsReportPageData = async ({ req, input = {} }) => {
         knex.raw("COALESCE(NULLIF(p.phone1, ''), NULLIF(p.phone2, '')) as phone_primary"), "p.created_at",
         knex.raw("(SELECT COALESCE(string_agg(b.name, ', ' ORDER BY b.name), '') FROM erp.party_branch pb JOIN erp.branches b ON b.id = pb.branch_id WHERE pb.party_id = p.id) as branch_names"))
       .where("p.is_active", true).whereIn("p.party_type", ["SUPPLIER", "BOTH"])
-      .modify((qb) => applySupplierTypeFilter(qb, filters.supplierTypes)).orderBy("p.id", "desc");
+      .orderBy("p.id", "desc");
     if (!req.user?.isAdmin && !canFilterAllBranches && !branchIds.length) query.whereRaw("FALSE");
     query = applyPartyBranchScope(query, branchIds);
-    return { filters, options: { supplierTypes: SUPPLIER_TYPES }, rows: await query };
+    query = applySupplierGroupFilter(query, filters);
+    return { filters, options: { supplierGroups: supplierType.supplierGroups }, rows: await query };
   } catch (err) {
     console.error("Error in SupplierListingsReportService:", err);
     throw err;

@@ -4697,10 +4697,18 @@
   html[lang="ur"] body .font-semibold {
     font-weight: 400;
   }
-  html[lang="ur"] body :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]):not([type="color"]), select, textarea, [data-searchable-control]) {
+  html[lang="ur"] body :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]):not([type="color"]), select, textarea, [data-searchable-control]):not([data-searchable-control] input) {
     min-height: 3rem;
     line-height: 2;
     padding-block: 0.375rem;
+  }
+  html[lang="ur"] body [data-searchable-control] input {
+    min-height: 0;
+    padding-block: 0;
+  }
+  html[lang="ur"] body [data-searchable-control] :is(div, span, input) {
+    font-size: inherit;
+    line-height: inherit;
   }
   html[lang="ur"] body :is([data-mobile-card], [data-mobile-report-card]) td::before {
     font-size: 1rem;

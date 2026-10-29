@@ -63,6 +63,7 @@ const renderSupplierReportStub =
       });
     } catch (err) {
       console.error("Error in PurchaseReportsService:", err);
+      if (typeof req.flash === "function") req.flash("error", res.locals.t("generic_error"));
       return next(err);
     }
   };
@@ -129,6 +130,7 @@ const renderSupplierAnalysisPage = async (req, res, next, inputSource) => {
     });
   } catch (err) {
     console.error("Error in PurchaseReportsService:", err);
+    if (typeof req.flash === "function") req.flash("error", res.locals.t("generic_error"));
     return next(err);
   }
 };
@@ -171,6 +173,7 @@ router.get(
       });
     } catch (err) {
       console.error("Error in PurchaseReportsService:", err);
+      if (typeof req.flash === "function") req.flash("error", res.locals.t("generic_error"));
       return next(err);
     }
   },
@@ -201,6 +204,7 @@ router.post(
       });
     } catch (err) {
       console.error("Error in PurchaseReportsService:", err);
+      if (typeof req.flash === "function") req.flash("error", res.locals.t("generic_error"));
       return next(err);
     }
   },
@@ -230,6 +234,7 @@ router.get(
       });
     } catch (err) {
       console.error("Error in PurchaseReportsService:", err);
+      if (typeof req.flash === "function") req.flash("error", res.locals.t("generic_error"));
       return next(err);
     }
   },
@@ -259,6 +264,7 @@ router.post(
       });
     } catch (err) {
       console.error("Error in PurchaseReportsService:", err);
+      if (typeof req.flash === "function") req.flash("error", res.locals.t("generic_error"));
       return next(err);
     }
   },
@@ -288,6 +294,7 @@ router.get(
       });
     } catch (err) {
       console.error("Error in PurchaseReportsService:", err);
+      if (typeof req.flash === "function") req.flash("error", res.locals.t("generic_error"));
       return next(err);
     }
   },
@@ -317,6 +324,7 @@ router.post(
       });
     } catch (err) {
       console.error("Error in PurchaseReportsService:", err);
+      if (typeof req.flash === "function") req.flash("error", res.locals.t("generic_error"));
       return next(err);
     }
   },

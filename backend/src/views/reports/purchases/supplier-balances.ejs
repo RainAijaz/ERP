@@ -35,11 +35,12 @@
     <form method="post" action="<%= reportPath %>" class="mt-3 w-full max-w-3xl space-y-3" data-supplier-balance-filter-form>
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <input type="hidden" name="load_report" value="1">
-      <div class="mb-3 w-full max-w-xl"><%- include("../../base/partials/supplier-type-filter", { t, filters, options }) %></div>
 
       <div class="grid grid-cols-1 gap-3 lg:grid-cols-[180px_minmax(320px,520px)] lg:items-center">
         <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('as_on') %></label>
         <input type="date" name="as_on" value="<%= selectedAsOn %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700">
+
+        <%- include('../../base/partials/supplier-type-filter', { filters, options, t, supplierTypeEmbedded: true }) %>
 
         <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= canUseBranchFilter ? t('branches') : t('branch') %></label>
         <% if (canUseBranchFilter) { %>

@@ -66,7 +66,6 @@
     <form method="post" action="<%= reportPath %>" class="mt-3 max-w-6xl rounded-xl border border-slate-200 bg-slate-50/30 p-3 sm:p-4" data-supplier-ledger-form>
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <input type="hidden" name="load_report" value="1">
-      <div class="mb-3 w-full max-w-xl"><%- include("../../base/partials/supplier-type-filter", { t, filters, options }) %></div>
 
       <div class="space-y-3">
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
@@ -96,6 +95,7 @@
               <% supplierOptions.forEach((supplier) => { %>
                 <option
                   value="<%= supplier.id %>"
+                  data-supplier-group-id="<%= supplier.group_id || '' %>"
                   data-code="<%= supplier.code || '' %>"
                   <%= selectedPartyId === Number(supplier.id) ? 'selected' : '' %>
                 ><%= resolveSupplierName(supplier) %></option>
@@ -103,6 +103,8 @@
             </select>
           </div>
         </div>
+
+        <%- include('../../base/partials/supplier-type-filter', { filters, options, t, supplierTypeRounded: 'xl' }) %>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
           <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= dateRangeLabel %></label>
