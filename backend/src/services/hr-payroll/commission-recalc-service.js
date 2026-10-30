@@ -19,6 +19,7 @@
 //   SALES_VOUCHER_LINE -> SKU meta.commission + the auto EMPLOYEE voucher_line
 //                         (SALESMAN_SALE, which never touches commission_ledger)
 const knex = require("../../db/knex");
+const { loadStageCommissionLines } = require("./commission-configuration-service");
 const {
   computeLedgerEntriesForBranch,
   normalizeTransferLinesForCommission,
@@ -35,6 +36,7 @@ const COMPUTABLE_TYPES = [
   "TRANSFER",
   "PRODUCTION_FG",
   "PRODUCTION_SFG",
+  "PRODUCTION_STAGE",
 ];
 
 const LEDGER_TYPES = new Set([
@@ -42,6 +44,7 @@ const LEDGER_TYPES = new Set([
   "TRANSFER",
   "PRODUCTION_FG",
   "PRODUCTION_SFG",
+  "PRODUCTION_STAGE",
 ]);
 
 // PRODUCTION_FG covers both production voucher types: applyProductionToGenerated-
@@ -52,6 +55,7 @@ const VOUCHER_TYPES_BY_COMMISSION_TYPE = {
   TRANSFER: ["STN_OUT"],
   PRODUCTION_FG: ["DCV", "PROD_FG", "PROD_SFG"],
   PRODUCTION_SFG: ["DCV"],
+  PRODUCTION_STAGE: ["DCV"],
 };
 
 const PRODUCTION_CATEGORY_BY_COMMISSION_TYPE = {
@@ -347,11 +351,12 @@ const loadSkuLines = (db, voucherId) =>
     .where({ voucher_header_id: voucherId, line_kind: "SKU" });
 
 const loadProductionOutputs = (db, voucherId, category) =>
-  db("erp.stock_ledger")
-    .select("sku_id", "qty_pairs", "value")
-    .where({ voucher_header_id: voucherId, direction: 1, category })
-    .whereNotNull("sku_id")
-    .orderBy("id", "asc");
+  db("erp.stock_ledger as sl")
+    .leftJoin('erp.voucher_line as vl','vl.id','sl.voucher_line_id')
+    .select("sl.sku_id", "sl.qty_pairs", "sl.value",'vl.meta')
+    .where({ 'sl.voucher_header_id': voucherId, 'sl.direction': 1, 'sl.category': category })
+    .whereNotNull("sl.sku_id")
+    .orderBy("sl.id", "asc");
 
 const loadEmployeeNameMap = async ({ db, employeeIds, locale }) => {
   const ids = [...new Set(employeeIds.map((id) => Number(id)).filter(Boolean))];
@@ -402,7 +407,10 @@ const buildLedgerPlanRows = async ({ db, input, commissionType }) => {
 
   for (const voucher of vouchers) {
     let lines;
-    if (productionCategory) {
+    if (commissionType === "PRODUCTION_STAGE") {
+      lines = normalizeProductionLinesForCommission(await loadStageCommissionLines(db, Number(voucher.id)));
+      if (!lines.length) continue;
+    } else if (productionCategory) {
       const outputs = await loadProductionOutputs(db, Number(voucher.id), productionCategory);
       if (!outputs.length) continue;
       lines = normalizeProductionLinesForCommission(
@@ -413,6 +421,7 @@ const buildLedgerPlanRows = async ({ db, input, commissionType }) => {
           qty: toNumber(output.qty_pairs, 0),
           total_pairs: toNumber(output.qty_pairs, 0),
           amount: toNumber(output.value, 0),
+          meta:{commission_context:output.meta?.commission_context},
         })),
       );
     } else {

@@ -88,7 +88,7 @@ const buildItemContext = async (trx, skuIds) => {
   const rows = await trx("erp.skus as s")
     .join("erp.variants as v", "s.variant_id", "v.id")
     .join("erp.items as i", "v.item_id", "i.id")
-    .select("s.id as sku_id", "i.id as item_id", "i.item_type", "i.subgroup_id", "i.group_id", "i.base_uom_id")
+    .select("s.id as sku_id", "i.id as item_id", "i.item_type", "i.subgroup_id", "i.group_id", "i.base_uom_id", "v.grade_id")
     .whereIn("s.id", skuIds);
   return new Map(rows.map((row) => [Number(row.sku_id), row]));
 };
@@ -142,6 +142,8 @@ const buildRuleMatchIndex = async (
       "sku_id",
       "subgroup_id",
       "group_id",
+      trx.raw("COALESCE(to_jsonb(ecr)->'eligibility', '{}'::jsonb) as eligibility"),
+      trx.raw("COALESCE(to_jsonb(ecr)->>'eligibility_key', '') as eligibility_key"),
       // to_jsonb rather than a bare column, so this query still runs against a
       // database where the branch/effective-date migration has not been applied
       // yet -- deploying code ahead of the migration must not break posting.
@@ -184,6 +186,7 @@ const buildRuleMatchIndex = async (
       trx.raw("(to_jsonb(ecr)->>'inherited_sku_copy')::boolean as inherited_sku_copy"))
     .orderByRaw(`COALESCE((to_jsonb(ecr)->>'effective_from')::date, '1900-01-01'::date) DESC`)
     .orderBy("ecr.id", "desc");
+  if(rows.some(row=>!Number.isFinite(Number(row.value)) || Number(row.value)<0))throw new Error('error_invalid_rate_value');
   return attachInheritance(trx, rows);
 };
 
@@ -228,6 +231,7 @@ const computeLineCommissionBreakdown = ({ line, salesLine, matchedRules, qtyInPa
         precedence,
         rate,
         value_type: String(rule.value_type || ""),
+        rate_type: rule.rate_type || 'PER_PAIR',
         computed_amount: 0,
         deferred_invoice_amount: true,
       });
@@ -241,6 +245,7 @@ const computeLineCommissionBreakdown = ({ line, salesLine, matchedRules, qtyInPa
       precedence,
       rate,
       value_type: String(rule.value_type || ""),
+      rate_type: rule.rate_type || 'PER_PAIR',
       computed_amount: computed,
       deferred_invoice_amount: false,
     });
@@ -317,7 +322,9 @@ const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, branchId = 
   const lineBreakdowns = [];
 
   for (const { line, idx } of skuLines) {
-    const context = itemContextMap.get(Number(line.sku_id));
+    const originalContext = itemContextMap.get(Number(line.sku_id));
+    const snapshot = line.meta?.commission_context || line.meta?.commission?.context;
+    const context = originalContext && { ...originalContext,...(Number(snapshot?.sku_id)===Number(line.sku_id) ? snapshot : {}) };
     if (!context) continue;
     if (commissionType === "TRANSFER") {
       const meta = line.meta && typeof line.meta === "object" ? line.meta : {};
@@ -330,7 +337,7 @@ const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, branchId = 
       ) continue;
     }
     const salesLine = resolveSalesLinePayload(line);
-    if (!salesLine.is_packed) continue;
+
 
     // Sales voucher SKU lines store qty in pairs (base units) but uom_id may be a
     // non-base unit (e.g. dozen). Using line.qty with line.uom_id would double-convert
@@ -347,16 +354,21 @@ const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, branchId = 
           t,
         });
 
-    const matchedRules = [BASIS.NET_SALES_PERCENT, BASIS.GROSS_MARGIN_PERCENT, BASIS.FIXED_PER_UNIT, BASIS.FIXED_PER_INVOICE]
-      .map((basis) =>
-        pickRuleByPrecedence(rules, basis, {
+    const ruleContext = {
           skuId: Number(line.sku_id),
           subgroupId: Number(context.subgroup_id || 0),
           groupId: Number(context.group_id || 0),
           branchId: Number(branchId) > 0 ? Number(branchId) : null,
-        }),
-      )
-      .filter(Boolean);
+          gradeId: Number(line.meta?.commission_context?.grade_id ?? context.grade_id) || null,
+          labourId: Number(line.labour_id || line.meta?.labour_id) || null,
+          departmentId: Number(line.dept_id || line.meta?.dept_id) || null,
+          stageId: Number(line.stage_id || line.meta?.stage_id) || null,
+    };
+    const inheritedQuantityRule = pickRuleByPrecedence(rules.filter(rule=>rule.apply_on!=="SKU"),BASIS.FIXED_PER_UNIT,ruleContext)?.rule;
+    ruleContext.defaultSalesQuantityScope = inheritedQuantityRule?.eligibility?.sales_quantity_scope || "PACKED_ONLY";
+    ruleContext.isPacked = salesLine.is_packed;
+    const matchedRules = [BASIS.NET_SALES_PERCENT,BASIS.GROSS_MARGIN_PERCENT,BASIS.FIXED_PER_UNIT,BASIS.FIXED_PER_INVOICE]
+      .map(basis=>pickRuleByPrecedence(rules,basis,ruleContext)).filter(Boolean);
 
     if (!matchedRules.length) continue;
 
@@ -367,6 +379,7 @@ const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, branchId = 
       matchedRules,
       qtyInPair: qtyInBaseUnit,
     });
+    lineBreakdowns[idx].context = {sku_id:Number(line.sku_id),grade_id:context.grade_id,group_id:context.group_id,subgroup_id:context.subgroup_id};
   }
 
   applyInvoiceLevelCommissions({
@@ -420,6 +433,7 @@ const enrichSalesVoucherLines = async ({
         commission: {
           total_amount: breakdown.lineTotal,
           entries: breakdown.entries,
+          context: breakdown.context,
         },
       },
     };
@@ -520,8 +534,14 @@ const computeLedgerEntriesForBranch = async ({
         return {
           sku_id: line.sku_id,
           line_no: line.line_no,
+          voucher_line_id: line.id || line.voucher_line_id || null,
+          total_pairs: Number(line.meta?.total_pairs ?? line.total_pairs ?? line.qty) || 0,
+          labour_id: line.labour_id || null,
+          dept_id: line.dept_id || null,
+          stage_id: line.stage_id || null,
           total_amount: bd.lineTotal,
           entries: bd.entries,
+          context: bd.context,
         };
       })
       .filter(Boolean);

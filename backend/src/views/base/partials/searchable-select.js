@@ -698,6 +698,76 @@
     let activeIndex = -1;
     let keyboardNavigatedMenu = false;
     let multiSearchValue = "";
+    const remote = { timer: null, controller: null, seq: 0, query: null, offset: 0, more: false, loading: false, error: "",cache:new Map() };
+    const loadRemoteOptions = async ({ term = "", offset = 0, ids = null } = {}) => {
+      if (!select.dataset.searchableUrl || select.disabled) return;
+      const url = new URL(select.dataset.searchableUrl, window.location.href);
+      url.searchParams.set("q", term);
+      url.searchParams.set("offset", String(offset));
+      if (ids?.length) url.searchParams.set("ids", ids.join(","));
+      const key = url.toString();
+      if (!ids && remote.query === key && !remote.error) return;
+      remote.controller?.abort();
+      const controller = new AbortController();
+      remote.controller = controller;
+      const seq = ++remote.seq;
+      remote.query = key; remote.loading = true; remote.error = "";
+      if (!menu.classList.contains("hidden")) renderMenu({ showAll: true });
+      try {
+        const cached=remote.cache.get(key);
+        let payload=cached && cached.expires>Date.now() ? cached.payload : null;
+        if (!payload) {
+          const response = await fetch(url, { credentials: "same-origin", headers: { Accept: "application/json" }, signal: controller.signal });
+          payload = await response.json();
+          if (!response.ok) throw new Error(payload.message || "<%= t('generic_error') %>");
+          remote.cache.set(key,{payload,expires:Date.now()+30000});
+          if(remote.cache.size>16)remote.cache.delete(remote.cache.keys().next().value);
+        }
+        if (seq !== remote.seq) return;
+        const selected = new Map(Array.from(select.selectedOptions).map(o => [String(o.value), o.textContent]));
+        // Retain selected values while bounding unselected search results.
+        if (!ids) Array.from(select.options).forEach(o => {
+          if (o.value && o.value !== "__all__" && !o.selected) o.remove();
+        });
+        const existing = new Map(Array.from(select.options).map(o => [String(o.value),o]));
+        (payload.options || []).forEach(row => {
+          const value = String(row.value);
+          let option = existing.get(value);
+          if (!option) { option = new Option(String(row.label),value); select.add(option); }
+          else option.textContent = String(row.label);
+          if (selected.has(value)) option.selected = true;
+        });
+        if (!ids) { remote.offset = offset; remote.more = Boolean(payload.has_more); }
+        if (ids) syncToInput();
+      } catch (err) {
+        if (seq !== remote.seq || err.name === "AbortError") return;
+        remote.error = "<%= t('generic_error') %>";
+      } finally {
+        if (seq === remote.seq) {
+          remote.loading = false;
+          if (!menu.classList.contains("hidden")) renderMenu({ showAll: true });
+        }
+      }
+    };
+    select.addEventListener("searchable:invalidate", () => {
+      remote.controller?.abort(); ++remote.seq;
+      window.clearTimeout(remote.timer);
+      remote.query = null; remote.more = false; remote.loading = false; remote.error = "";
+      remote.cache.clear();
+    });
+    select.addEventListener("searchable:resolve", event => {
+      const ids = event.detail?.ids || [];
+      if (ids.length) loadRemoteOptions({ ids });
+    });
+    const scheduleRemoteOptions = () => {
+      if (!select.dataset.searchableUrl) return;
+      const term = isMulti ? multiSearchValue : input.value;
+      window.clearTimeout(remote.timer);
+      // Invalidate before the debounce, so an old response cannot paint while
+      // the user is already entering the next search.
+      remote.controller?.abort(); ++remote.seq; remote.query = null;
+      remote.timer = window.setTimeout(() => loadRemoteOptions({ term }), 250);
+    };
     const closeMenu = () => {
       menu.classList.add("hidden");
       keyboardNavigatedMenu = false;
@@ -717,6 +787,7 @@
     const openMenu = ({ showAll = false, preserveActive = false } = {}) => {
       if (select.disabled) return;
       closeSearchableMenus({ exceptWrapper: wrapper });
+      scheduleRemoteOptions();
       renderMenu({ showAll, preserveActive });
       menu.classList.remove("hidden");
     };
@@ -985,6 +1056,18 @@
         menu.appendChild(empty);
       }
 
+      if (select.dataset.searchableUrl && (remote.loading || remote.error || remote.more)) {
+        const control = document.createElement("button");
+        control.type = "button";
+        control.className = "w-full border-t border-slate-100 px-4 py-2 text-xs text-slate-600";
+        control.disabled = remote.loading;
+        control.textContent = remote.loading ? "<%= t('loading') %>" : remote.error ? "<%= t('commission_retry_options') %>" : "<%= t('commission_more_options') %>";
+        control.addEventListener("click", event => {
+          event.preventDefault(); event.stopPropagation();
+          loadRemoteOptions({ term: isMulti ? multiSearchValue : input.value, offset: remote.error ? 0 : remote.offset + 50 });
+        });
+        menu.appendChild(control);
+      }
       lastRenderedOptionLabels = visibleOptions.map((opt) =>
         opt.textContent.trim(),
       );
@@ -1402,8 +1485,7 @@
     scope
       .querySelectorAll('select[data-searchable-ready="true"]')
       .forEach((select) => {
-        const syncValue = searchableValueSyncers.get(select);
-        if (typeof syncValue === "function") syncValue();
+        syncExistingSearchableSelectState(select);
       });
   };
 

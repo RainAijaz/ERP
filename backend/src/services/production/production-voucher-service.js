@@ -19,6 +19,7 @@ const {
 const {
   buildStockShortfallMessageTx,
 } = require("../../utils/stock-rollback-diagnostics");
+const { loadStageCommissionLines,captureProductionCommissionContexts } = require("../hr-payroll/commission-configuration-service");
 const {
   computeLedgerEntriesForBranch,
   normalizeProductionLinesForCommission,
@@ -4795,7 +4796,7 @@ const rollbackProductionCommissionByVoucherTx = async ({ trx, voucherId }) => {
     .where({ voucher_id: normalizedVoucherId })
     .whereIn(
       "commission_type",
-      Object.values(PRODUCTION_COMMISSION_TYPE_BY_CATEGORY),
+      [...Object.values(PRODUCTION_COMMISSION_TYPE_BY_CATEGORY), "PRODUCTION_STAGE"],
     )
     .del();
 };
@@ -4812,6 +4813,8 @@ const writeProductionCommissionTx = async ({
   outputs = [],
 }) => {
   const normalizedBranchId = toPositiveInt(branchId);
+  const contexts = await captureProductionCommissionContexts(trx,voucherId);
+  outputs = outputs.map(output=>({...output,meta:{...output.meta,commission_context:contexts.get(Number(output.line_no))}}));
   if (!outputs.length || !normalizedBranchId) return;
 
   for (const [category, commissionType] of Object.entries(
@@ -5253,6 +5256,11 @@ const applyDcvToWipTx = async ({
     voucherDate,
     outputs: commissionOutputs,
   });
+  const stageLines = await loadStageCommissionLines(trx, voucherId);
+  const stageEntries = await computeLedgerEntriesForBranch({ trx,
+    lines: normalizeProductionLinesForCommission(stageLines), branchId,
+    commissionType: "PRODUCTION_STAGE", voucherDate, t: key => key });
+  await writeCommissionLedgerTx(trx, voucherId, stageEntries);
 };
 
 const applyDcvToGeneratedVouchersTx = async ({

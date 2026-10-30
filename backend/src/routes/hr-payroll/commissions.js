@@ -1,4 +1,5 @@
 const express = require("express");
+const { publicErrorMessage } = require('../../middleware/errors/friendly-error');
 const knex = require("../../db/knex");
 const { createHrMasterRouter, hydratePage, fetchRows } = require("./master-router");
 const { toMoney, hasTwoDecimalsOrLess } = require("./validation");
@@ -19,6 +20,7 @@ const {
   buildBulkPreviewRows,
   applyBulkSkuRateUpsert,
   supersedeCommissionRule,
+  updateCommissionRule,
   normalizeRuleDate,
   todayYmd,
 } = require("../../services/hr-payroll/commission-rules-service");
@@ -33,9 +35,12 @@ const {
 // Registers the approvals preview renderer for RECALC_APPROVAL_MODE. Required
 // for its side effect — the registry is a module-level array populated at boot.
 require("../../utils/approval-previews/commission-recalc-preview-provider");
+require("../../utils/approval-previews/payroll-configuration-preview-provider");
 const {
   RECALC_APPROVAL_MODE,
 } = require("../../utils/commission-recalc-approval");
+const { normalizeEligibility, eligibilityKey } = require("../../services/hr-payroll/commission-eligibility-service");
+const { searchCommissionOptions, validateConfiguration } = require("../../services/hr-payroll/commission-configuration-service");
 const COMMISSION_BASIS_FIXED_PER_UNIT = "FIXED_PER_UNIT";
 const COMMISSION_RATE_TYPES = new Set(["PER_DOZEN", "PER_PAIR"]);
 const COMMISSION_TYPES = new Set([
@@ -45,6 +50,7 @@ const COMMISSION_TYPES = new Set([
   "PARTY",
   "PRODUCTION_FG",
   "PRODUCTION_SFG",
+  "PRODUCTION_STAGE",
 ]);
 const getAllowedBranchIds = (req) => {
   if (req?.user?.isAdmin) return [];
@@ -69,8 +75,10 @@ const isEmployeeInScope = async ({ employeeId, req }) => {
 };
 
 const page = {
-  titleKey: "sales_commission",
-  descriptionKey: "sales_commission_description",
+  titleKey: "employee_commission_rules",
+  modalTitleKey: 'commission_rule',
+  approvalRequestsEnabled: true,
+  descriptionKey: "employee_commission_rules_description",
   table: "erp.employee_commission_rules",
   scopeKey: "hr_payroll.commissions",
   entityType: "EMPLOYEE",
@@ -87,6 +95,7 @@ const page = {
     rate_type: "PER_PAIR",
     status: "active",
     commission_type: "SALESMAN_SALE",
+    eligibility: "{}",
     effective_from: todayYmd(),
   },
   filterConfig: {
@@ -238,6 +247,7 @@ const page = {
     { key: "reverse_on_returns", label: "reverse_on_returns" },
   ],
   fields: [
+    { name: "eligibility", label: "commission_conditions", type: "hidden" },
     {
       name: "employee_id",
       label: "employees",
@@ -275,6 +285,7 @@ const page = {
         { value: "PARTY",          label: "commission_type_party" },
         { value: "PRODUCTION_FG",  label: "commission_type_production_fg" },
         { value: "PRODUCTION_SFG", label: "commission_type_production_sfg" },
+        { value: "PRODUCTION_STAGE", label: "commission_type_production_stage" },
       ],
     },
     {
@@ -290,6 +301,7 @@ const page = {
     },
     {
       name: "sku_id",
+      remoteOptionsKind: "sku",
       label: "sku",
       type: "select",
       multiple: true,
@@ -311,6 +323,7 @@ const page = {
     },
     {
       name: "subgroup_id",
+      remoteOptionsKind: "subgroup",
       label: "product_subgroups",
       type: "select",
       multiple: true,
@@ -326,6 +339,7 @@ const page = {
     },
     {
       name: "group_id",
+      remoteOptionsKind: "group",
       label: "product_groups",
       type: "select",
       multiple: true,
@@ -404,10 +418,7 @@ const page = {
   ],
   sanitizeValues: (values) => ({
     ...values,
-    commission_type:
-      COMMISSION_TYPES.has(String(values.commission_type || "").trim().toUpperCase())
-        ? String(values.commission_type).trim().toUpperCase()
-        : "SALESMAN_SALE",
+    commission_type: String(values.commission_type || 'SALESMAN_SALE').trim().toUpperCase(),
     rate_type:
       String(values.rate_type || "")
         .trim()
@@ -426,6 +437,12 @@ const page = {
     effective_to: normalizeRuleDate(values.effective_to),
   }),
   validateValues: async ({ values, req, isUpdate, id }) => {
+    try {
+      values.eligibility = await validateConfiguration({ db: knex, eligibility: values.eligibility,
+        commissionType: values.commission_type, employeeIds: normalizeNumericIds(values.employee_id), req });
+      values.eligibility_key = eligibilityKey(values.eligibility, values.commission_type);
+    } catch (err) { return req.res.locals.t(err.message) || req.res.locals.t("commission_invalid_conditions"); }
+
     const normalizeSelection = (rawValue) => {
       if (Array.isArray(rawValue))
         return rawValue
@@ -470,6 +487,7 @@ const page = {
       return req.res.locals.t("error_invalid_status");
     if (
       values.value == null ||
+      !Number.isFinite(Number(values.value)) ||
       Number(values.value) < 0 ||
       !hasTwoDecimalsOrLess(values.value)
     )
@@ -561,6 +579,7 @@ const page = {
         values.subgroup_id || 0,
       ])
       .whereRaw("COALESCE(group_id,0)=COALESCE(?,0)", [values.group_id || 0])
+      .where({ eligibility_key: values.eligibility_key })
       .whereRaw("effective_from = ?::date", [values.effective_from]);
     if (isUpdate && id) duplicateQ.andWhereNot({ id });
     const duplicate = await duplicateQ.first();
@@ -569,13 +588,14 @@ const page = {
     values.value = toMoney(values.value);
     return null;
   },
+  persistUpdate: async ({ trx,values,id }) => updateCommissionRule({trx,id,values}),
   afterCommit: async ({ values, existing, req }) => {
     const row = {
       ...(existing || {}),
       ...(values || {}),
     };
     return scheduleAutomaticBackdatedRecalc({
-      ruleChanges: [row],
+      ruleChanges: existing ? [row,{...existing,effective_from:row.effective_from,effective_to:null}] : [row],
       allowedBranchIds: getAllowedBranchIds(req),
       userId: req.user?.id || null,
       source: "commission-rule-save",
@@ -584,6 +604,15 @@ const page = {
 };
 
 const router = express.Router();
+router.get("/options", requirePermission("SCREEN", page.scopeKey, "view"), async (req,res) => {
+  try {
+    return res.json(await searchCommissionOptions({ db: knex, input: req.query, req, locale: req.locale }));
+  } catch(err) {
+    console.error("Error in CommissionConfigurationService:", err);
+    return res.status(400).json({ message: publicErrorMessage(err,res.locals.t) });
+  }
+});
+
 const flashCookie = `hr_${page.scopeKey.replace(/\./g, "_")}_flash`;
 const backdateCookie = `hr_${page.scopeKey.replace(/\./g, "_")}_backdate`;
 const BULK_PREVIEW_PATH = "/hr-payroll/employees/commissions/bulk-preview";
@@ -689,7 +718,7 @@ const renderIndexError = (
 
 router.post(
   "/",
-  requirePermission("SCREEN", page.scopeKey, "create"),
+  requirePermission("SCREEN", page.scopeKey, "view"),
   async (req, res, next) => {
     const values = buildValues(req.body);
     const sanitizedValues = page.sanitizeValues
@@ -757,6 +786,9 @@ router.post(
         }
       }
 
+      sanitizedValues.eligibility = await validateConfiguration({ db: knex, eligibility: sanitizedValues.eligibility,
+        commissionType: sanitizedValues.commission_type, employeeIds, req });
+      sanitizedValues.eligibility_key = eligibilityKey(sanitizedValues.eligibility, sanitizedValues.commission_type);
       const rowPlans = [];
       for (const employeeId of employeeIds) {
         for (const skuId of skuIds) {
@@ -781,6 +813,7 @@ router.post(
               commission_type: rowValues.commission_type,
               commission_basis: rowValues.commission_basis,
               value_type: rowValues.value_type,
+              eligibility_key: rowValues.eligibility_key,
             })
             .whereRaw("COALESCE(branch_id,0) = COALESCE(?,0)", [
               rowValues.branch_id || 0,
@@ -832,6 +865,7 @@ router.post(
       const hasExistingRows = rowPlans.some((plan) => Boolean(plan.existingId));
       const approvalPayload = {
         mode: "SKU_MULTI_UPSERT",
+        eligibility: sanitizedValues.eligibility,
         employee_ids: employeeIds,
         sku_ids: skuIds,
         apply_on: "SKU",
@@ -896,6 +930,7 @@ router.post(
               effectiveFrom: plan.values.effective_from,
               effectiveTo: plan.values.effective_to || null,
               values: {
+                eligibility: plan.values.eligibility,
                 commission_basis: plan.values.commission_basis,
                 value_type: plan.values.value_type,
                 rate_type: plan.values.rate_type,
@@ -938,7 +973,7 @@ router.post(
         req,
         res,
         sanitizedValues,
-        err?.message || res.locals.t("generic_error"),
+        publicErrorMessage(err,res.locals.t),
         "create",
       );
     }
@@ -1056,9 +1091,13 @@ router.get(
         branchId: previewBranchId,
         effectiveFrom: previewEffectiveFrom,
         baseRate,
+        eligibility: normalizeEligibility(req.query.eligibility, previewCommissionType),
+        page: req.query.paged === "1" ? { limit: 100, offset: Math.max(0, Number.parseInt(req.query.offset,10) || 0) } : null,
       });
 
-      return res.json({ rows });
+      const total = Number(rows[0]?.total_count || rows.length);
+      return res.json({ rows, total,
+        has_more: req.query.paged === "1" && total > (Number.parseInt(req.query.offset,10) || 0) + rows.length });
     } catch (err) {
       logBulkPreviewDiagnostic(
         "error",
@@ -1086,6 +1125,13 @@ router.post(
         t: res.locals.t,
       });
       validationComplete = true;
+      normalized.eligibility = await validateConfiguration({ db: knex, eligibility: normalized.eligibility,
+        commissionType: normalized.commissionType, employeeIds: [normalized.employeeId], req });
+      if (normalized.branchId) {
+        const allowed = getAllowedBranchIds(req);
+        const mapped = await knex("erp.employee_branch").where({ employee_id: normalized.employeeId, branch_id: normalized.branchId }).first();
+        if (!mapped || (!req.user?.isAdmin && !allowed.includes(normalized.branchId))) throw new Error("error_branch_out_of_scope");
+      }
       if (
         normalized.employeeId &&
         !(await isEmployeeInScope({ employeeId: normalized.employeeId, req }))
@@ -1104,7 +1150,8 @@ router.post(
         commissionType: normalized.commissionType,
         branchId: normalized.branchId,
         effectiveFrom: normalized.effectiveFrom,
-        baseRate: null,
+        baseRate: normalized.scopeRate,
+        eligibility: normalized.eligibility,
       });
       const requestedRateBySku = new Map(
         normalized.rows
@@ -1115,7 +1162,7 @@ router.post(
         const skuId = Number(row.sku_id || 0);
         const nextRate = requestedRateBySku.has(skuId)
           ? requestedRateBySku.get(skuId)
-          : row.new_rate;
+          : (!normalized.replaceExistingSkuRates && row.previous_source === "SKU" ? row.previous_rate : row.new_rate);
         return {
           sku_id: skuId,
           sku_code: row.sku_code || "",
@@ -1137,7 +1184,7 @@ router.post(
       const invalidSku = normalized.rows.find(
         (row) => !allowedSkuIds.has(Number(row.skuId)),
       );
-      if (invalidSku || normalized.rows.length !== expectedRows.length) {
+      if (invalidSku || !expectedRows.length || (!req.body.scope_selection && normalized.rows.length !== expectedRows.length)) {
         return res.status(400).json({
           message: res.locals.t("error_invalid_bulk_commission_payload"),
         });
@@ -1159,6 +1206,7 @@ router.post(
           mode: "BULK_COMMISSION_SKU_UPSERT",
           apply_on: normalized.applyOn,
           commission_type: normalized.commissionType,
+          eligibility: normalized.eligibility,
           employee_id: normalized.employeeId,
           branch_id: normalized.branchId,
           effective_from: normalized.effectiveFrom,
@@ -1172,7 +1220,8 @@ router.post(
           rate_type: normalized.rateType,
           reverse_on_returns: normalized.reverseOnReturns,
           status: normalized.status,
-          rows: queuedRows,
+          rows: req.body.scope_selection ? normalized.rows.map(r => ({ sku_id: r.skuId, new_rate: r.rate })) : queuedRows,
+          scope_selection: req.body.scope_selection === true,
         },
         forceQueue: normalized.replaceExistingSkuRates &&
           !canAccessScope(req, "SCREEN", page.scopeKey, "edit"),
@@ -1200,7 +1249,8 @@ router.post(
             previousSource: row.previous_source, previousRate: row.previous_rate },
         ]),
       );
-      const enrichedRows = normalized.rows.map((row) => ({
+      const saveRows = normalized.rows;
+      const enrichedRows = saveRows.map((row) => ({
         skuId: row.skuId,
         rate: row.rate,
         subgroupId: skuSelectorMap.get(Number(row.skuId))?.subgroupId ?? null,
@@ -1227,6 +1277,7 @@ router.post(
           reverseOnReturns: normalized.reverseOnReturns,
           status: normalized.status,
           rows: enrichedRows,
+          eligibility: normalized.eligibility,
         });
         return applied;
       });
@@ -1275,7 +1326,7 @@ router.post(
       console.error("Error in CommissionRulesService:", err);
       return res
         .status(validationComplete ? 500 : 400)
-        .json({ message: validationComplete ? res.locals.t("generic_error") : err?.message || res.locals.t("generic_error") });
+        .json({ message: publicErrorMessage(err,res.locals.t,{validation:!validationComplete}) });
     }
   },
 );
@@ -1423,7 +1474,7 @@ router.get(
 
 router.post(
   "/recalc",
-  requirePermission("SCREEN", page.scopeKey, "edit"),
+  requirePermission("SCREEN", page.scopeKey, "view"),
   async (req, res) => {
     try {
       const input = buildRecalcInput(req, req.body);
@@ -1586,7 +1637,7 @@ router.post(
       console.error("[commission-recalc] apply failed:", err);
       return res
         .status(400)
-        .json({ message: err?.message || res.locals.t("generic_error") });
+        .json({ message: publicErrorMessage(err,res.locals.t,{validation:true}) });
     }
   },
 );

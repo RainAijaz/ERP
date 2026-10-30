@@ -16,7 +16,13 @@ const messageFromCode = (code, t) => {
 };
 
 const friendlyErrorMessage = (err, t) => {
+  if (String(err?.message || '').includes('salary_period_finalized')) return typeof t === 'function' ? t('salary_period_finalized') : 'This payroll period is finalized.';
+  if (String(err?.message || '').includes('salary_frequency_boundary')) return typeof t === 'function' ? t('salary_frequency_boundary') : 'Use a shared salary-period boundary.';
   if (!err) return typeof t === "function" ? t("error_generic") : DEFAULT_MESSAGE;
+  if(typeof t==='function' && typeof err.message==='string') {
+    const translated=t(err.message);
+    if(translated!==err.message)return translated;
+  }
   const local = (key, fallback) => (typeof t === "function" ? t(key) : fallback);
 
   if (String(err.code || "").startsWith("repack_")) {
@@ -58,4 +64,13 @@ const friendlyErrorMessage = (err, t) => {
   return err.message || local("error_generic", DEFAULT_MESSAGE);
 };
 
-module.exports = { friendlyErrorMessage };
+const publicErrorMessage = (err,t,{validation=false}={}) => {
+  const message=String(err?.message || '');
+  const marker=['salary_period_finalized','salary_frequency_boundary'].find(key=>message.includes(key));
+  if(marker && t(marker)!==marker)return t(marker);
+  const translated=t(message);
+  if(message && translated!==message)return translated;
+  if(validation && err?.constructor===Error && !err.code && !err.sql)return message || t('generic_error');
+  return t('generic_error');
+};
+module.exports = { friendlyErrorMessage,publicErrorMessage };

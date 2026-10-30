@@ -17,6 +17,7 @@ const allowancesRoutes = require("./allowances");
 
 const page = {
   titleKey: "employees",
+  approvalRequestsEnabled: true,
   descriptionKey: "employees_description",
   table: "erp.employees",
   scopeKey: "hr_payroll.employees",
@@ -26,6 +27,7 @@ const page = {
   codePrefix: "emp",
   defaults: {
     payroll_type: "MONTHLY",
+    salary_proration: "NONE",
     status: "active",
   },
   filterConfig: {
@@ -35,6 +37,7 @@ const page = {
       dbColumn: "t.payroll_type",
       options: [
         { value: "MONTHLY", label: "payroll_monthly" },
+        { value: "WEEKLY", label: "payroll_weekly" },
         { value: "DAILY", label: "payroll_daily" },
         { value: "PIECE_RATE", label: "payroll_piece_rate" },
         { value: "MULTIPLE", label: "payroll_multiple" },
@@ -48,6 +51,7 @@ const page = {
   },
   joins: [],
   extraSelect: (locale) => [
+    knex.raw("to_char(t.salary_effective_from, 'YYYY-MM-DD') as salary_effective_from"),
     knex.raw(
       `(SELECT COALESCE(string_agg(b.name, ', ' ORDER BY b.name), '')
         FROM erp.employee_branch eb
@@ -111,15 +115,25 @@ const page = {
     {
       name: "payroll_type",
       label: "payroll_type",
+      hint: 'salary_frequency_help',
       type: "select",
       required: true,
       options: [
         { value: "MONTHLY", label: "payroll_monthly" },
+        { value: "WEEKLY", label: "payroll_weekly" },
         { value: "DAILY", label: "payroll_daily" },
         { value: "PIECE_RATE", label: "payroll_piece_rate" },
         { value: "MULTIPLE", label: "payroll_multiple" },
       ],
     },
+    { name: "salary_effective_from", label: "salary_effective_from", type: "date", required: true },
+    { name: "week_ending_day", label: "salary_week_ending", type: "select",
+      showWhen: { field: "payroll_type", values: ["WEEKLY"] },
+      options: [0,1,2,3,4,5,6].map(value => ({ value: String(value), label: `salary_weekday_${value}` })) },
+    { name: "salary_proration", label: "salary_proration", type: "select", required: true,
+      options: [{value:"NONE",label:"salary_full_period"},{value:"CALENDAR_DAYS",label:"salary_calendar_proration"}] },
+    { name: "absence_deductions_enabled", label: "salary_enable_absence_deductions", type: "checkbox" },
+    { name: "absence_day_divisor", label: "salary_absence_divisor", type: "number", min: 1, step: "0.001" },
     {
       name: "basic_salary",
       label: "basic_salary",
@@ -174,19 +188,30 @@ const page = {
     phone: normalizePhone(values.phone),
     basic_salary:
       values.basic_salary == null ? null : String(values.basic_salary).trim(),
+    salary_effective_from: normalizeRuleDate(values.salary_effective_from),
+    week_ending_day: values.payroll_type === "WEEKLY" && values.week_ending_day !== null && values.week_ending_day !== "" ? Number(values.week_ending_day) : null,
+    absence_deductions_enabled: values.absence_deductions_enabled === true,
+    absence_day_divisor: values.absence_day_divisor ? Number(values.absence_day_divisor) : null,
+    salary_proration: values.salary_proration || "NONE",
     employment_start_date: normalizeRuleDate(values.employment_start_date),
     employment_end_date: normalizeRuleDate(values.employment_end_date),
   }),
   validateValues: async ({ values, req, isUpdate, id }) => {
     const payrollTypes = new Set([
       "MONTHLY",
+      "WEEKLY",
       "DAILY",
       "PIECE_RATE",
       "MULTIPLE",
     ]);
+    if (!values.salary_effective_from) return req.res.locals.t("salary_effective_required");
+    if (values.payroll_type === "WEEKLY" && (values.week_ending_day == null || !Number.isInteger(values.week_ending_day) || values.week_ending_day<0 || values.week_ending_day>6)) return req.res.locals.t("salary_week_end_required");
+    if (!["NONE","CALENDAR_DAYS"].includes(values.salary_proration)) return req.res.locals.t("error_required_fields");
+    if (values.absence_day_divisor != null && (!Number.isFinite(values.absence_day_divisor) || values.absence_day_divisor<=0 || values.absence_day_divisor>366)) return req.res.locals.t("salary_invalid_divisor");
+    if (values.absence_deductions_enabled && !(values.absence_day_divisor>0)) return req.res.locals.t("salary_invalid_divisor");
     if (!payrollTypes.has(values.payroll_type))
       return req.res.locals.t("error_invalid_payroll_type");
-    if (values.basic_salary === null || Number(values.basic_salary) < 0)
+    if (values.basic_salary === null || !Number.isFinite(Number(values.basic_salary)) || Number(values.basic_salary) < 0)
       return req.res.locals.t("error_invalid_salary");
     if (
       !hasTwoDecimalsOrLess(values.basic_salary) ||

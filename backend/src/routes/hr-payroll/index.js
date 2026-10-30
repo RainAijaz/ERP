@@ -23,6 +23,7 @@ router.get(
   (req, res) => res.redirect("/hr-payroll/labours/rates"),
 );
 
+router.use("/payroll", require("./payroll-runs"));
 router.use("/employees", employeesRoutes);
 router.use("/labours", laboursRoutes);
 

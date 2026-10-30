@@ -12,7 +12,9 @@
         const hrIcon = "h-3.5 w-3.5 shrink-0";
       %>
       <div class="flex flex-wrap items-center gap-2 lg:justify-end">
-        <% const canCreate = can("SCREEN", page.scopeKey, "create"); %>
+        <% const canRequestChange = page.scopeKey === 'hr_payroll.commissions' && page.approvalRequestsEnabled && can('SCREEN',page.scopeKey,'view'); %>
+        <% const canCreate = can("SCREEN", page.scopeKey, "create") || canRequestChange; %>
+        <% if (canRequestChange && !can('SCREEN',page.scopeKey,'create')) { %><span class="text-xs text-slate-500"><%= t('commission_request_hint') %></span><% } %>
         <% const canDownload = can("SCREEN", page.scopeKey, "print"); %>
         <% if (canDownload) { %>
           <%/* Download + Print are one export cluster, so they read as a single control. */%>
@@ -53,7 +55,7 @@
             <% } %>
           </a>
         <% } %>
-        <% if (can("SCREEN", page.scopeKey, "edit") && page.scopeKey === "hr_payroll.commissions") { %>
+        <% if ((can("SCREEN", page.scopeKey, "edit") || canRequestChange) && page.scopeKey === "hr_payroll.commissions") { %>
           <button class="<%= hrPill %>" type="button" data-recalc-open>
             <svg class="<%= hrIcon %>" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /></svg>
             <%= t("recalculate_commission") %>
@@ -87,7 +89,7 @@
     data-scope-key="<%= page.scopeKey %>"
     data-grouped-table-ready="<%= (page.scopeKey === 'hr_payroll.labour_rates' || page.scopeKey === 'hr_payroll.commissions') ? 'false' : 'true' %>"
   >
-    <% const canEdit = can("SCREEN", page.scopeKey, "edit"); %>
+    <% const canEdit = can("SCREEN", page.scopeKey, "edit") || canRequestChange; %>
     <% const canDelete = can("SCREEN", page.scopeKey, "delete"); %>
     <% const canHardDelete = can("SCREEN", page.scopeKey, "hard_delete"); %>
     <div class="px-5 pt-4 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
@@ -286,7 +288,7 @@
   t,
   modalOpen,
   modalMode,
-  modalTitle: t("add") + " " + t(page.titleKey),
+  modalTitle: t("add") + " " + t(page.modalTitleKey || page.titleKey),
   modalDescription: t("enter_details_save"),
   formAction: basePath,
   formClass: "flex-1 space-y-5 overflow-y-auto px-6 py-5",
@@ -1175,6 +1177,8 @@
       windowEnd: -1,
       rowHeight: 0,
       scrollFrame: null,
+      controller: null, offset: 0, total: 0, hasMore: false, edits: new Map(),
+      previewKey: null,
     };
 
     const getErrorMessage = (payload, fallback) => {
@@ -1316,8 +1320,8 @@
       // the spacer arithmetic exact. The scroller already scrolls sideways.
       return `
         <tr data-commission-row="${idx}">
-          <td class="px-2 py-1.5 text-slate-700 whitespace-nowrap">${row.sku_code || ""}</td>
-          <td class="px-2 py-1.5 text-slate-700 whitespace-nowrap">${row.item_name || ""}</td>
+          <td class="px-2 py-1.5 text-slate-700 whitespace-nowrap">${window.erpDisplay.escapeHtml(row.sku_code || "")}</td>
+          <td class="px-2 py-1.5 text-slate-700 whitespace-nowrap">${window.erpDisplay.escapeHtml(row.item_name || "")} ${row.excluded ? <%- JSON.stringify(t('commission_excluded')) %> : ''}</td>
           <td class="px-2 py-1.5 text-slate-700 whitespace-nowrap">${previous}</td>
           <td class="px-2 py-1.5 text-slate-700">
             <input
@@ -1328,6 +1332,7 @@
               data-commission-row-rate
               data-commission-row-index="${idx}"
               value="${newRate}"
+              ${row.excluded ? 'disabled' : ''}
             />
           </td>
         </tr>
@@ -1465,7 +1470,7 @@
       const groupIds = getSelectedValues(fields.groupId);
       const rateType = String(fields.rateType?.value || "").trim();
 
-      if (!applyOn) return null;
+      if (!applyOn || !employeeId || !fields.effectiveFrom?.value) return null;
       if (applyOn === "SUBGROUP" && !subgroupIds.length) return null;
       if (applyOn === "GROUP" && !groupIds.length) return null;
 
@@ -1473,6 +1478,8 @@
         apply_on: applyOn,
         commission_type: String(fields.commissionType?.value || "SALESMAN_SALE").trim().toUpperCase(),
       });
+      params.set("paged","1"); params.set("offset",String(state.offset));
+      params.set("eligibility",form.querySelector('[data-field="eligibility"]')?.value || '{}');
       if (employeeId) params.set("employee_id", employeeId);
       if (commissionBasis) params.set("commission_basis", commissionBasis);
       // Both scope the "previous rate" column: it must show the rate in force at
@@ -1496,6 +1503,7 @@
     const loadPreview = async () => {
       setPanelVisibility();
       if (!isBulkMode()) {
+        state.loading = false;
         clearRows(tSelectTarget);
         return;
       }
@@ -1505,17 +1513,21 @@
       const commissionBasis = String(fields.commissionBasis?.value || "FIXED_PER_UNIT").trim();
       const rateType = String(fields.rateType?.value || "").trim();
       if (!rateType) {
+        state.loading = false;
         clearRows(tSelectRateType);
         return;
       }
 
       const params = getPreviewQuery();
       if (!params) {
+        state.loading = false;
         clearRows(tSelectTarget);
         return;
       }
 
 const currentSeq = ++state.requestSeq;
+      state.controller?.abort();
+      state.controller = new AbortController();
       state.loading = true;
       
       // FORCE the table to clear old rows and show the spinner immediately
@@ -1525,6 +1537,7 @@ const currentSeq = ++state.requestSeq;
           method: "GET",
           headers: { Accept: "application/json" },
           credentials: "same-origin",
+          signal: state.controller?.signal,
         });
         const payload = await response.json().catch(() => ({}));
         if (currentSeq !== state.requestSeq) return;
@@ -1538,15 +1551,38 @@ const currentSeq = ++state.requestSeq;
           return;
         }
         state.rows = Array.isArray(payload.rows) ? payload.rows : [];
+        state.total = Number(payload.total || state.rows.length);
+        state.hasMore = Boolean(payload.has_more);
+        state.rows.forEach(row => {
+          if (state.edits.has(Number(row.sku_id))) { row.new_rate = state.edits.get(Number(row.sku_id)); row.explicit_rate_edited = true; }
+        });
         applyHeaderRateToRows();
         renderRows();
+        summary.textContent = `${state.total}`;
+        const pageLabel = form.querySelector('[data-commission-page-label]');
+        if (pageLabel) pageLabel.textContent = `${state.offset + (state.rows.length ? 1 : 0)}–${state.offset + state.rows.length} / ${state.total}`;
+        const prev = form.querySelector('[data-commission-page-prev]');
+        const next = form.querySelector('[data-commission-page-next]');
+        if (prev) prev.disabled = state.offset === 0;
+        if (next) next.disabled = !state.hasMore;
       } catch (err) {
+        if (currentSeq !== state.requestSeq || err.name === 'AbortError') return;
         state.loading = false;
         clearRows(tNetworkError);
       }
     };
 
     const schedulePreview = () => {
+      ++state.requestSeq;
+      state.controller?.abort();
+      let eligibility={};
+      try { eligibility=JSON.parse(form.querySelector('[data-field="eligibility"]')?.value || '{}'); } catch { /* Server validation reports malformed conditions. */ }
+      const key=JSON.stringify([fields.employeeId?.value,fields.commissionType?.value,fields.applyOn?.value,
+        getSelectedValues(fields.groupId).sort(),getSelectedValues(fields.subgroupId).sort(),fields.rateType?.value,
+        ...['branch_ids','source_labour_ids','department_ids','stage_ids'].map(name=>Array.isArray(eligibility[name]) ? eligibility[name].slice().sort() : [])]);
+      if(key!==state.previewKey)state.edits.clear();
+      state.previewKey=key;state.offset=0;state.loading=true;
+      clearRows(tLoading);
       if (state.debounceTimer) window.clearTimeout(state.debounceTimer);
       state.debounceTimer = window.setTimeout(loadPreview, 400);
     };
@@ -1596,6 +1632,7 @@ const currentSeq = ++state.requestSeq;
         const index = Number(target.getAttribute("data-commission-row-index"));
         if (!Number.isInteger(index) || !state.rows[index]) return;
         state.rows[index].new_rate = target.value;
+        state.edits.set(Number(state.rows[index].sku_id),target.value);
         state.rows[index].explicit_rate_edited = true;
         return;
       }
@@ -1619,6 +1656,7 @@ const currentSeq = ++state.requestSeq;
     form.addEventListener("change", (event) => {
       const target = event.target;
       if (!target) return;
+      if (target.matches('[data-field="eligibility"]')) { schedulePreview(); return; }
       if (target === replaceSkuRates) {
         applyHeaderRateToRows();
         return;
@@ -1641,6 +1679,10 @@ const currentSeq = ++state.requestSeq;
 
     const modalObserver = new MutationObserver(() => {
       if (modal.classList.contains("hidden")) {
+        ++state.requestSeq; state.controller?.abort();
+        window.clearTimeout(state.debounceTimer);
+        form.querySelectorAll('[data-searchable-url]').forEach(select=>select.dispatchEvent(new Event('searchable:invalidate')));
+        state.edits.clear(); state.offset = 0;state.loading=false;state.previewKey=null;
         resetSelections();
       }
     });
@@ -1671,6 +1713,7 @@ const currentSeq = ++state.requestSeq;
           return;
         }
 
+        if (state.loading) { showModalError(tLoading); return; }
         if (!state.rows.length) {
           showModalError(tSelectTarget);
           return;
@@ -1692,16 +1735,19 @@ const currentSeq = ++state.requestSeq;
           branch_id: String(fields.branchId?.value || "").trim() || null,
           effective_from: String(fields.effectiveFrom?.value || "").trim(),
           effective_to: String(fields.effectiveTo?.value || "").trim() || null,
-          rows: state.rows.map((row) => ({
-            sku_id: row.sku_id,
-            new_rate: row.new_rate,
-          })),
+          scope_selection: true,
+          eligibility: JSON.parse(form.querySelector('[data-field="eligibility"]')?.value || '{}'),
+          rows: Array.from(state.edits,([sku_id,new_rate]) => ({sku_id,new_rate})),
         };
         payload.subgroup_id = payload.subgroup_ids[0] || null;
         payload.group_id = payload.group_ids[0] || null;
 
         if (!payload.employee_id) {
           showModalError(tRequiredFields);
+          return;
+        }
+        if (getSelectedValues(fields.employeeId).length !== 1) {
+          showModalError(<%- JSON.stringify(t('commission_one_employee')) %>);
           return;
         }
         if (payload.apply_on !== "SUBGROUP" && payload.apply_on !== "GROUP") {
@@ -1773,7 +1819,16 @@ const currentSeq = ++state.requestSeq;
       fields.value.setAttribute("min", "0");
     }
     clearRows(tSelectTarget);
-  })();
+
+    form.querySelector('[data-commission-page-prev]')?.addEventListener('click',() => {
+      if (state.loading || state.offset === 0) return;
+      state.offset = Math.max(0,state.offset - 100); loadPreview();
+    });
+    form.querySelector('[data-commission-page-next]')?.addEventListener('click',() => {
+      if (state.loading || !state.hasMore) return;
+      state.offset += 100; loadPreview();
+    });
+    })();
 </script>
 <% } %>
 
@@ -3038,6 +3093,7 @@ const currentSeq = ++state.requestSeq;
       TRANSFER:      "<%- (t('commission_type_transfer') || 'FG Transfer Commission').replace(/"/g, '&quot;') %>",
       PARTY:         "<%- (t('commission_type_party') || 'Party').replace(/"/g, '&quot;') %>",
       PRODUCTION_FG:  "<%- (t('commission_type_production_fg') || 'Production (FG)').replace(/"/g, '&quot;') %>",
+      PRODUCTION_STAGE: <%- JSON.stringify(t("commission_type_production_stage")) %>,
       PRODUCTION_SFG: "<%- (t('commission_type_production_sfg') || 'Production (SFG)').replace(/"/g, '&quot;') %>",
     };
     const commTypeClass = {
@@ -3069,6 +3125,10 @@ const currentSeq = ++state.requestSeq;
 
       const editAttrs = [
         `data-id="${esc(row.id)}"`,
+        `data-eligibility="${esc(JSON.stringify(row.eligibility || {}))}"`,
+        `data-branch_id="${esc(row.branch_id)}"`,
+        `data-effective_from="${esc(row.effective_from)}"`,
+        `data-effective_to="${esc(row.effective_to)}"`,
         `data-employee_id="${esc(row.employee_id)}"`,
         `data-commission_type="${esc(row.commission_type)}"`,
         `data-apply_on="${esc(row.apply_on)}"`,
@@ -3334,6 +3394,7 @@ const currentSeq = ++state.requestSeq;
     { value: "TRANSFER", labelKey: "commission_type_transfer" },
     { value: "PRODUCTION_FG", labelKey: "commission_type_production_fg" },
     { value: "PRODUCTION_SFG", labelKey: "commission_type_production_sfg" },
+    { value: "PRODUCTION_STAGE", labelKey: "commission_type_production_stage" },
   ];
 %>
 <!-- Backdated rate fallback: shown only when a save path provides a prefilled

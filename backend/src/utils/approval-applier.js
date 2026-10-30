@@ -1,3 +1,4 @@
+const { normalizeEligibility, eligibilityKey, validateEligibilityReferences } = require("../services/hr-payroll/commission-eligibility-service");
 // approval-applier.js
 // Purpose: Contains logic for applying approval actions to ERP entities (items, SKUs, accounts, parties, etc).
 // Used by the approval engine to process approved requests and update the database accordingly.
@@ -16,6 +17,7 @@ const {
   applyBulkSkuRateUpsert: applyCommissionBulkSkuRateUpsert,
   deriveValueTypeFromBasis,
   supersedeCommissionRule,
+  updateCommissionRule,
   normalizeRuleDate,
   todayYmd,
 } = require("../services/hr-payroll/commission-rules-service");
@@ -1417,6 +1419,7 @@ const inferHrTarget = ({ entityType, request, newValue, oldValue }) => {
   // Must be tested before the scopeKey checks below: queueApproval always injects
   // _scope_key, so hr_payroll.commissions would otherwise capture this and try to
   // write a single rule row out of a recalculation payload.
+  if (mode === "PAYROLL_FINALIZE") return "payroll_finalize";
   if (mode === RECALC_APPROVAL_MODE) return "commission_recalc";
   if (mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT")
     return "bulk_commission";
@@ -1498,6 +1501,11 @@ const applyEmployeeMasterApproval = async (trx, request) => {
     designation: payload.designation || null,
     payroll_type: payload.payroll_type || null,
     basic_salary: toMoneyOrNull(payload.basic_salary),
+    salary_effective_from: normalizeRuleDate(payload.salary_effective_from) || normalizeRuleDate(payload.employment_start_date) || todayYmd(),
+    week_ending_day: payload.week_ending_day == null || payload.week_ending_day === "" ? null : Number(payload.week_ending_day),
+    absence_deductions_enabled: toBoolean(payload.absence_deductions_enabled),
+    absence_day_divisor: payload.absence_day_divisor ? Number(payload.absence_day_divisor) : null,
+    salary_proration: payload.salary_proration || "NONE",
     status: normalizeStatus(payload.status, "active"),
     // Salary accrual reads these; omitting them here would silently drop the
     // dates on approve while the non-approval save path kept them.
@@ -1747,6 +1755,8 @@ const applyEmployeeCommissionApproval = async (trx, request, decidedBy = null) =
 
   const row = {
     employee_id: toNullableInt(payload.employee_id),
+    eligibility: normalizeEligibility(payload.eligibility, commissionType),
+    eligibility_key: eligibilityKey(payload.eligibility, commissionType),
     apply_on: applyOn,
     sku_id: toNullableInt(payload.sku_id),
     subgroup_id: toNullableInt(payload.subgroup_id),
@@ -1766,7 +1776,9 @@ const applyEmployeeCommissionApproval = async (trx, request, decidedBy = null) =
     effective_to: effectiveTo,
   };
 
+  await validateEligibilityReferences({ db: trx, eligibility: row.eligibility, commissionType, employeeIds: [row.employee_id] });
   const supersedeValues = {
+    eligibility: row.eligibility,
     commission_basis: row.commission_basis,
     value_type: row.value_type,
     rate_type: row.rate_type,
@@ -1774,10 +1786,11 @@ const applyEmployeeCommissionApproval = async (trx, request, decidedBy = null) =
     reverse_on_returns: row.reverse_on_returns,
     status: row.status,
   };
+  let previousRule = null;
   const applyAutomaticRecalc = () =>
     applyAutomaticBackdatedRecalc({
       trx,
-      ruleChanges: [row],
+      ruleChanges: previousRule ? [row,{...previousRule,effective_from:row.effective_from,effective_to:null}] : [row],
       userId: decidedBy,
       source: "commission-rule-approval",
       t: (key) => key,
@@ -1804,39 +1817,10 @@ const applyEmployeeCommissionApproval = async (trx, request, decidedBy = null) =
   const id = Number(entityId || 0);
   if (!Number.isInteger(id) || id <= 0) return false;
 
-  // Moving the start date means "a new rate begins here" — the old period is
-  // closed and a new row opens (supersede). Leaving it put means "this period's
-  // figure was wrong" — correct the row in place, with no history row.
-  const existing = await trx(EMPLOYEE_COMMISSION_TABLE)
-    .select(
-      trx.raw("to_char(effective_from, 'YYYY-MM-DD') as effective_from"),
-    )
-    .where({ id })
-    .first();
-  const startMoved =
-    existing && String(existing.effective_from || "") !== effectiveFrom;
-
-  if (startMoved) {
-    await supersedeCommissionRule({
-      trx,
-      employeeId: row.employee_id,
-      commissionType,
-      applyOn,
-      branchId,
-      skuId: row.sku_id,
-      subgroupId: row.subgroup_id,
-      groupId: row.group_id,
-      effectiveFrom,
-      effectiveTo,
-      values: supersedeValues,
-    });
-    const automaticRecalc = await applyAutomaticRecalc();
-    return { applied: true, entityId: String(id), automaticRecalc };
-  }
-
-  await trx(EMPLOYEE_COMMISSION_TABLE).where({ id }).update(row);
+  previousRule = await trx(EMPLOYEE_COMMISSION_TABLE).where({id}).first();
+  const newId = await updateCommissionRule({trx,id,values:row});
   const automaticRecalc = await applyAutomaticRecalc();
-  return { applied: true, entityId: String(id), automaticRecalc };
+  return { applied:true,entityId:String(newId),automaticRecalc };
 };
 
 const applyLabourRateApproval = async (trx, request) => {
@@ -1953,7 +1937,7 @@ const applyBulkCommissionApproval = async (trx, request, decidedBy = null) => {
       const rate = toMoneyOrNull(
         Object.prototype.hasOwnProperty.call(data, "new_rate")
           ? data.new_rate
-          : data.rate,
+          : data.rate ?? data.value ?? scopeRate,
       );
       const employeeId =
         toNullableInt(data.employee_id || data.employeeId) || null;
@@ -1965,13 +1949,14 @@ const applyBulkCommissionApproval = async (trx, request, decidedBy = null) => {
       return { employeeId, skuId, rate, rateType, preserveExplicit: data.preserve_explicit === true };
     })
     .filter(Boolean);
-  if (!rows.length) return false;
+  if (!rows.length && !payload.scope_selection) return false;
+  const eligibility = await validateEligibilityReferences({ db: trx, eligibility: payload.eligibility, commissionType, employeeIds });
 
   for (const employeeId of employeeIds) {
     const rowsForEmployee = rows
       .filter((row) => !row.employeeId || row.employeeId === employeeId)
       .map((row) => ({ skuId: row.skuId, rate: row.rate, preserveExplicit: row.preserveExplicit }));
-    if (!rowsForEmployee.length) continue;
+    if (!rowsForEmployee.length && !payload.scope_selection) continue;
     const rowRateType =
       rows.find(
         (row) =>
@@ -1995,6 +1980,7 @@ const applyBulkCommissionApproval = async (trx, request, decidedBy = null) => {
       reverseOnReturns,
       status,
       rows: rowsForEmployee,
+      eligibility,
     });
   }
   const automaticRecalc = await applyAutomaticBackdatedRecalc({
@@ -2210,6 +2196,13 @@ const applyHrApprovalChange = async (trx, request, decidedBy = null) => {
       : null;
   const target = inferHrTarget({ entityType, request, newValue, oldValue });
 
+  if (target === "payroll_finalize") {
+    const { finalizePayroll } = require("../services/hr-payroll/payroll-run-service");
+    const { resolveTranslation } = require("../middleware/core/locale");
+    const req = { user:{ id:decidedBy,isAdmin:true },locale:"en",branchScope:[],res:{locals:{t:key => resolveTranslation("en",key)}} };
+    const run = await finalizePayroll({ trx,req,input:newValue.input,expectedHash:newValue.preview_hash });
+    return { applied:true,entityId:String(run.employee_id),payrollRunId:run.id };
+  }
   if (target === "commission_recalc")
     return applyCommissionRecalcApproval(trx, request, decidedBy);
   if (target === "bulk_commission")

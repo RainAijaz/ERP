@@ -1,3 +1,5 @@
+const { eligibilityKey, matchesProduct, excludesProduct } = require("./commission-eligibility-service");
+const { itemTypesForCommission } = require("./commission-configuration-service");
 const { attachInheritance } = require("../sales/commission-rule-resolver");
 const { indexExistingRules, findEffectiveRuleIndexed, todayYmd } = require("./commission-rules-service");
 
@@ -13,12 +15,12 @@ const buildCommissionCoverageRows = async ({ db, rawRows, branchId = null, local
   const current = withInheritance.filter((row) =>
     isCurrent(row, onDate) && (!row.branch_id || Number(row.branch_id) === Number(branchId || 0))
   );
-  const activeKeys = [...new Set(current.map((row) => `${row.commission_type}|${row.commission_basis}`))];
+  const activeKeys = [...new Set(current.map((row) => `${row.commission_type}|${row.commission_basis}|${eligibilityKey(row.eligibility)}`))];
   const projected = [];
 
   for (const key of activeKeys) {
-    const [commissionType, basis] = key.split("|");
-    const rules = current.filter((row) => row.commission_type === commissionType && row.commission_basis === basis)
+    const [commissionType, basis, conditionKey] = key.split("|");
+    const rules = current.filter((row) => row.commission_type === commissionType && row.commission_basis === basis && eligibilityKey(row.eligibility) === conditionKey)
       .sort((a, b) => String(b.effective_from).localeCompare(String(a.effective_from)) || Number(b.id) - Number(a.id));
     const index = indexExistingRules(rules);
     const groups = [...new Set(rules.filter((r) => r.apply_on === "GROUP").map((r) => Number(r.group_id)).filter(Boolean))];
@@ -30,10 +32,10 @@ const buildCommissionCoverageRows = async ({ db, rawRows, branchId = null, local
       .join("erp.items as i", "i.id", "v.item_id")
       .leftJoin("erp.product_groups as pg", "pg.id", "i.group_id")
       .leftJoin("erp.product_subgroups as sg", "sg.id", "i.subgroup_id")
-      .select("s.id as sku_id", "s.sku_code", "i.group_id", "i.subgroup_id",
+      .select("s.id as sku_id", "s.sku_code", "i.group_id", "i.subgroup_id", "v.grade_id",
         locale === "ur" ? db.raw("COALESCE(pg.name_ur, pg.name) as group_name") : "pg.name as group_name",
         locale === "ur" ? db.raw("COALESCE(sg.name_ur, sg.name) as subgroup_name") : "sg.name as subgroup_name")
-      .where("i.item_type", commissionType === "PRODUCTION_SFG" ? "SFG" : "FG");
+      .whereIn("i.item_type", itemTypesForCommission(commissionType));
     if (!rules.some((r) => r.apply_on === "ALL")) {
       skuQuery = skuQuery.where((q) => {
         if (groups.length) q.orWhereIn("i.group_id", groups);
@@ -44,7 +46,12 @@ const buildCommissionCoverageRows = async ({ db, rawRows, branchId = null, local
     const skus = await skuQuery.orderBy("s.sku_code", "asc");
     for (const sku of skus) {
       const rule = findEffectiveRuleIndexed({ index, sku, branchId });
-      if (!rule) continue;
+      const context={skuId:sku.sku_id,groupId:sku.group_id,subgroupId:sku.subgroup_id,gradeId:sku.grade_id};
+      if(rules.some(candidate=>matchesProduct(candidate,context) && excludesProduct(candidate.eligibility || {},context))) continue;
+      if (!rule || (rule.eligibility?.excluded_grade_ids || []).includes(Number(sku.grade_id)) ||
+        (rule.eligibility?.excluded_sku_ids || []).includes(Number(sku.sku_id)) ||
+        (rule.eligibility?.excluded_group_ids || []).includes(Number(sku.group_id)) ||
+        (rule.eligibility?.excluded_subgroup_ids || []).includes(Number(sku.subgroup_id))) continue;
       projected.push({
         ...rule,
         id: rule.apply_on === "SKU" ? rule.id : null,

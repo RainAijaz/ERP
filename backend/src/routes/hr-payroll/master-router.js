@@ -10,6 +10,7 @@ const {
 const { parseCookies, setCookie } = require("../../middleware/utils/cookies");
 const {
   friendlyErrorMessage,
+  publicErrorMessage,
 } = require("../../middleware/errors/friendly-error");
 const { queueAuditLog } = require("../../utils/audit-log");
 const { generateUniqueCode } = require("../../utils/entity-code");
@@ -209,6 +210,7 @@ const logHrValidationDebug = (pageConfig, req, event, payload = {}) => {
 const hydratePage = async (pageConfig, locale, req = null) => {
   const fields = await Promise.all(
     pageConfig.fields.map(async (field) => {
+      if (field.remoteOptionsKind) return { ...field, options: [] };
       if (typeof field.optionsResolver === "function") {
         const resolved = await field.optionsResolver({
           knex,
@@ -955,7 +957,7 @@ const createHrMasterRouter = (pageConfig) => {
 
   router.post(
     "/",
-    requirePermission("SCREEN", pageConfig.scopeKey, "create"),
+    requirePermission("SCREEN", pageConfig.scopeKey, pageConfig.approvalRequestsEnabled ? "view" : "create"),
     async (req, res, next) => {
       const values = buildValues(pageConfig, req.body);
       const basePath = req.baseUrl;
@@ -1269,7 +1271,7 @@ const createHrMasterRouter = (pageConfig) => {
           req,
           res,
           sanitizedValues,
-          err?.message || res.locals.t("error_unable_save"),
+          publicErrorMessage(err,res.locals.t),
           "create",
           basePath,
           flashCookie,
@@ -1280,7 +1282,7 @@ const createHrMasterRouter = (pageConfig) => {
 
   router.post(
     "/:id",
-    requirePermission("SCREEN", pageConfig.scopeKey, "edit"),
+    requirePermission("SCREEN", pageConfig.scopeKey, pageConfig.approvalRequestsEnabled ? "view" : "edit"),
     async (req, res, next) => {
       const id = Number(req.params.id);
       if (!id) {
@@ -1555,7 +1557,8 @@ const createHrMasterRouter = (pageConfig) => {
           valuesWithoutBranch,
         );
         await knex.transaction(async (trx) => {
-          await trx(pageConfig.table).where({ id }).update(rest);
+          if (pageConfig.persistUpdate) await pageConfig.persistUpdate({ trx, values: rest, existing, id, req, res });
+          else await trx(pageConfig.table).where({ id }).update(rest);
           if (pageConfig.branchScoped) {
             await trx(pageConfig.branchMap.table)
               .where({ [pageConfig.branchMap.key]: id })
@@ -1636,7 +1639,7 @@ const createHrMasterRouter = (pageConfig) => {
           req,
           res,
           sanitizedValues,
-          err?.message || res.locals.t("error_unable_save"),
+          publicErrorMessage(err,res.locals.t),
           "edit",
           basePath,
           flashCookie,
@@ -1647,7 +1650,7 @@ const createHrMasterRouter = (pageConfig) => {
 
   router.post(
     "/:id/toggle",
-    requirePermission("SCREEN", pageConfig.scopeKey, "delete"),
+    requirePermission("SCREEN", pageConfig.scopeKey, pageConfig.approvalRequestsEnabled ? "view" : "delete"),
     async (req, res, next) => {
       const id = Number(req.params.id);
       if (!id) {
@@ -1719,7 +1722,7 @@ const createHrMasterRouter = (pageConfig) => {
 
   router.post(
     "/:id/delete",
-    requirePermission("SCREEN", pageConfig.scopeKey, "hard_delete"),
+    requirePermission("SCREEN", pageConfig.scopeKey, pageConfig.approvalRequestsEnabled ? "view" : "hard_delete"),
     async (req, res, next) => {
       const id = Number(req.params.id);
       if (!id) {

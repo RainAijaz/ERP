@@ -1,4 +1,5 @@
 "use strict";
+const { loadSalaryAccruals } = require("./salary-accrual-service");
 
 const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
@@ -101,6 +102,7 @@ const COMMISSION_TYPE_DESCRIPTIONS = {
   PARTY: "Sales Commission (Party)",
   PRODUCTION_FG: "Production Commission (Finished Goods)",
   PRODUCTION_SFG: "Production Commission (Semi-Finished)",
+  PRODUCTION_STAGE: "Production Commission (Department/Stage)",
 };
 
 const toPositiveId = (value) => {
@@ -792,144 +794,13 @@ const buildDailyAccrualRowsInRange = ({
   return rows;
 };
 
-const loadEmployeeAccrualProfiles = async ({ entityIds = [] }) => {
-  const normalizedIds = [
-    ...new Set(
-      (entityIds || [])
-        .map((id) => Number(id))
-        .filter((id) => Number.isInteger(id) && id > 0),
-    ),
-  ];
-  if (!normalizedIds.length) return new Map();
-  // Deliberately NOT filtered on status='active'. That filter was applied at
-  // load time, so flipping a leaver to inactive erased their entire historical
-  // accrual retroactively — their past balances changed. The employment window
-  // is what ends accrual now; status only governs whether they can be picked in
-  // new transactions.
-  const employeeRows = await knex("erp.employees as e")
-    .select(
-      "e.id",
-      "e.basic_salary",
-      "e.created_at",
-      "e.payroll_type",
-      "e.employment_start_date",
-      "e.employment_end_date",
-    )
-    .whereIn("e.id", normalizedIds)
-    .whereIn("e.payroll_type", ["MONTHLY", "DAILY"])
-    .whereRaw(
-      "(lower(trim(coalesce(e.status, ''))) = 'active' OR e.employment_end_date IS NOT NULL)",
-    );
-
-  const allowanceRows = await knex("erp.employee_allowance_rules as ar")
-    .select("ar.employee_id")
-    .select(knex.raw("upper(coalesce(ar.frequency, '')) as frequency"))
-    .sum({
-      fixed_amount: knex.raw(
-        "CASE WHEN ar.amount_type = 'FIXED' THEN COALESCE(ar.amount, 0) ELSE 0 END",
-      ),
-    })
-    .sum({
-      percent_amount: knex.raw(
-        "CASE WHEN ar.amount_type = 'PERCENT_BASIC' THEN COALESCE(ar.amount, 0) ELSE 0 END",
-      ),
-    })
-    .whereIn("ar.employee_id", normalizedIds)
-    .whereRaw("upper(coalesce(ar.frequency, '')) IN ('MONTHLY', 'DAILY')")
-    .whereRaw("lower(trim(coalesce(ar.status, ''))) = 'active'")
-    .groupBy("ar.employee_id")
-    .groupByRaw("upper(coalesce(ar.frequency, ''))");
-
-  const allowanceByEmployee = new Map();
-  (allowanceRows || []).forEach((row) => {
-    const employeeId = Number(row.employee_id || 0);
-    if (!employeeId) return;
-    const frequency = String(row.frequency || "")
-      .trim()
-      .toUpperCase();
-    if (frequency !== "MONTHLY" && frequency !== "DAILY") return;
-
-    const current = allowanceByEmployee.get(employeeId) || {
-      MONTHLY: { fixedAmount: 0, percentAmount: 0 },
-      DAILY: { fixedAmount: 0, percentAmount: 0 },
-    };
-
-    current[frequency] = {
-      fixedAmount: Number(row.fixed_amount || 0),
-      percentAmount: Number(row.percent_amount || 0),
-    };
-
-    allowanceByEmployee.set(employeeId, current);
-  });
-
-  const result = new Map();
-  (employeeRows || []).forEach((row) => {
-    const employeeId = Number(row.id || 0);
-    if (!employeeId) return;
-
-    const payrollType = String(row.payroll_type || "")
-      .trim()
-      .toUpperCase();
-    const basicSalary = Number(row.basic_salary || 0);
-    const allowance = allowanceByEmployee.get(employeeId) || {
-      MONTHLY: { fixedAmount: 0, percentAmount: 0 },
-      DAILY: { fixedAmount: 0, percentAmount: 0 },
-    };
-
-    const monthlyAllowance = allowance.MONTHLY || {
-      fixedAmount: 0,
-      percentAmount: 0,
-    };
-    const dailyAllowance = allowance.DAILY || {
-      fixedAmount: 0,
-      percentAmount: 0,
-    };
-
-    const monthlyAllowanceOnly = Number(
-      (
-        Number(monthlyAllowance.fixedAmount || 0) +
-        (basicSalary * Number(monthlyAllowance.percentAmount || 0)) / 100
-      ).toFixed(2),
-    );
-    const dailyAllowanceOnly = Number(
-      (
-        Number(dailyAllowance.fixedAmount || 0) +
-        (basicSalary * Number(dailyAllowance.percentAmount || 0)) / 100
-      ).toFixed(2),
-    );
-
-    const monthlyAmount = Number(
-      (basicSalary + monthlyAllowanceOnly).toFixed(2),
-    );
-    const dailyAmount = Number((basicSalary + dailyAllowanceOnly).toFixed(2));
-
-    result.set(employeeId, {
-      payrollType,
-      monthlyAmount:
-        Number.isFinite(monthlyAmount) && monthlyAmount > 0 ? monthlyAmount : 0,
-      dailyAmount:
-        Number.isFinite(dailyAmount) && dailyAmount > 0 ? dailyAmount : 0,
-      monthlySalaryOnly: basicSalary > 0 ? basicSalary : 0,
-      dailySalaryOnly: basicSalary > 0 ? basicSalary : 0,
-      monthlyAllowanceOnly:
-        Number.isFinite(monthlyAllowanceOnly) && monthlyAllowanceOnly > 0
-          ? monthlyAllowanceOnly
-          : 0,
-      dailyAllowanceOnly:
-        Number.isFinite(dailyAllowanceOnly) && dailyAllowanceOnly > 0
-          ? dailyAllowanceOnly
-          : 0,
-      // Falls back to created_at so rows predating the employment-window
-      // migration keep accruing exactly as they did before.
-      employmentStartYmd:
-        toLocalDateOnly(row.employment_start_date || row.created_at || new Date()) ||
-        toLocalDateOnly(new Date()),
-      employmentEndYmd: row.employment_end_date
-        ? toLocalDateOnly(row.employment_end_date)
-        : null,
-    });
-  });
-  return result;
+const loadEmployeeAccrualProfiles = async ({ entityIds=[] }) => {
+  if (!entityIds.length) return new Map();
+  const rows=await knex("erp.employees").whereIn("id",entityIds).select("id","payroll_type","employment_start_date","employment_end_date","created_at");
+  return new Map(rows.map(row=>[Number(row.id),{
+    payrollType:row.payroll_type,monthlyAmount:0,dailyAmount:0,monthlySalaryOnly:0,dailySalaryOnly:0,monthlyAllowanceOnly:0,dailyAllowanceOnly:0,
+    employmentStartYmd:toLocalDateOnly(row.employment_start_date || row.created_at),employmentEndYmd:toLocalDateOnly(row.employment_end_date)||null
+  }]));
 };
 
 const parseYmdStrict = (value) => {
@@ -1573,6 +1444,21 @@ const getLedgerRows = async ({
       });
     }
   }
+  if (kind === "employee" && Number(filters.entityId || 0) > 0) {
+    const salaryMap = await loadSalaryAccruals({ db: knex, employeeIds: [Number(filters.entityId)], from: "1900-01-01", to: filters.to });
+    const salaryRows = salaryMap.get(Number(filters.entityId)) || [];
+    openingBalance = toAmount(openingBalance + salaryRows.filter(r => r.entry_date < filters.from).reduce((sum,r) => sum+r.credit,0),2);
+    syntheticEmployeeRows.push(...salaryRows.filter(r => r.entry_date >= filters.from).map((row,index) => ({ ...row, id: -900000000-index,
+      description: resolveTranslation(locale,row.allowance_credit ? "allowances" : "salary_accrual_history") })));
+    const finalized = await knex("erp.employee_payroll_runs").where("employee_id",Number(filters.entityId)).where("period_to","<=",filters.to);
+    for (const run of finalized) {
+      const debit = Number(run.snapshot?.absence_deduction || 0);
+      const entryDate = toLocalDateOnly(run.period_to);
+      if (entryDate < filters.from) openingBalance = toAmount(openingBalance-debit,2);
+      else if (debit) syntheticEmployeeRows.push({ id:-910000000-Number(run.id), entry_date:entryDate,credit:0,debit,qty:0,
+        voucher_type:"PAYROLL_DEDUCTION",voucher_no:null,voucher_id:null,description:resolveTranslation(locale,"salary_absence_deduction"),salary_deduction:true });
+    }
+  }
 
   const detailEntries = rawRows
     .map((row) => ({
@@ -1808,7 +1694,7 @@ const getLedgerRows = async ({
         const voucherLine = resolveCommissionLedgerLine({ voucherId, line });
         const sourceLine = voucherLine || line;
         const skuId = Number(line?.sku_id || sourceLine?.sku_id || 0);
-        const totalPairs = normalizePairsFromCommissionLine(sourceLine);
+        const totalPairs = normalizePairsFromCommissionLine(line.total_pairs != null ? line : sourceLine);
         const quantityKey = `ledger:${voucherId || "no-voucher"}:${Number(
           line?.line_no || sourceLine?.line_no || 0,
         )}:${skuId || "unknown"}`;
@@ -1957,8 +1843,8 @@ const getLedgerRows = async ({
           : accrualMeta.payrollType === "DAILY"
             ? Number(accrualMeta.dailyAllowanceOnly || 0)
             : 0;
-      salaryAmount = toAmount(perCycleSalary * periodCount, 2);
-      allowanceAmount = toAmount(perCycleAllowance * periodCount, 2);
+      salaryAmount = toAmount(syntheticEmployeeRows.reduce((sum,row) => sum+Number(row.salary_credit || 0),0),2);
+      allowanceAmount = toAmount(syntheticEmployeeRows.filter(row => !row.salary_credit && !row.salary_deduction).reduce((sum,row) => sum+Number(row.credit || 0),0),2);
     }
 
     const breakdown = await buildCommissionHierarchyRows({
@@ -1985,6 +1871,8 @@ const getLedgerRows = async ({
         credit: staffCreditPurchaseCredit,
       });
     }
+    const absenceTotal = syntheticEmployeeRows.reduce((sum,row) => sum+(row.salary_deduction ? Number(row.debit || 0) : 0),0);
+    if (absenceTotal) breakdown.push({labelKey:"salary_absence_deduction",showDozen:false,debit:absenceTotal,credit:0});
     if (salaryAmount >= 0.005) {
       breakdown.push({
         labelKey: "basic_salary",
@@ -2252,6 +2140,20 @@ const getBalanceRows = async ({ req, filters, kind }) => {
         toAmount(Number(perCycleAllowance || 0) * Number(count || 0), 2),
       );
     });
+  }
+  if (kind === "employee" && rows.length) {
+    const ids = rows.map(row => Number(row.id));
+    const salaryMap = await loadSalaryAccruals({ db:knex, employeeIds:ids, from:"1900-01-01", to:filters.asOn });
+    const deductions = await knex("erp.employee_payroll_runs").whereIn("employee_id",ids).where("period_to","<=",filters.asOn)
+      .select("employee_id").sum({ total:knex.raw("COALESCE((snapshot->>'absence_deduction')::numeric,0)") }).groupBy("employee_id");
+    const deductionMap = new Map(deductions.map(row => [Number(row.employee_id),Number(row.total)]));
+    for (const id of ids) {
+      const salary = (salaryMap.get(id) || []).reduce((sum,row) => sum+Number(row.salary_credit || 0),0);
+      const allowance = (salaryMap.get(id) || []).reduce((sum,row) => sum+Number(row.allowance_credit || 0),0);
+      salaryOnlyAmountByEmployee.set(id,salary);
+      allowanceOnlyAmountByEmployee.set(id,allowance);
+      salaryAccrualAmountByEmployee.set(id,toAmount(Number(salaryAccrualAmountByEmployee.get(id) || 0)+salary+allowance-Number(deductionMap.get(id) || 0),2));
+    }
   }
 
   const isDetailView = kind === "employee" && filters.viewMode === "detail";

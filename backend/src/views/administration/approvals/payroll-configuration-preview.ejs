@@ -1,0 +1,20 @@
+<% const summaryValues = (typeof modalValues === 'object' && modalValues) || {}; %>
+<input type="hidden" data-field="configuration_preview" value="1" />
+<div class="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+  <table class="min-w-full text-sm"><tbody>
+    <% (summaryValues.summary || []).forEach(row => { %>
+      <tr class="border-b border-slate-100"><th class="px-4 py-3 text-start text-slate-600"><%= row.label %></th><td class="px-4 py-3 text-slate-700"><%= row.value %></td></tr>
+    <% }) %>
+  </tbody></table>
+</div>
+<% if (summaryValues.exceptionRows?.length) { %>
+<div class="mt-4 max-h-96 overflow-auto rounded-xl border border-slate-200 bg-white">
+  <table class="min-w-full text-sm"><thead class="sticky top-0 bg-slate-50"><tr>
+    <th class="px-4 py-3 text-start"><%= t('skus') %></th><th class="px-4 py-3 text-start"><%= t('rate_value') %></th><th class="px-4 py-3 text-start"><%= t('rate_type') %></th>
+  </tr></thead><tbody>
+  <% summaryValues.exceptionRows.forEach(row => { %>
+    <tr class="border-b border-slate-100"><td class="px-4 py-3"><%= row.article %></td><td class="px-4 py-3"><%= row.rate %></td><td class="px-4 py-3"><%= row.unit %></td></tr>
+  <% }) %>
+  </tbody></table>
+</div>
+<% } %>

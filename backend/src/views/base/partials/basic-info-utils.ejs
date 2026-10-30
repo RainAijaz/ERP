@@ -349,7 +349,7 @@
 
     const autoCodeEnabled =
       "<%= page.autoCodeFromName ? 'true' : 'false' %>" === "true";
-    const pageTitle = "<%= t(page.titleKey) %>";
+    const pageTitle = "<%= t(page.modalTitleKey || page.titleKey) %>";
     const basePath = "<%= basePath %>";
     const i18nSelect = '<%= t("select") %>';
     const i18nSelected = '<%= t("selected") %>';
@@ -435,6 +435,12 @@
           }
         } else if (input.tagName === "SELECT" && input.multiple) {
           const selected = toSelectedList(payload[name]);
+          if (input.dataset.searchableUrl) {
+            selected.forEach(value => {
+              if (!Array.from(input.options).some(o => o.value === value)) input.add(new Option(value,value));
+            });
+            input.dispatchEvent(new CustomEvent('searchable:resolve',{ detail:{ids:selected.filter(Boolean)} }));
+          }
           Array.from(input.options).forEach((option) => {
             option.selected = selected.includes(option.value);
           });
@@ -452,7 +458,7 @@
               ? input.dataset.defaultValue ||
                 (name === "status" ? "active" : "")
               : "";
-          input.value = hasPayloadValue ? payload[name] || "" : defaultValue;
+          input.value = hasPayloadValue ? (payload[name] && typeof payload[name] === "object" ? JSON.stringify(payload[name]) : payload[name] ?? "") : defaultValue;
           if (input.tagName === "SELECT") {
             input.dispatchEvent(new Event("change", { bubbles: true }));
           }

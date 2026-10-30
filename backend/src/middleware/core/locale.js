@@ -5685,3 +5685,5 @@ Object.assign(translations.ur, {
   error_voucher_form_expired: "یہ واؤچر فارم پرانا ہو گیا ہے۔ محفوظ کرنے سے پہلے صفحہ تازہ کریں۔",
   error_voucher_submission_conflict: "یہ فارم کسی دوسرے واؤچر کے لیے استعمال ہو چکا ہے۔ نیا واؤچر فارم کھولیں۔",
 });
+Object.assign(translations.en, require("../../utils/salary-commission-translations").en);
+Object.assign(translations.ur, require("../../utils/salary-commission-translations").ur);

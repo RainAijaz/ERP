@@ -1,6 +1,10 @@
 <%
   const safeFieldErrors = typeof fieldErrors !== "undefined" && fieldErrors ? fieldErrors : {};
 %>
+<% if (page.scopeKey === "hr_payroll.commissions") { %>
+  <div class="grid gap-4 md:grid-cols-2" data-commission-fields>
+  <%- include("commission-conditions", { t, basePath }) %>
+<% } %>
 <% page.fields.forEach(function(field) { %>
   <% const fieldError = safeFieldErrors[field.name] ? safeFieldErrors[field.name] : null; %>
   <% const showWhen = field.showWhen || null; %>
@@ -10,7 +14,9 @@
   <% if (showWhenNot && showWhenNot.field) { showAttrs.push(`data-show-when-not-field="${showWhenNot.field}"`); showAttrs.push(`data-show-when-not-values="${(showWhenNot.values || []).join(",")}"`); } %>
   <% const wrapperAttrs = showAttrs.join(" "); %>
   <% const hideOnCreateAttr = field.name === "status" ? "data-hide-on-create" : ""; %>
-  <% if (field.type === "checkbox") { %>
+  <% if (field.type === "hidden") { %>
+    <input type="hidden" name="<%= field.name %>" data-field="<%= field.name %>" />
+  <% } else if (field.type === "checkbox") { %>
     <label data-field-wrapper="<%= field.name %>" class="flex flex-1 items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600" <%- wrapperAttrs %> <%- hideOnCreateAttr %>>
       <input class="mt-0.5 h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent/40" type="checkbox" name="<%= field.name %>" data-field="<%= field.name %>" />
       <span class="flex flex-col gap-1">
@@ -33,6 +39,7 @@
         class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
         name="<%= field.name %>"
         data-field="<%= field.name %>"
+        <% if (field.remoteOptionsKind) { %>data-searchable-url="<%= basePath %>/options?kind=<%= field.remoteOptionsKind %>" data-commission-remote="<%= field.remoteOptionsKind %>" data-searchable-max-options="100"<% } %>
         <%= shouldUseSearchableSelect ? 'data-searchable-select="true" data-searchable-variant="unified"' : "" %>
         <%= isMultipleSelect ? 'data-searchable-multi-search="inline"' : "" %>
         <%= isMultipleSelect && hasAllOption ? 'data-all-multi-select="true"' : "" %>
@@ -46,6 +53,7 @@
           <option value="<%= option.value %>"><%= t(option.label) || option.label %></option>
         <% }) %>
       </select>
+      <% if (field.hint) { %><span class="mt-1 block text-xs font-normal text-slate-500"><%= t(field.hint) %></span><% } %>
       <% if (fieldError) { %>
         <span class="mt-1 block text-xs font-medium text-rose-600"><%= fieldError %></span>
       <% } %>
@@ -129,6 +137,7 @@
     </label>
   <% } %>
 <% }) %>
+<% if (page.scopeKey === "hr_payroll.commissions") { %></div><% } %>
 
 <% if (page.scopeKey === "hr_payroll.commissions") { %>
   <div class="hidden rounded-xl border border-slate-200 bg-slate-50/60 p-4" data-commission-bulk-panel>
@@ -145,6 +154,11 @@
         <span class="mt-1 block text-xs text-slate-500"><%= t("commission_replace_sku_rates_hint") %></span>
       </span>
     </label>
+    <div class="mt-3 flex items-center justify-end gap-2">
+      <button type="button" data-commission-page-prev class="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs"><%= t("previous") %></button>
+      <span class="text-xs text-slate-500" data-commission-page-label></span>
+      <button type="button" data-commission-page-next class="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs"><%= t("next") %></button>
+    </div>
     <div class="mt-3 overflow-auto rounded-lg border border-slate-200 bg-white max-h-72">
       <table class="min-w-full text-xs">
         <thead class="bg-slate-100 text-[10px] font-semibold uppercase tracking-widest text-slate-500">

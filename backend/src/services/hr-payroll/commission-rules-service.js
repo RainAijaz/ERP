@@ -1,5 +1,7 @@
 const knex = require("../../db/knex");
 const { attachInheritance } = require("../sales/commission-rule-resolver");
+const { itemTypesForCommission } = require("./commission-configuration-service");
+const { normalizeEligibility, eligibilityKey } = require('./commission-eligibility-service');
 
 const APPLY_ON = {
   SKU: "SKU",
@@ -24,6 +26,7 @@ const COMMISSION_TYPES = new Set([
   "PARTY",
   "PRODUCTION_FG",
   "PRODUCTION_SFG",
+  "PRODUCTION_STAGE",
 ]);
 
 // Which item type the bulk rate grid should list. Everything is sold as finished
@@ -92,7 +95,7 @@ const normalizeRuleDate = (value) => {
   const raw = String(value).trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
     const parsed = new Date(`${raw}T00:00:00Z`);
-    if (Number.isNaN(parsed.getTime())) return undefined;
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0,10) !== raw) return undefined;
     return raw;
   }
   const parsed = new Date(raw);
@@ -137,9 +140,12 @@ const supersedeCommissionRule = async ({
   effectiveTo = null,
   values = {},
 }) => {
+  const eligibility = normalizeEligibility(values.eligibility, commissionType);
+  const conditionKey = eligibilityKey(eligibility);
   const from = normalizeRuleDate(effectiveFrom) || todayYmd();
   const to = normalizeRuleDate(effectiveTo) || null;
   const branch = toBranchKey(branchId);
+  await trx.raw('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', [JSON.stringify(['commission-rule',employeeId,commissionType,applyOn,branch,skuId,subgroupId,groupId,conditionKey])]);
 
   const scopeQuery = () =>
     trx("erp.employee_commission_rules")
@@ -147,6 +153,7 @@ const supersedeCommissionRule = async ({
         employee_id: employeeId,
         commission_type: commissionType,
         apply_on: applyOn,
+        eligibility_key: conditionKey,
       })
       .whereRaw("COALESCE(branch_id, 0) = ?", [branch || 0])
       .whereRaw("COALESCE(sku_id, 0) = ?", [Number(skuId) || 0])
@@ -168,6 +175,8 @@ const supersedeCommissionRule = async ({
   const [inserted] = await trx("erp.employee_commission_rules")
     .insert({
       ...values,
+      eligibility,
+      eligibility_key: conditionKey,
       employee_id: employeeId,
       commission_type: commissionType,
       apply_on: applyOn,
@@ -190,6 +199,25 @@ const toMoney = (value) => {
   return Number(numberValue.toFixed(2));
 };
 
+const updateCommissionRule = async ({ trx,id,values }) => {
+  const existing = await trx('erp.employee_commission_rules').where({id}).forUpdate().first();
+  if (!existing) throw new Error('error_not_found');
+  const from = normalizeRuleDate(values.effective_from);
+  const oldFrom = normalizeRuleDate(existing.effective_from);
+  if (from <= oldFrom) {
+    await trx('erp.employee_commission_rules').where({id}).update(values);
+    return Number(id);
+  }
+  // Changing worker/stage/product conditions opens a new version of the edited
+  // rule and closes the original identity as well as any matching target rule.
+  if (!existing.effective_to || normalizeRuleDate(existing.effective_to) >= from) {
+    await trx('erp.employee_commission_rules').where({id}).update({effective_to:addDaysYmd(from,-1)});
+  }
+  return supersedeCommissionRule({trx,employeeId:values.employee_id,commissionType:values.commission_type,
+    applyOn:values.apply_on,branchId:values.branch_id,skuId:values.sku_id,subgroupId:values.subgroup_id,groupId:values.group_id,
+    effectiveFrom:from,effectiveTo:values.effective_to,values});
+};
+
 const hasTwoDecimalsOrLess = (value) => {
   if (value === null || value === undefined || value === "") return false;
   const raw = String(value);
@@ -210,6 +238,7 @@ const normalizeBulkInput = ({ payload, t }) => {
   }
 
   const commissionTypeRaw = String(payload.commission_type || "SALESMAN_SALE").trim().toUpperCase();
+  if (!COMMISSION_TYPES.has(commissionTypeRaw)) throw new Error(t('error_invalid_commission_type'));
   const commissionType = COMMISSION_TYPES.has(commissionTypeRaw) ? commissionTypeRaw : "SALESMAN_SALE";
 
   const commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT;
@@ -283,7 +312,7 @@ const normalizeBulkInput = ({ payload, t }) => {
     };
   });
 
-  if (!rows.length) {
+  if (!rows.length && payload.scope_selection !== true) {
     throw new Error(t("error_no_target_skus_found"));
   }
   if (new Set(rows.map((row) => row.skuId)).size !== rows.length) {
@@ -315,6 +344,7 @@ const normalizeBulkInput = ({ payload, t }) => {
     valueType,
     scopeRate,
     replaceExistingSkuRates: payload.replace_existing_sku_rates === true,
+    eligibility: normalizeEligibility(payload.eligibility, commissionType),
     reverseOnReturns,
     status: statusRaw,
     rows,
@@ -344,6 +374,7 @@ const upsertBulkScopeRules = async ({
   scopeRate,
   reverseOnReturns,
   status,
+  eligibility = {},
 }) => {
   if (!ALLOWED_SCOPE_FOR_BULK.has(applyOn)) return { created: 0, updated: 0 };
   if (scopeRate === null || scopeRate === undefined)
@@ -372,6 +403,7 @@ const upsertBulkScopeRules = async ({
       effectiveFrom,
       effectiveTo,
       values: {
+        eligibility,
         commission_basis: commissionBasis,
         value: scopeRate,
         rate_type: rateType,
@@ -393,6 +425,7 @@ const fetchTargetSkus = async ({
   subgroupIds = [],
   groupIds = [],
   commissionType = "SALESMAN_SALE",
+  page = null,
 }) => {
   let query = db("erp.skus as s")
     .join("erp.variants as v", "s.variant_id", "v.id")
@@ -402,9 +435,10 @@ const fetchTargetSkus = async ({
       "s.sku_code",
       "i.name as item_name",
       "i.subgroup_id",
-      "i.group_id",
+      "i.group_id", "v.grade_id",
+      ...(page ? [db.raw("COUNT(*) OVER()::int as total_count")] : []),
     )
-    .where("i.item_type", resolveTargetItemType(commissionType))
+    .whereIn("i.item_type", itemTypesForCommission(commissionType))
     .orderBy("s.sku_code", "asc");
 
   const normalizedSubgroupIds = [
@@ -429,6 +463,7 @@ const fetchTargetSkus = async ({
     query = query.whereIn("i.group_id", normalizedGroupIds);
   }
 
+  if (page) query.limit(page.limit).offset(page.offset);
   return query;
 };
 
@@ -469,7 +504,8 @@ const fetchExistingRules = async ({
       "reverse_on_returns",
       "branch_id",
       "source_rule_id",
-      "commission_basis",
+      "ecr.commission_type",
+      db.raw("COALESCE(to_jsonb(ecr)->'eligibility', '{}'::jsonb) as eligibility"),
       db.raw("(to_jsonb(ecr)->>'inherited_sku_copy')::boolean as inherited_sku_copy"),
     )
     .where({
@@ -558,6 +594,8 @@ const buildBulkPreviewRows = async ({
   branchId = null,
   effectiveFrom = null,
   baseRate,
+  eligibility = {},
+  page = null,
 }) => {
   const normalizedSubgroupIds = Array.isArray(subgroupIds)
     ? subgroupIds
@@ -575,7 +613,7 @@ const buildBulkPreviewRows = async ({
       applyOn,
       subgroupIds: normalizedSubgroupIds,
       groupIds: normalizedGroupIds,
-      commissionType,
+      commissionType, page,
     }),
     fetchExistingRules({
       db,
@@ -588,7 +626,8 @@ const buildBulkPreviewRows = async ({
   ]);
   if (!targetSkus.length) return [];
 
-  const index = indexExistingRules(existingRules);
+  const conditionKey = eligibilityKey(eligibility, commissionType);
+  const index = indexExistingRules(existingRules.filter((r) => eligibilityKey(r.eligibility) === conditionKey));
   const defaultRate = toMoney(baseRate);
 
   return targetSkus.map((sku) => {
@@ -603,6 +642,10 @@ const buildBulkPreviewRows = async ({
       previous_rate_type: previous.previousRateType,
       previous_source: previous.previousSource,
       previous_rule_id: previous.previousRuleId,
+    total_count: sku.total_count,
+      grade_id: sku.grade_id,
+      excluded: Boolean(eligibility.excluded_grade_ids?.includes(Number(sku.grade_id)) || eligibility.excluded_group_ids?.includes(Number(sku.group_id)) ||
+        eligibility.excluded_subgroup_ids?.includes(Number(sku.subgroup_id)) || eligibility.excluded_sku_ids?.includes(Number(sku.sku_id))),
       new_rate: defaultRate,
     };
   });
@@ -626,6 +669,7 @@ const applyBulkSkuRateUpsert = async ({
   reverseOnReturns,
   status,
   rows,
+  eligibility = {},
 }) => {
   const scopeResult = await upsertBulkScopeRules({
     trx,
@@ -642,7 +686,7 @@ const applyBulkSkuRateUpsert = async ({
     valueType,
     scopeRate,
     reverseOnReturns,
-    status,
+    status, eligibility,
   });
 
   let created = 0;
@@ -650,7 +694,7 @@ const applyBulkSkuRateUpsert = async ({
   const targetSkuIds = [...new Set(rows.filter((row) => replaceExistingSkuRates || !row.preserveExplicit)
     .map((row) => Number(row.skuId)).filter(Boolean))];
   const skuScope = () => trx("erp.employee_commission_rules")
-    .where({ employee_id: employeeId, commission_type: commissionType, apply_on: APPLY_ON.SKU })
+    .where({ employee_id: employeeId, commission_type: commissionType, apply_on: APPLY_ON.SKU, eligibility_key: eligibilityKey(eligibility, commissionType) })
     .whereIn("sku_id", targetSkuIds)
     .whereRaw("COALESCE(branch_id, 0) = ?", [toBranchKey(branchId) || 0]);
   // Retire old SKU snapshots in two set-based writes; their earlier periods
@@ -662,10 +706,26 @@ const applyBulkSkuRateUpsert = async ({
       .update({ effective_to: addDaysYmd(effectiveFrom, -1) });
   }
 
+  const selectedSkus = trx("erp.skus as s").join("erp.variants as v", "v.id", "s.variant_id")
+    .join("erp.items as i", "i.id", "v.item_id").select("s.id").whereIn("i.item_type", itemTypesForCommission(commissionType));
+  if (applyOn === APPLY_ON.GROUP) selectedSkus.whereIn("i.group_id", groupIds);
+  else selectedSkus.whereIn("i.subgroup_id", subgroupIds);
+  const retire = () => {
+    const q = trx("erp.employee_commission_rules").where({ employee_id: employeeId, commission_type: commissionType,
+      apply_on: "SKU", eligibility_key: eligibilityKey(eligibility, commissionType) })
+      .whereRaw("COALESCE(branch_id,0)=?", [toBranchKey(branchId) || 0]).whereIn("sku_id", selectedSkus.clone());
+    if (!replaceExistingSkuRates) q.where("inherited_sku_copy", true);
+    return q;
+  };
+  await retire().where("effective_from", ">=", effectiveFrom).del();
+  await retire().where("effective_from", "<", effectiveFrom)
+    .andWhere(q => q.whereNull("effective_to").orWhere("effective_to", ">=", effectiveFrom))
+    .update({ effective_to: addDaysYmd(effectiveFrom, -1) });
+
   for (const row of rows) {
     if (row.preserveExplicit && !replaceExistingSkuRates) continue;
     // Only a row changed away from the scope rate is an explicit SKU exception.
-    if (Number(row.rate) === Number(scopeRate)) continue;
+    if (ALLOWED_SCOPE_FOR_BULK.has(applyOn) && Number(row.rate) === Number(scopeRate)) continue;
     await supersedeCommissionRule({
       trx,
       employeeId,
@@ -676,6 +736,7 @@ const applyBulkSkuRateUpsert = async ({
       effectiveFrom,
       effectiveTo,
       values: {
+        eligibility,
         commission_basis: commissionBasis,
         value: row.rate,
         rate_type: rateType,
@@ -705,6 +766,7 @@ module.exports = {
   resolvePreviousForSkuIndexed,
   applyBulkSkuRateUpsert,
   supersedeCommissionRule,
+  updateCommissionRule,
   normalizeRuleDate,
   todayYmd,
   hasTwoDecimalsOrLess,

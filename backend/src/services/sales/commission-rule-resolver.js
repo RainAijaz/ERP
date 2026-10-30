@@ -1,4 +1,5 @@
 const PRECEDENCE = ["SKU", "SUBGROUP", "GROUP", "ALL"];
+const { ruleEligible, excludedByApplicableRule } = require('../hr-payroll/commission-eligibility-service');
 
 // Older bulk saves copied a scope rate onto every SKU. A copy is inheritance,
 // unless its amount or settings were deliberately changed for that SKU.
@@ -29,9 +30,14 @@ const attachInheritance = async (db, rows) => {
 };
 
 const pickRuleByPrecedence = (rules, basis, context) => {
+  if (excludedByApplicableRule(rules, context)) return null;
+  const orderedRules = [...rules].sort((a, b) =>
+    Object.keys(b.eligibility || {}).length - Object.keys(a.eligibility || {}).length ||
+    String(b.effective_from || '').localeCompare(String(a.effective_from || '')) || Number(b.id) - Number(a.id));
   for (const branchScope of ["BRANCH", "ANY"]) {
     for (const scope of PRECEDENCE) {
-      const matched = rules.find((rule) => {
+      const matched = orderedRules.find((rule) => {
+        if (!ruleEligible(rule, context)) return false;
         if (String(rule.commission_basis) !== basis) return false;
         if (String(rule.apply_on) !== scope) return false;
         if (rule.inherited_sku_copy) return false;

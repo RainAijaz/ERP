@@ -1,0 +1,156 @@
+<label class="block text-sm font-semibold text-slate-600">
+  <span><%= t('commission_earned_on') %></span>
+  <select data-commission-source data-searchable-select="true" data-searchable-variant="unified" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+    <option value="SALE"><%= t('commission_source_sale') %></option>
+    <option value="PRODUCTION"><%= t('commission_source_production') %></option>
+    <option value="OTHER"><%= t('commission_source_other') %></option>
+  </select>
+</label>
+<label class="block text-sm font-semibold text-slate-600" data-commission-sales-quantity-wrapper>
+  <span><%= t('commission_sales_quantities') %></span>
+  <select data-commission-sales-quantity data-searchable-select="true" data-searchable-variant="unified" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+    <option value="PACKED_ONLY"><%= t('commission_packed_only') %></option>
+    <option value="ALL"><%= t('commission_packed_and_loose') %></option>
+  </select>
+</label>
+<% const conditions = [
+  ['branch_ids','commission_eligible_branches','branch',false],
+  ['excluded_grade_ids','commission_excluded_grades','grade',false],
+  ['source_labour_ids','commission_source_workers','worker',true],
+  ['department_ids','commission_production_departments','department',true],
+  ['stage_ids','commission_production_stages','stage',true],
+  ['excluded_group_ids','commission_excluded_groups','group',false],
+  ['excluded_subgroup_ids','commission_excluded_subgroups','subgroup',false],
+  ['excluded_sku_ids','commission_excluded_articles','sku',false]
+]; %>
+<% conditions.forEach(function(condition) { %>
+  <label class="block text-sm font-semibold text-slate-600" data-commission-condition-wrapper="<%= condition[0] %>" <%- condition[3] ? 'hidden data-production-condition' : '' %>>
+    <span><%= t(condition[1]) %></span>
+    <select multiple data-commission-condition="<%= condition[0] %>" data-commission-remote="<%= condition[2] %>"
+      data-searchable-url="<%= basePath %>/options?kind=<%= condition[2] %>" data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-searchable-max-options="100"
+      class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+    </select>
+    <span class="mt-1 block text-xs font-normal text-slate-500"><%= t(condition[0].startsWith('excluded_') ? 'commission_blank_no_exclusions' : 'commission_blank_all') %></span>
+  </label>
+<% }) %>
+<details class="rounded-xl border border-slate-200 bg-slate-50 p-4 md:col-span-2" data-commission-advanced>
+  <summary class="cursor-pointer text-sm font-semibold text-slate-600"><%= t('commission_advanced_exclusions') %></summary>
+  <div class="mt-3 grid gap-4 md:grid-cols-2" data-commission-advanced-fields></div>
+  <p class="mt-3 text-xs text-slate-500" data-commission-condition-help><%= t('commission_conditions_help') %></p>
+</details>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const form = document.querySelector('[data-modal-form]');
+  if (!form || !form.querySelector('[data-commission-source]')) return;
+  const source = form.querySelector('[data-commission-source]');
+  const type = form.querySelector('[data-field="commission_type"]');
+  const hidden = form.querySelector('[data-field="eligibility"]');
+  const branch = form.querySelector('[data-field="branch_id"]');
+  const salesQuantities = form.querySelector('[data-commission-sales-quantity]');
+  const originalTypes = Array.from(type.options).map(o => ({ value:o.value,label:o.textContent }));
+  const controls = Array.from(form.querySelectorAll('[data-commission-condition]'));
+  const grid = form.querySelector('[data-commission-fields]');
+  const advanced = form.querySelector('[data-commission-advanced]');
+  const ordered = [form.querySelector('[data-field-wrapper="employee_id"]'),source.closest('label'),
+    form.querySelector('[data-field-wrapper="commission_type"]'),salesQuantities.closest('label'),form.querySelector('[data-commission-condition-wrapper="branch_ids"]'),
+    ...['source_labour_ids','department_ids','stage_ids'].map(key=>form.querySelector(`[data-commission-condition-wrapper="${key}"]`)),
+    ...['apply_on','sku_id','subgroup_id','group_id','rate_type','value','effective_from','effective_to'].map(key=>form.querySelector(`[data-field-wrapper="${key}"]`)),
+    form.querySelector('[data-commission-condition-wrapper="excluded_grade_ids"]'),form.querySelector('[data-field-wrapper="reverse_on_returns"]'),form.querySelector('[data-field-wrapper="status"]')];
+  ordered.filter(Boolean).forEach(node=>grid.appendChild(node));
+  ['excluded_group_ids','excluded_subgroup_ids','excluded_sku_ids'].forEach(key=>advanced.querySelector('[data-commission-advanced-fields]').appendChild(form.querySelector(`[data-commission-condition-wrapper="${key}"]`)));
+  grid.appendChild(advanced);
+  const productionKeys = ['source_labour_ids','department_ids','stage_ids'];
+  const refresh = () => window.refreshSearchableSelects?.(form);
+  const selected = select => Array.from(select.selectedOptions).map(o => Number(o.value)).filter(Number.isSafeInteger).filter(n => n>0);
+  const sync = () => {
+    const data = {};
+    controls.forEach(select => {
+      const key = select.dataset.commissionCondition;
+      if (productionKeys.includes(key) && type.value !== 'PRODUCTION_STAGE') return;
+      const ids = selected(select);
+      if (ids.length) data[key] = ids;
+    });
+    if (source.value==='SALE') data.sales_quantity_scope=salesQuantities.value || 'PACKED_ONLY';
+    const next = JSON.stringify(data);
+    if (hidden.value !== next) {
+      hidden.value = next;
+      hidden.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+  };
+  const updateVisibility = () => {
+    const stage = type.value === 'PRODUCTION_STAGE';
+    salesQuantities.disabled=source.value!=='SALE';
+    salesQuantities.closest('label').hidden=source.value!=='SALE';
+    form.querySelectorAll('[data-production-condition]').forEach(wrapper => {
+      wrapper.hidden = !stage;
+      wrapper.querySelector('select').disabled = !stage;
+    });
+    const returns = form.querySelector('[data-field-wrapper="reverse_on_returns"]');
+    if (returns) returns.hidden = source.value === 'PRODUCTION';
+    const label = form.querySelector('[data-field-wrapper="commission_type"] > span');
+    if (label) label.textContent = source.value === 'PRODUCTION' ? <%- JSON.stringify(t('commission_earning_point')) %> : <%- JSON.stringify(t('commission_sales_scope')) %>;
+    form.querySelectorAll('[data-commission-remote]').forEach(select => {
+      const url = new URL(<%- JSON.stringify(basePath + '/options') %>,location.href);
+      url.searchParams.set('kind',select.dataset.commissionRemote);
+      url.searchParams.set('commission_type',type.value || 'SALESMAN_SALE');
+      const departments = controls.find(s => s.dataset.commissionCondition === 'department_ids');
+      if (departments && selected(departments).length) url.searchParams.set('department_ids',selected(departments).join(','));
+      if (select.dataset.searchableUrl !== url.toString()) {
+        select.dataset.searchableUrl = url.toString();
+        select.dispatchEvent(new Event('searchable:invalidate'));
+      }
+    });
+    if (branch?.closest('[data-field-wrapper]')) branch.closest('[data-field-wrapper]').hidden = true;
+    refresh();
+  };
+  const filterTypes = preserve => {
+    const old = type.value;
+    const choices = originalTypes.filter(o => o.value && (source.value === 'PRODUCTION' ? o.value.startsWith('PRODUCTION_') : source.value === 'SALE' ? ['SALESMAN_SALE','BRANCH_SALE'].includes(o.value) : ['TRANSFER','PARTY'].includes(o.value)));
+    type.replaceChildren(...choices.map(o => new Option(o.label,o.value)));
+    if (preserve && choices.some(o => o.value === old)) type.value = old;
+    if (!preserve) {
+      controls.filter(s => productionKeys.includes(s.dataset.commissionCondition)).forEach(s => s.replaceChildren());
+      // Product selections belong to the old source's catalogue.
+      ['sku_id','group_id','subgroup_id'].forEach(name => {
+        const select = form.querySelector(`[data-field="${name}"]`);
+        if (select) { select.replaceChildren(); select.dispatchEvent(new Event('searchable:invalidate')); }
+      });
+    }
+    updateVisibility(); sync();
+    type.dispatchEvent(new Event('change',{bubbles:true}));
+  };
+  source.addEventListener('change',() => filterTypes(false));
+  salesQuantities.addEventListener('change',sync);
+  document.addEventListener('click',event => {
+    if (event.target.closest('[data-modal-open], [data-edit], [data-commission-lazy-edit]')) {
+      type.replaceChildren(...originalTypes.map(o => new Option(o.label,o.value)));
+    }
+  },true);
+  type.addEventListener('change',() => { updateVisibility(); sync(); });
+  controls.forEach(select => select.addEventListener('change',() => { updateVisibility(); sync(); }));
+  document.addEventListener('modal:opened',() => {
+    let data = {};
+    try { data = JSON.parse(hidden.value || '{}'); } catch { hidden.value = '{}'; }
+    if (branch?.value && !data.branch_ids) data.branch_ids = [Number(branch.value)];
+    if (branch) branch.value = '';
+    source.value = type.value.startsWith('PRODUCTION_') ? 'PRODUCTION' : ['TRANSFER','PARTY'].includes(type.value) ? 'OTHER' : 'SALE';
+    salesQuantities.value=data.sales_quantity_scope || 'PACKED_ONLY';
+    controls.forEach(select => {
+      const ids = data[select.dataset.commissionCondition] || [];
+      select.replaceChildren(...ids.map(id => new Option(String(id),String(id),true,true)));
+      select.dispatchEvent(new Event('searchable:invalidate'));
+    });
+    filterTypes(true);
+    advanced.open=Boolean(data.excluded_group_ids?.length || data.excluded_subgroup_ids?.length || data.excluded_sku_ids?.length);
+    const content=document.getElementById('modal-content');
+    if (content) content.scrollTop=0;
+    form.scrollTop=0;
+    controls.forEach(select => {
+      const ids=selected(select);
+      if (ids.length) select.dispatchEvent(new CustomEvent('searchable:resolve',{ detail:{ids} }));
+    });
+  });
+  form.addEventListener('submit',sync,true);
+  updateVisibility();
+});
+</script>

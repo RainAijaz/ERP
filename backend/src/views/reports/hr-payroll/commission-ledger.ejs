@@ -15,6 +15,7 @@
     { value: "PARTY",          labelKey: "commission_type_party"          },
     { value: "PRODUCTION_FG",  labelKey: "commission_type_production_fg"  },
     { value: "PRODUCTION_SFG", labelKey: "commission_type_production_sfg" },
+    { value: "PRODUCTION_STAGE", labelKey: "commission_type_production_stage" },
   ];
 
   const typeColors = {
@@ -83,6 +84,7 @@
       </div>
 
       <div class="mt-3 flex justify-end">
+        <a href="<%= reportPath %>" class="mr-2 inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-4 text-xs font-semibold"><%= t('reset') %></a>
         <button type="submit"
           class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-900 px-4 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-sm transition hover:bg-slate-800">
           <%= t("load_report") || "Load Report" %>
@@ -126,6 +128,7 @@
               <td class="px-4 py-3 text-slate-700 whitespace-nowrap">
                 <span class="font-mono text-xs text-slate-500"><%= row.voucher_type_code %></span>
                 <span class="ml-1 font-semibold"><%= row.voucher_no %></span>
+                <span class="block text-xs text-slate-500"><%= row.branch_name %></span>
               </td>
               <td class="px-4 py-3 text-slate-700"><%= row.employee_name %></td>
               <td class="px-4 py-3">
@@ -154,6 +157,10 @@
                       <tr>
                         <th class="px-3 py-2 text-start"><%= t("skus") || "SKU" %></th>
                         <th class="px-3 py-2 text-start"><%= t("commission_basis") || "Basis" %></th>
+                        <th class="px-3 py-2 text-start"><%= t('commission_source_workers') %></th>
+                        <th class="px-3 py-2 text-start"><%= t('commission_production_stages') %></th>
+                        <th class="px-3 py-2 text-right"><%= t('commission_eligible_pairs') %></th>
+                        <th class="px-3 py-2 text-start"><%= t('commission_quality_grade') %></th>
                         <th class="px-3 py-2 text-right"><%= t("rate_value") %></th>
                         <th class="px-3 py-2 text-right"><%= t("amount") %></th>
                       </tr>
@@ -162,9 +169,13 @@
                       <% linesDetail.forEach(function(line) {
                            (line.entries || []).forEach(function(entry) { %>
                       <tr>
-                        <td class="px-3 py-1.5 font-mono text-slate-500"><%= line.sku_id %></td>
+                        <td class="px-3 py-1.5 font-mono text-slate-500"><%= line.sku_code || line.sku_id %></td>
                         <td class="px-3 py-1.5 text-slate-600"><%= entry.basis %></td>
-                        <td class="px-3 py-1.5 text-right text-slate-600 tabular-nums"><%= entry.rate %></td>
+                        <td class="px-3 py-1.5 text-slate-600"><%= line.worker_name || '' %></td>
+                        <td class="px-3 py-1.5 text-slate-600"><%= [line.department_name,line.stage_name].filter(Boolean).join(' / ') %></td>
+                        <td class="px-3 py-1.5 text-right"><%= line.total_pairs ?? '' %></td>
+                        <td class="px-3 py-1.5 text-slate-600"><%= line.grade_name || '' %></td>
+                        <td class="px-3 py-1.5 text-right text-slate-600 tabular-nums"><%= entry.rate %> <%= entry.rate_type ? t('rate_type_' + entry.rate_type.toLowerCase()) : '' %></td>
                         <td class="px-3 py-1.5 text-right font-semibold text-slate-800 tabular-nums"><%= formatMoney(entry.computed_amount) %></td>
                       </tr>
                       <% }); }); %>
