@@ -9,9 +9,7 @@ const {
   toMoney,
   hasTwoDecimalsOrLess,
 } = require("./validation");
-const {
-  normalizeRuleDate,
-} = require("../../services/hr-payroll/commission-rules-service");
+const { normalizeEmployeeConfiguration, employeeConfigurationError } = require("../../services/hr-payroll/employee-configuration-service");
 const commissionsRoutes = require("./commissions");
 const allowancesRoutes = require("./allowances");
 
@@ -127,7 +125,7 @@ const page = {
       ],
     },
     { name: "salary_effective_from", label: "salary_effective_from", type: "date", required: true },
-    { name: "week_ending_day", label: "salary_week_ending", type: "select",
+    { name: "week_ending_day", label: "salary_week_ending", type: "select", required: true,
       showWhen: { field: "payroll_type", values: ["WEEKLY"] },
       options: [0,1,2,3,4,5,6].map(value => ({ value: String(value), label: `salary_weekday_${value}` })) },
     { name: "salary_proration", label: "salary_proration", type: "select", required: true,
@@ -182,35 +180,16 @@ const page = {
     },
   ],
   sanitizeValues: (values) => ({
-    ...values,
+    ...normalizeEmployeeConfiguration(values),
     name_ur: String(values.name_ur || "").trim(),
     cnic: normalizeCnic(values.cnic),
     phone: normalizePhone(values.phone),
     basic_salary:
       values.basic_salary == null ? null : String(values.basic_salary).trim(),
-    salary_effective_from: normalizeRuleDate(values.salary_effective_from),
-    week_ending_day: values.payroll_type === "WEEKLY" && values.week_ending_day !== null && values.week_ending_day !== "" ? Number(values.week_ending_day) : null,
-    absence_deductions_enabled: values.absence_deductions_enabled === true,
-    absence_day_divisor: values.absence_day_divisor ? Number(values.absence_day_divisor) : null,
-    salary_proration: values.salary_proration || "NONE",
-    employment_start_date: normalizeRuleDate(values.employment_start_date),
-    employment_end_date: normalizeRuleDate(values.employment_end_date),
   }),
   validateValues: async ({ values, req, isUpdate, id }) => {
-    const payrollTypes = new Set([
-      "MONTHLY",
-      "WEEKLY",
-      "DAILY",
-      "PIECE_RATE",
-      "MULTIPLE",
-    ]);
-    if (!values.salary_effective_from) return req.res.locals.t("salary_effective_required");
-    if (values.payroll_type === "WEEKLY" && (values.week_ending_day == null || !Number.isInteger(values.week_ending_day) || values.week_ending_day<0 || values.week_ending_day>6)) return req.res.locals.t("salary_week_end_required");
-    if (!["NONE","CALENDAR_DAYS"].includes(values.salary_proration)) return req.res.locals.t("error_required_fields");
-    if (values.absence_day_divisor != null && (!Number.isFinite(values.absence_day_divisor) || values.absence_day_divisor<=0 || values.absence_day_divisor>366)) return req.res.locals.t("salary_invalid_divisor");
-    if (values.absence_deductions_enabled && !(values.absence_day_divisor>0)) return req.res.locals.t("salary_invalid_divisor");
-    if (!payrollTypes.has(values.payroll_type))
-      return req.res.locals.t("error_invalid_payroll_type");
+    const configurationError = employeeConfigurationError(values);
+    if (configurationError) return { field: configurationError.field, message: req.res.locals.t(configurationError.key) };
     if (values.basic_salary === null || !Number.isFinite(Number(values.basic_salary)) || Number(values.basic_salary) < 0)
       return req.res.locals.t("error_invalid_salary");
     if (
@@ -235,24 +214,6 @@ const page = {
       };
     if (values.status !== "active" && values.status !== "inactive")
       return req.res.locals.t("error_invalid_status");
-    if (
-      values.employment_start_date === undefined ||
-      values.employment_end_date === undefined
-    )
-      return req.res.locals.t("error_invalid_date");
-    if (!values.employment_start_date)
-      return {
-        field: "employment_start_date",
-        message: req.res.locals.t("error_required_fields"),
-      };
-    if (
-      values.employment_end_date &&
-      values.employment_end_date < values.employment_start_date
-    )
-      return {
-        field: "employment_end_date",
-        message: req.res.locals.t("error_invalid_date_range"),
-      };
     if (values.cnic && !isValidCnic(values.cnic))
       return { field: "cnic", message: req.res.locals.t("error_invalid_cnic") };
     if (values.phone && !isValidPhone(values.phone))

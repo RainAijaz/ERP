@@ -1,4 +1,5 @@
 const { normalizeEligibility, eligibilityKey, validateEligibilityReferences } = require("../services/hr-payroll/commission-eligibility-service");
+const { normalizeEmployeeConfiguration, assertEmployeeConfiguration } = require("../services/hr-payroll/employee-configuration-service");
 // approval-applier.js
 // Purpose: Contains logic for applying approval actions to ERP entities (items, SKUs, accounts, parties, etc).
 // Used by the approval engine to process approved requests and update the database accordingly.
@@ -1490,7 +1491,17 @@ const applyEmployeeMasterApproval = async (trx, request) => {
     return true;
   }
 
-  const payload = newValue || {};
+  const id = Number(entityId || 0);
+  if (action !== "create" && (!Number.isSafeInteger(id) || id <= 0)) return false;
+  const existing = action === "create" ? null : await trx(EMPLOYEE_TABLE).where({ id }).first();
+  if (action !== "create" && !existing) return false;
+  // Approval metadata is not an employee field. A status toggle must not reset salary data.
+  if (action !== "create" && Object.prototype.hasOwnProperty.call(newValue || {}, "status") &&
+      Object.keys(newValue).filter(key => !key.startsWith("_")).every(key => key === "status")) {
+    await trx(EMPLOYEE_TABLE).where({ id }).update({ status: normalizeStatus(newValue?.status, "inactive") });
+    return true;
+  }
+  const payload = assertEmployeeConfiguration(normalizeEmployeeConfiguration({ ...existing, ...newValue }));
   const row = {
     code: payload.code || null,
     name: payload.name || null,
@@ -1501,11 +1512,11 @@ const applyEmployeeMasterApproval = async (trx, request) => {
     designation: payload.designation || null,
     payroll_type: payload.payroll_type || null,
     basic_salary: toMoneyOrNull(payload.basic_salary),
-    salary_effective_from: normalizeRuleDate(payload.salary_effective_from) || normalizeRuleDate(payload.employment_start_date) || todayYmd(),
-    week_ending_day: payload.week_ending_day == null || payload.week_ending_day === "" ? null : Number(payload.week_ending_day),
-    absence_deductions_enabled: toBoolean(payload.absence_deductions_enabled),
-    absence_day_divisor: payload.absence_day_divisor ? Number(payload.absence_day_divisor) : null,
-    salary_proration: payload.salary_proration || "NONE",
+    salary_effective_from: payload.salary_effective_from,
+    week_ending_day: payload.week_ending_day,
+    absence_deductions_enabled: payload.absence_deductions_enabled,
+    absence_day_divisor: payload.absence_day_divisor,
+    salary_proration: payload.salary_proration,
     status: normalizeStatus(payload.status, "active"),
     // Salary accrual reads these; omitting them here would silently drop the
     // dates on approve while the non-approval save path kept them.
@@ -1524,20 +1535,6 @@ const applyEmployeeMasterApproval = async (trx, request) => {
       payload.branch_ids,
     );
     return { applied: true, entityId: String(newId) };
-  }
-
-  const id = Number(entityId || 0);
-  if (!Number.isInteger(id) || id <= 0) return false;
-
-  if (
-    !newValue ||
-    (Object.keys(newValue).length === 1 &&
-      Object.prototype.hasOwnProperty.call(newValue, "status"))
-  ) {
-    await trx(EMPLOYEE_TABLE)
-      .where({ id })
-      .update({ status: normalizeStatus(newValue?.status, "inactive") });
-    return true;
   }
 
   await trx(EMPLOYEE_TABLE).where({ id }).update(row);
@@ -1608,7 +1605,7 @@ const applyLabourMasterApproval = async (trx, request) => {
 
   if (
     !newValue ||
-    (Object.keys(newValue).length === 1 &&
+    (Object.keys(newValue).filter(key => !key.startsWith("_")).length === 1 &&
       Object.prototype.hasOwnProperty.call(newValue, "status"))
   ) {
     await trx(LABOUR_TABLE)

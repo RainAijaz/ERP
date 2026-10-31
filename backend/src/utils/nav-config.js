@@ -415,6 +415,15 @@ const navConfig = [
     moduleGroup: "HR & Payroll",
     children: [
       {
+        key: "attendance",
+        labelKey: "attendance_status",
+        type: "group",
+        children: [
+          { key: "employee_attendance", labelKey: "attendance_title", scopeType: "REPORT", scopeKey: "employee_attendance", moduleGroup: "HR & Payroll", route: "/reports/hr-payroll/attendance" },
+          { key: "attendance_devices", labelKey: "attendance_devices", scopeType: "SCREEN", scopeKey: "hr_payroll.attendance_devices", moduleGroup: "HR & Payroll", route: "/hr-payroll/attendance/devices" },
+        ],
+      },
+      {
         key: "employees",
         labelKey: "employees",
         type: "group",
@@ -426,13 +435,6 @@ const navConfig = [
             scopeKey: "hr_payroll.employees",
             moduleGroup: "HR & Payroll",
             route: "/hr-payroll/employees",
-          },
-          {
-            key: "attendance", labelKey: "attendance_title", type: "group",
-            children: [
-              { key: "employee_attendance", labelKey: "attendance_title", scopeType: "REPORT", scopeKey: "employee_attendance", moduleGroup: "HR & Payroll", route: "/reports/hr-payroll/attendance" },
-              { key: "attendance_devices", labelKey: "attendance_devices", scopeType: "SCREEN", scopeKey: "hr_payroll.attendance_devices", moduleGroup: "HR & Payroll", route: "/hr-payroll/attendance/devices" },
-            ],
           },
           {
             key: "payroll_periods", labelKey: "salary_payroll_runs", scopeType: "SCREEN", scopeKey: "hr_payroll.employees", moduleGroup: "HR & Payroll", route: "/hr-payroll/payroll",

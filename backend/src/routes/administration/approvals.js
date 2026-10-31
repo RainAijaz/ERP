@@ -2,6 +2,8 @@ const express = require("express");
 const knex = require("../../db/knex");
 const { resolveApprovalVoucherLink } = require("../../services/administration/approval-voucher-link-service");
 const { HttpError } = require("../../middleware/errors/http-error");
+const { publicErrorMessage } = require("../../middleware/errors/friendly-error");
+const { validateEmployeeApprovalConfiguration } = require("../../services/hr-payroll/employee-configuration-service");
 const {
   requirePermission,
 } = require("../../middleware/access/role-permissions");
@@ -2125,6 +2127,9 @@ router.post(
           throw new HttpError(400, res.locals.t("approval_no_changes"));
         }
 
+        if (resolveHrScopeKey(request, sanitized.nextValue) === "hr_payroll.employees")
+          await validateEmployeeApprovalConfiguration(trx, { ...request, new_value: sanitized.nextValue });
+
         changedFields = sanitized.changedFields;
         await trx("erp.approval_request").where({ id }).update({
           new_value: sanitized.nextValue,
@@ -2191,7 +2196,7 @@ router.post(
       if (err instanceof HttpError) {
         return res.status(err.status).json({ ok: false, message: err.message });
       }
-      return next(err);
+      return res.status(400).json({ ok: false, message: publicErrorMessage(err, res.locals.t) });
     }
   },
 );
@@ -2730,7 +2735,7 @@ router.post(
       } else if (err && String(err.message || "").startsWith("wip_count_")) {
         msg = res.locals.t(err.message);
       } else if (err && err.message) {
-        msg = err.message;
+        msg = publicErrorMessage(err, res.locals.t);
       }
       setUiNotice(res, msg, { autoClose: true, type: "error" });
       return res.redirect(`${req.baseUrl}?status=PENDING`);

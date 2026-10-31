@@ -1,4 +1,11 @@
 const DEFAULT_MESSAGE = "Something went wrong. Please try again.";
+const employeeConstraintKeys = {
+  employee_weekly_configuration: "salary_week_end_required",
+  employees_week_ending_day_check: "salary_week_end_required",
+  employee_absence_configuration: "salary_invalid_divisor",
+  employees_absence_day_divisor_check: "salary_invalid_divisor",
+  employees_salary_proration_check: "error_required_fields",
+};
 
 const messageFromCode = (code, t) => {
   const translate = typeof t === "function" ? t : null;
@@ -16,6 +23,7 @@ const messageFromCode = (code, t) => {
 };
 
 const friendlyErrorMessage = (err, t) => {
+  if (employeeConstraintKeys[err?.constraint]) return typeof t === 'function' ? t(employeeConstraintKeys[err.constraint]) : DEFAULT_MESSAGE;
   if (String(err?.message || '').includes('salary_period_finalized')) return typeof t === 'function' ? t('salary_period_finalized') : 'This payroll period is finalized.';
   if (String(err?.message || '').includes('salary_frequency_boundary')) return typeof t === 'function' ? t('salary_frequency_boundary') : 'Use a shared salary-period boundary.';
   if (!err) return typeof t === "function" ? t("error_generic") : DEFAULT_MESSAGE;
@@ -65,6 +73,8 @@ const friendlyErrorMessage = (err, t) => {
 };
 
 const publicErrorMessage = (err,t,{validation=false}={}) => {
+  if (employeeConstraintKeys[err?.constraint]) return t(employeeConstraintKeys[err.constraint]);
+  if (["23503", "23505", "23502"].includes(err?.code)) return messageFromCode(err.code, t);
   const message=String(err?.message || '');
   const marker=['salary_period_finalized','salary_frequency_boundary'].find(key=>message.includes(key));
   if(marker && t(marker)!==marker)return t(marker);

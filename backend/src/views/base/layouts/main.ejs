@@ -174,14 +174,14 @@
       <header class="sticky top-0 z-40 w-full overflow-visible border-b border-slate-200 bg-white/90 backdrop-blur">
         <div class="mx-auto w-full overflow-visible px-4 lg:px-8">
           <input id="nav-toggle" type="checkbox" class="peer sr-only" />
-          <div class="flex flex-wrap items-center justify-between gap-4 py-4 lg:py-5">
+          <div class="flex flex-wrap items-center justify-between gap-3 py-3 lg:py-4">
             <div class="flex items-center gap-4">
               <!-- Brand and ERP label -->
               <a class="text-2xl font-display text-accent transition hover:text-accent/80" href="/"><%= t("brand") %></a>
               <span class="hidden h-5 w-px bg-slate-200 lg:inline-flex"></span>
               <span class="hidden text-xs uppercase tracking-[0.4em] text-muted lg:inline-flex">ERP</span>
             </div>
-            <div class="flex flex-wrap items-center gap-3">
+            <div class="flex min-w-0 flex-wrap items-center gap-2">
               <!-- Main navigation links -->
               <%- include("../partials/navbar") %>
               <!-- Notifications bell -->
@@ -192,7 +192,7 @@
                   aria-label="<%= t('notifications') %>"
                   aria-haspopup="true"
                   aria-expanded="false"
-                  class="relative inline-flex items-center justify-center rounded-full border border-slate-200 bg-white p-1.5 text-slate-600 shadow-sm transition hover:border-accent/40 hover:text-accent"
+                  class="relative inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-50 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
                 >
                   <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 0 0-4-5.7V5a2 2 0 1 0-4 0v.3A6 6 0 0 0 6 11v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
@@ -220,8 +220,8 @@
               <button
                 id="theme-toggle"
                 type="button"
-                aria-label="Toggle dark mode"
-                class="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white p-1.5 text-slate-600 shadow-sm transition hover:border-accent/40 hover:text-accent"
+                aria-label="<%= t('toggle_theme') %>"
+                class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-50 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
               >
                 <svg data-sun class="hidden h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
@@ -231,8 +231,8 @@
                 </svg>
               </button>
               <!-- Mobile menu toggle -->
-              <label for="nav-toggle" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 shadow-sm transition hover:border-accent/40 hover:text-accent lg:hidden">
-                <span>Menu</span>
+              <label for="nav-toggle" class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-accent/40 hover:text-accent lg:hidden">
+                <span><%= t('menu') %></span>
                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
                 </svg>
@@ -240,7 +240,7 @@
             </div>
           </div>
           <!-- NAVIGATION: Main and submenu navigation -->
-          <nav class="hidden w-full flex-col gap-2 overflow-visible pb-4 peer-checked:flex lg:flex lg:flex-row lg:flex-wrap lg:items-center lg:gap-2 lg:pb-4">
+          <nav data-primary-navigation aria-label="<%= t('navigation') %>" class="hidden w-full flex-col gap-1 overflow-visible border-t border-slate-200 py-2 peer-checked:flex lg:flex lg:flex-row lg:flex-wrap lg:items-center lg:gap-1">
             <%- include("../partials/nav-menu", { navConfig, can, t }) %>
           </nav>
         </div>
@@ -1545,6 +1545,27 @@
         const wraps = document.querySelectorAll("[data-submenu-wrap]");
         const mediaQuery = window.matchMedia("(min-width: 1024px)");
         const submenuTimeouts = new WeakMap();
+        const navigation = document.querySelector("[data-primary-navigation]");
+        if (navigation) {
+          const currentPath = location.pathname.replace(/\/$/, "") || "/";
+          const matches = Array.from(navigation.querySelectorAll("a[href]")).filter(link => {
+            const path = new URL(link.href, location.href).pathname.replace(/\/$/, "") || "/";
+            return currentPath === path || (path !== "/" && currentPath.startsWith(path + "/"));
+          }).sort((a, b) => new URL(b.href, location.href).pathname.length - new URL(a.href, location.href).pathname.length);
+          const currentLink = matches[0];
+          if (currentLink) {
+            currentLink.setAttribute("aria-current", "page");
+            for (let wrap = currentLink.closest("[data-submenu-wrap]"); wrap; wrap = wrap.parentElement?.closest("[data-submenu-wrap]")) {
+              wrap.querySelector(":scope > [data-submenu-toggle]")?.setAttribute("data-active", "true");
+            }
+          }
+        }
+        const syncExpandedState = (menu, open) => {
+          const key = menu?.getAttribute("data-submenu");
+          toggles.forEach(toggle => {
+            if (toggle.getAttribute("data-submenu-toggle") === key) toggle.setAttribute("aria-expanded", String(open));
+          });
+        };
         const clearMenuViewportConstraint = (menu) => {
           if (!menu) return;
           menu.classList.remove("nav-scrollable");
@@ -1652,6 +1673,7 @@
             if (!except) {
               clearMenuViewportConstraint(menu);
               menu.classList.add("hidden");
+              syncExpandedState(menu, false);
               return;
             }
             if (menu === except) return;
@@ -1659,11 +1681,13 @@
             if (except.contains(menu)) return;
             clearMenuViewportConstraint(menu);
             menu.classList.add("hidden");
+            syncExpandedState(menu, false);
           });
         };
 
         const setMenuState = (menu, open) => {
           if (!menu) return;
+          syncExpandedState(menu, open);
           if (open) {
             menu.classList.remove("hidden");
             requestAnimationFrame(() => applyMenuViewportConstraint(menu));
@@ -1717,6 +1741,13 @@
 
         document.addEventListener("click", () => {
           closeAll();
+        });
+
+        document.addEventListener("keydown", event => {
+          if (event.key !== "Escape") return;
+          const toggle = navigation?.querySelector(':scope > [data-submenu-wrap] > [aria-expanded="true"]');
+          closeAll();
+          toggle?.focus();
         });
 
         mediaQuery.addEventListener("change", () => closeAll());

@@ -4,15 +4,15 @@
     ? user?.name_ur || user?.name || user?.username || "-"
     : user?.name || user?.username || "-";
 %>
-<div class="flex flex-wrap items-center gap-3 text-xs text-muted">
-  <div class="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 shadow-sm">
-    <span class="text-[10px] uppercase tracking-[0.2em] text-muted"><%= t("signed_in_as") %></span>
-    <span class="font-semibold text-slate-800"><%= signedInName %></span>
+<div class="contents text-xs text-muted">
+  <div class="flex min-w-0 items-center gap-2 px-1 py-2">
+    <span class="hidden text-xs text-muted xl:inline"><%= t("signed_in_as") %></span>
+    <span class="max-w-40 truncate font-semibold text-slate-800" title="<%= signedInName %>"><%= signedInName %></span>
   </div>
   <form method="get" action="/" class="flex items-center">
     <label for="branch-select" class="sr-only"><%= t("branch") %></label>
-    <div class="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 shadow-sm">
-      <span class="text-[10px] uppercase tracking-[0.2em] text-muted"><%= t("branch") %></span>
+    <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <span class="text-xs text-muted"><%= t("branch") %></span>
       <% if (branchScope && branchScope.length > 1) { %>
         <select
           id="branch-select"
@@ -43,14 +43,12 @@
   </form>
   <form method="post" action="/auth/logout" class="flex items-center">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <button type="submit" class="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 shadow-sm transition hover:border-accent/40 hover:text-accent">
+    <button type="submit" class="rounded-lg px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30">
       <%= t("logout") %>
     </button>
   </form>
-  <div class="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs shadow-sm">
-    <span class="text-[10px] uppercase tracking-[0.2em] text-muted"><%= t("language") %></span>
-    <a class="font-semibold text-slate-700 transition hover:text-accent" href="?lang=en"><%= t("english") %></a>
-    <span class="text-slate-300">|</span>
-    <a class="font-semibold text-slate-700 transition hover:text-accent" href="?lang=ur"><%= t("urdu") %></a>
+  <div class="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs" role="group" aria-label="<%= t('language') %>">
+    <a class="rounded-md px-2.5 py-1 font-medium text-slate-600 transition hover:text-accent <%= !isUrduLocale ? 'bg-white text-accent shadow-sm' : '' %>" href="?lang=en" <%- !isUrduLocale ? 'aria-current="true"' : '' %>><%= t("english") %></a>
+    <a class="rounded-md px-2.5 py-1 font-medium text-slate-600 transition hover:text-accent <%= isUrduLocale ? 'bg-white text-accent shadow-sm' : '' %>" href="?lang=ur" <%- isUrduLocale ? 'aria-current="true"' : '' %>><%= t("urdu") %></a>
   </div>
 </div>

@@ -1000,13 +1000,24 @@
             if (wasHidden) newlyVisible.push(node);
             controls.forEach((ctrl) => {
               ctrl.disabled = false;
-              if (ctrl.hasAttribute("data-required")) ctrl.setAttribute("required", "required");
+              const searchableInput = ctrl.closest("[data-searchable-wrapper]")?.querySelector('input[type="text"]');
+              const required = ctrl.hasAttribute("data-required");
+              ctrl.required = required && !searchableInput;
+              if (searchableInput) {
+                searchableInput.disabled = false;
+                searchableInput.required = required;
+              }
             });
           } else {
             node.classList.add("hidden");
             controls.forEach((ctrl) => {
               ctrl.disabled = true;
               ctrl.removeAttribute("required");
+              const searchableInput = ctrl.closest("[data-searchable-wrapper]")?.querySelector('input[type="text"]');
+              if (searchableInput) {
+                searchableInput.disabled = true;
+                searchableInput.required = false;
+              }
               if (ctrl.type === "checkbox") {
                 if (ctrl.checked) {
                   ctrl.checked = false;

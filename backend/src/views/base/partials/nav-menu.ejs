@@ -23,20 +23,20 @@
     }) : false; %>
 
     <% if (isLink && isVisibleLink) { %>
-      <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="<%= item.route %>"><%= t(item.labelKey) %></a>
+      <a class="block rounded-lg px-3 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 aria-[current=page]:bg-accent/10 aria-[current=page]:font-semibold aria-[current=page]:text-accent" href="<%= item.route %>"><%= t(item.labelKey) %></a>
     <% } else if (hasChildren && isVisibleGroup) { %>
       <div class="relative group/sub" data-submenu-wrap>
         <span class="hidden lg:block absolute -right-4 top-0 h-full w-4"></span>
-        <button class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm font-semibold text-slate-700" type="button" data-submenu-toggle="<%= itemKey %>">
-          <span class="h-3 w-3 shrink-0" aria-hidden="true"></span>
-          <span class="min-w-0 flex-1 text-center"><%= t(item.labelKey) %></span>
-          <svg class="h-3 w-3 shrink-0 opacity-70" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <button class="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 aria-expanded:bg-slate-50 aria-expanded:text-accent data-[active=true]:text-accent" type="button" data-submenu-toggle="<%= itemKey %>" aria-expanded="false" aria-controls="nav-menu-<%= itemKey %>">
+          <span><%= t(item.labelKey) %></span>
+          <svg class="h-3 w-3 opacity-70" viewBox="0 0 20 20" fill="none" aria-hidden="true">
             <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </button>
         <div
           class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu lg:absolute lg:left-full lg:top-0 lg:z-90 lg:mt-0 lg:ml-2 lg:w-64"
           data-submenu="<%= itemKey %>"
+          id="nav-menu-<%= itemKey %>"
           data-force-scrollable="<%= itemKey === 'financial-reports' ? '1' : '0' %>"
         >
           <% renderChildren(item.children, level + 1, itemKey); %>
@@ -65,15 +65,14 @@
     return false;
   }); %>
   <% if (!moduleVisible) return; %>
-  <div class="relative w-full grow group/menu lg:w-auto" data-submenu-wrap>
-    <button class="flex w-full items-center justify-between gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-accent/40 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/30" type="button" data-submenu-toggle="<%= module.key %>">
-      <span class="h-3 w-3 shrink-0" aria-hidden="true"></span>
-      <span class="min-w-0 flex-1 text-center whitespace-nowrap"><%= t(module.labelKey) %></span>
-      <svg class="h-3 w-3 shrink-0 opacity-70" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+  <div class="relative w-full group/menu lg:w-auto lg:flex-none" data-submenu-wrap>
+    <button class="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 aria-expanded:bg-accent/10 aria-expanded:text-accent data-[active=true]:bg-accent/10 data-[active=true]:font-semibold data-[active=true]:text-accent" type="button" data-submenu-toggle="<%= module.key %>" aria-expanded="false" aria-controls="nav-menu-<%= module.key %>">
+      <span class="whitespace-nowrap"><%= t(module.labelKey) %></span>
+      <svg class="h-3 w-3 opacity-70" viewBox="0 0 20 20" fill="none" aria-hidden="true">
         <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
     </button>
-    <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md nav-dropdown lg:absolute lg:left-0 lg:z-60 lg:mt-2 lg:w-72 lg:shadow-xl" data-submenu="<%= module.key %>">
+    <div class="mt-1 hidden w-full rounded-xl border border-slate-200 bg-white p-2 shadow-md nav-dropdown lg:absolute lg:left-0 lg:z-60 lg:mt-2 lg:w-72 lg:shadow-xl" data-submenu="<%= module.key %>" id="nav-menu-<%= module.key %>">
       <div class="space-y-3">
         <% renderChildren(module.children || [], 0, module.key); %>
       </div>

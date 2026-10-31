@@ -995,7 +995,7 @@ const createHrMasterRouter = (pageConfig) => {
       }
 
       const missing = pageConfig.fields
-        .filter((field) => field.required)
+        .filter((field) => field.required && (!field.showWhen || field.showWhen.values.includes(String(sanitizedValues[field.showWhen.field]))))
         .filter((field) => {
           const value = sanitizedValues[field.name];
           return (
@@ -1310,7 +1310,7 @@ const createHrMasterRouter = (pageConfig) => {
       }
 
       const missing = pageConfig.fields
-        .filter((field) => field.required)
+        .filter((field) => field.required && (!field.showWhen || field.showWhen.values.includes(String(sanitizedValues[field.showWhen.field]))))
         .filter((field) => {
           const value = sanitizedValues[field.name];
           return (
