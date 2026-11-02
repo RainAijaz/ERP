@@ -66,9 +66,10 @@
   }); %>
   <% if (!moduleVisible) return; %>
   <div class="relative w-full group/menu lg:w-auto lg:flex-auto" data-submenu-wrap>
-    <button class="flex h-full w-full items-center justify-between gap-3 rounded-lg border-b-2 border-transparent px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-accent/10 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 aria-expanded:bg-accent/10 aria-expanded:text-accent data-[active=true]:border-accent data-[active=true]:bg-accent/10 data-[active=true]:font-semibold data-[active=true]:text-accent lg:justify-center lg:rounded-none" type="button" data-submenu-toggle="<%= module.key %>" aria-expanded="false" aria-controls="nav-menu-<%= module.key %>">
-      <span class="whitespace-nowrap"><%= t(module.labelKey) %></span>
-      <svg class="h-3 w-3 opacity-70" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <button class="flex h-full w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-sm font-medium text-slate-700 transition hover:bg-accent/10 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 aria-expanded:bg-accent/10 aria-expanded:text-accent data-[active=true]:bg-accent/10 data-[active=true]:font-semibold data-[active=true]:text-accent lg:flex-col lg:justify-center lg:gap-2" type="button" data-submenu-toggle="<%= module.key %>" aria-expanded="false" aria-controls="nav-menu-<%= module.key %>">
+      <%- include("./icon", { name: module.key }) %>
+      <span class="flex-1 whitespace-nowrap text-start lg:flex-none lg:text-center"><%= t(module.labelKey) %></span>
+      <svg class="h-3 w-3 opacity-70 lg:hidden" viewBox="0 0 20 20" fill="none" aria-hidden="true">
         <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
     </button>

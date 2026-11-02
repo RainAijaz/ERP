@@ -2173,6 +2173,9 @@
   .py-12 {
     padding-block: calc(var(--spacing) * 12);
   }
+  .ps-3 {
+    padding-inline-start: calc(var(--spacing) * 3);
+  }
   .pt-0 {
     padding-top: calc(var(--spacing) * 0);
   }
@@ -2677,6 +2680,12 @@
     color: color-mix(in srgb, #fff 75%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       color: color-mix(in oklab, var(--color-white) 75%, transparent);
+    }
+  }
+  .text-white\/80 {
+    color: color-mix(in srgb, #fff 80%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      color: color-mix(in oklab, var(--color-white) 80%, transparent);
     }
   }
   .text-white\/90 {
@@ -3643,6 +3652,16 @@
       }
     }
   }
+  .hover\:bg-white\/10 {
+    &:hover {
+      @media (hover: hover) {
+        background-color: color-mix(in srgb, #fff 10%, transparent);
+        @supports (color: color-mix(in lab, red, red)) {
+          background-color: color-mix(in oklab, var(--color-white) 10%, transparent);
+        }
+      }
+    }
+  }
   .hover\:text-accent {
     &:hover {
       @media (hover: hover) {
@@ -3717,6 +3736,23 @@
     &:hover {
       @media (hover: hover) {
         color: var(--color-slate-900);
+      }
+    }
+  }
+  .hover\:text-white {
+    &:hover {
+      @media (hover: hover) {
+        color: var(--color-white);
+      }
+    }
+  }
+  .hover\:text-white\/80 {
+    &:hover {
+      @media (hover: hover) {
+        color: color-mix(in srgb, #fff 80%, transparent);
+        @supports (color: color-mix(in lab, red, red)) {
+          color: color-mix(in oklab, var(--color-white) 80%, transparent);
+        }
       }
     }
   }
@@ -3923,6 +3959,14 @@
       --tw-ring-color: color-mix(in srgb, oklch(20.8% 0.042 265.755) 30%, transparent);
       @supports (color: color-mix(in lab, red, red)) {
         --tw-ring-color: color-mix(in oklab, var(--color-slate-900) 30%, transparent);
+      }
+    }
+  }
+  .focus-visible\:ring-white\/50 {
+    &:focus-visible {
+      --tw-ring-color: color-mix(in srgb, #fff 50%, transparent);
+      @supports (color: color-mix(in lab, red, red)) {
+        --tw-ring-color: color-mix(in oklab, var(--color-white) 50%, transparent);
       }
     }
   }
@@ -4540,6 +4584,11 @@
       flex: auto;
     }
   }
+  .lg\:flex-none {
+    @media (width >= 64rem) {
+      flex: none;
+    }
+  }
   .lg\:cursor-default {
     @media (width >= 64rem) {
       cursor: default;
@@ -4588,6 +4637,11 @@
   .lg\:grid-cols-\[minmax\(220px\,1fr\)_minmax\(260px\,1fr\)\] {
     @media (width >= 64rem) {
       grid-template-columns: minmax(220px,1fr) minmax(260px,1fr);
+    }
+  }
+  .lg\:flex-col {
+    @media (width >= 64rem) {
+      flex-direction: column;
     }
   }
   .lg\:flex-row {
@@ -4640,6 +4694,16 @@
       gap: calc(var(--spacing) * 0);
     }
   }
+  .lg\:gap-1 {
+    @media (width >= 64rem) {
+      gap: calc(var(--spacing) * 1);
+    }
+  }
+  .lg\:gap-2 {
+    @media (width >= 64rem) {
+      gap: calc(var(--spacing) * 2);
+    }
+  }
   .lg\:overflow-visible {
     @media (width >= 64rem) {
       overflow: visible;
@@ -4663,6 +4727,11 @@
   .lg\:pr-3 {
     @media (width >= 64rem) {
       padding-right: calc(var(--spacing) * 3);
+    }
+  }
+  .lg\:text-center {
+    @media (width >= 64rem) {
+      text-align: center;
     }
   }
   .lg\:text-right {
@@ -4790,10 +4859,72 @@
   }
 }
 @media screen and (min-width: 1024px) and (max-width: 1279px) {
+  [data-primary-navigation] {
+    column-gap: 0;
+  }
   [data-primary-navigation] > [data-submenu-wrap] > button {
     gap: 0.25rem;
     padding-inline: 0.25rem;
     font-size: 0.8125rem;
+  }
+}
+[data-workspace-toolbar] {
+  background-color: #173a4d;
+  color: #edf5f9;
+}
+html.dark [data-workspace-toolbar] {
+  background-color: #102e3d;
+}
+[data-workspace-toolbar] [data-workspace-control] {
+  color: #edf5f9;
+}
+html.dark [data-primary-navigation] :is([data-active="true"], [aria-current="page"], [aria-expanded="true"]) {
+  color: #8dd0e7;
+  background-color: rgb(101 194 220 / 0.12);
+}
+[data-workspace-tools] [data-workspace-branch] {
+  order: 1;
+}
+[data-workspace-tools] [data-workspace-language] {
+  order: 2;
+}
+[data-workspace-tools] [data-notif-root] {
+  order: 3;
+}
+[data-workspace-tools] #theme-toggle {
+  order: 4;
+}
+[data-workspace-tools] [data-workspace-account] {
+  order: 5;
+}
+[data-workspace-tools] [data-workspace-logout] {
+  order: 6;
+}
+[data-workspace-toolbar] [data-workspace-branch] input[data-searchable-control] {
+  background-color: transparent !important;
+  color: #edf5f9 !important;
+  box-shadow: none;
+}
+[data-workspace-toolbar] [data-workspace-branch] [data-searchable-wrapper] > .pointer-events-none {
+  color: #bed1dc;
+}
+[data-workspace-toolbar] [data-notif-panel] {
+  left: auto;
+  right: auto;
+  inset-inline-end: 0;
+}
+@media screen and (max-width: 1023px) {
+  [data-workspace-tools] [data-notif-root] {
+    position: static;
+  }
+  [data-workspace-toolbar] {
+    position: relative;
+  }
+  [data-workspace-toolbar] [data-notif-panel] {
+    inset-inline: 1rem;
+    top: 100%;
+    width: auto;
+    max-width: none;
   }
 }
 @layer base {

@@ -100,10 +100,75 @@
 
 /* Keep all modules on one row on smaller laptops without clipping flyouts. */
 @media screen and (min-width: 1024px) and (max-width: 1279px) {
+  [data-primary-navigation] {
+    column-gap: 0;
+  }
+
   [data-primary-navigation] > [data-submenu-wrap] > button {
     gap: 0.25rem;
     padding-inline: 0.25rem;
     font-size: 0.8125rem;
+  }
+}
+
+/* Shared Workspace chrome; existing dropdowns keep their normal paper surface. */
+[data-workspace-toolbar] {
+  background-color: #173a4d;
+  color: #edf5f9;
+}
+
+html.dark [data-workspace-toolbar] {
+  background-color: #102e3d;
+}
+
+[data-workspace-toolbar] [data-workspace-control] {
+  color: #edf5f9;
+}
+
+html.dark [data-primary-navigation] :is([data-active="true"], [aria-current="page"], [aria-expanded="true"]) {
+  color: #8dd0e7;
+  background-color: rgb(101 194 220 / 0.12);
+}
+
+[data-workspace-tools] [data-workspace-branch] { order: 1; }
+[data-workspace-tools] [data-workspace-language] { order: 2; }
+[data-workspace-tools] [data-notif-root] { order: 3; }
+[data-workspace-tools] #theme-toggle { order: 4; }
+[data-workspace-tools] [data-workspace-account] { order: 5; }
+[data-workspace-tools] [data-workspace-logout] { order: 6; }
+
+/* Exempt this inline picker from the global dark-mode form-field fill. */
+[data-workspace-toolbar] [data-workspace-branch] input[data-searchable-control] {
+  background-color: transparent !important;
+  color: #edf5f9 !important;
+  box-shadow: none;
+}
+
+[data-workspace-toolbar] [data-workspace-branch] [data-searchable-wrapper] > .pointer-events-none {
+  color: #bed1dc;
+}
+
+[data-workspace-toolbar] [data-notif-panel] {
+  left: auto;
+  right: auto;
+  inset-inline-end: 0;
+}
+
+@media screen and (max-width: 1023px) {
+  /* Keep the notification popover inside the viewport after controls wrap. */
+  [data-workspace-tools] [data-notif-root] {
+    position: static;
+  }
+
+  [data-workspace-toolbar] {
+    position: relative;
+  }
+
+  [data-workspace-toolbar] [data-notif-panel] {
+    inset-inline: 1rem;
+    top: 100%;
+    width: auto;
+    max-width: none;
   }
 }
 
