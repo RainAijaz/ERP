@@ -377,6 +377,7 @@
     const debugPreview = false;
     let currentModalState = null;
     let editMode = false;
+    let editBaseline = null;
     let bodyScrollLocked = false;
 
     const setBodyScrollLock = (locked) => {
@@ -533,6 +534,16 @@
       });
     };
 
+    const getEditableFields = (panel) => {
+      const raw = panel.getAttribute("data-preview-editable-fields");
+      if (raw === null) return null;
+      try {
+        return new Set(JSON.parse(raw));
+      } catch (err) {
+        return new Set();
+      }
+    };
+
     const refreshConditionalFields = (panel) => {
       if (!panel) return;
       const nodes = panel.querySelectorAll("[data-show-when-field], [data-show-when-not-field]");
@@ -559,7 +570,12 @@
           if (hideValues.includes(current)) shouldShow = false;
         }
         node.classList.toggle("hidden", !shouldShow);
+        const editable = getEditableFields(panel);
+        node.querySelectorAll("[data-field]").forEach((input) => {
+          input.disabled = !editMode || !shouldShow || (editable && !editable.has(input.dataset.field));
+        });
       });
+      window.refreshSearchableSelects?.(panel);
     };
 
     const buildFields = (value) => {
@@ -686,6 +702,8 @@
     const disableInputs = (panel) => {
       if (!panel) return;
       panel.querySelectorAll("input, select, textarea, button").forEach((el) => {
+        // The shared select locks its own controls from the native select state.
+        if (el.closest("[data-searchable-wrapper]") && !el.hasAttribute("data-field")) return;
         if (el.hasAttribute("data-approval-view")) return;
         // Read-only preview controls (e.g. the "Changed only" filter) stay usable.
         // They must NOT reuse data-approval-view: a document-level click handler
@@ -700,19 +718,22 @@
         el.readOnly = true;
         el.classList.add("cursor-not-allowed");
       });
+      window.refreshSearchableSelects?.(panel);
     };
 
     const enableInputs = (panel) => {
       if (!panel) return;
       panel.querySelectorAll("input, select, textarea").forEach((el) => {
         if (!el.hasAttribute("data-field")) return;
-        el.disabled = false;
-        el.readOnly = false;
-        el.classList.remove("cursor-not-allowed");
+        const editable = getEditableFields(panel);
+        const locked = Boolean(editable && !editable.has(el.dataset.field));
+        el.disabled = locked;
+        el.readOnly = locked;
+        el.classList.toggle("cursor-not-allowed", locked);
       });
       panel.querySelectorAll("[data-multi-select] button").forEach((button) => {
-        button.disabled = false;
-        button.classList.remove("pointer-events-none");
+        button.disabled = Boolean(button.closest("[data-multi-select]").querySelector("select[multiple]")?.disabled);
+        button.classList.toggle("pointer-events-none", button.disabled);
       });
     };
 
@@ -752,6 +773,9 @@
         if (editMode) {
           initMultiSelects(panel);
           enableInputs(panel);
+          refreshConditionalFields(panel);
+          window.initSearchableSelects?.(panel);
+          editBaseline = collectEditedValues(panel);
         } else {
           disableInputs(panel);
           panel.querySelectorAll("[data-multi-menu]").forEach((menu) => menu.classList.add("hidden"));
@@ -781,7 +805,7 @@
       const multiCheckboxMap = new Map();
       panel.querySelectorAll("[data-field]").forEach((input) => {
         const name = input.getAttribute("data-field");
-        if (!name) return;
+        if (!name || input.disabled) return;
 
         if (input.type === "checkbox") {
           if (input.dataset.multi === "true") {
@@ -848,7 +872,9 @@
       if (!currentModalState || !currentModalState.id) return;
       const panel = getEditPanel();
       if (!panel) return;
-      const payload = collectEditedValues(panel);
+      const values = collectEditedValues(panel);
+      const payload = Object.fromEntries(Object.entries(values).filter(([key, value]) =>
+        JSON.stringify(value) !== JSON.stringify(editBaseline?.[key])));
       if (!payload || Object.keys(payload).length === 0) {
         window.alert(labels.approvalNoChanges);
         return;
@@ -1352,6 +1378,7 @@
         forceSingleMode,
       };
       editMode = false;
+      editBaseline = null;
       // Every pane is emptied up front. loadPreview only clears the pane it
       // fetches into, so a pane hidden by the previous row's layout kept that
       // row's markup and could flash back when a later row unhid it -- and
@@ -1437,8 +1464,16 @@
 
     closeBtn?.addEventListener("click", close);
     editBtn?.addEventListener("click", () => setEditMode(true));
-    editCancelBtn?.addEventListener("click", () => setEditMode(false));
+    editCancelBtn?.addEventListener("click", () => {
+      const panel = getEditPanel();
+      if (panel && editBaseline) applyValuesToFields(panel, { ...editBaseline, _previewAction: currentModalState.action });
+      setEditMode(false);
+      window.refreshSearchableSelects?.(panel);
+    });
     editSaveBtn?.addEventListener("click", saveEdit);
+    modal?.addEventListener("change", (event) => {
+      if (editMode && event.target.matches("[data-field]")) refreshConditionalFields(getEditPanel());
+    });
     modal?.addEventListener("click", (event) => {
       if (event.target === modal) close();
     });

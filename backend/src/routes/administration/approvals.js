@@ -2056,6 +2056,7 @@ router.get(
         fieldErrors: {},
         formValues: {},
         ...payload,
+        editableFields: getEditableKeys(request),
         voucherHref: await resolveApprovalVoucherLink({ request, user: req.user, can: res.locals.can }),
       });
     } catch (err) {

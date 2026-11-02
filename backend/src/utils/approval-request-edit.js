@@ -1,5 +1,5 @@
 const SYSTEM_KEYS = new Set(["created_at", "created_by", "updated_at", "updated_by"]);
-const { SALARY_FIELDS } = require("../services/hr-payroll/employee-configuration-service");
+const { employeeFieldNames, isEmployeeMasterApproval } = require("../services/hr-payroll/employee-configuration-service");
 
 const safeJson = (value) => {
   if (!value) return null;
@@ -33,12 +33,10 @@ const getEditableKeys = (request) => {
   if (!current || typeof current !== "object" || Array.isArray(current)) return [];
   if (current.wip_count === true) return [];
   const keys = Object.keys(current).filter((key) => !key.startsWith("_") && !SYSTEM_KEYS.has(key));
-  // Older employee requests predate these fields. Permit an administrator to repair
-  // them using the current employee form without allowing arbitrary new properties.
-  const employeeMaster = current._scope_key === "hr_payroll.employees" ||
-    (!current._scope_key && request?.entity_type === "EMPLOYEE" && "payroll_type" in current);
-  if (employeeMaster && !current.mode && keys.some(key => key !== "status"))
-    return [...new Set([...keys, ...SALARY_FIELDS])];
+  // Use the same schema as the form: optional and newly added fields may be
+  // absent from the queued payload. Keep status toggles restricted to status.
+  if (isEmployeeMasterApproval({ ...request, new_value: current, old_value: safeJson(request?.old_value) }) && keys.some(key => key !== "status"))
+    return [...new Set([...keys, ...employeeFieldNames])];
   return keys;
 };
 

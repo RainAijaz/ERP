@@ -1,4 +1,20 @@
 const { normalizeRuleDate } = require('./commission-rules-service');
+const employeeFields = require('../../config/hr-payroll/employee-fields');
+
+const employeeFieldNames = employeeFields.map(field => field.name);
+const isEmployeeMasterApproval = request => {
+  const current = request?.new_value || {};
+  if (current.mode) return false;
+  const scope = current._scope_key || request?.old_value?._scope_key;
+  if (scope) return scope === 'hr_payroll.employees';
+  // Legacy requests may have only one changed master field. Other HR screens
+  // share the EMPLOYEE entity type, so exclude their identifying fields first.
+  if (String(request?.entity_type || '').toUpperCase() !== 'EMPLOYEE') return false;
+  const keys = new Set([...Object.keys(request?.old_value || {}), ...Object.keys(current)]);
+  return !['employee_id', 'allowance_type', 'commission_type', 'commission_basis',
+    'commission_rules', 'eligibility', 'reverse_on_returns', 'apply_on', 'amount_type',
+    'frequency'].some(key => keys.has(key));
+};
 
 // Shared by direct saves and approval replay. Never guess a weekly boundary.
 const SALARY_FIELDS = ['salary_effective_from', 'week_ending_day',
@@ -49,4 +65,4 @@ const validateEmployeeApprovalConfiguration = async (db, request) => {
   assertEmployeeConfiguration(normalizeEmployeeConfiguration({ ...existing, ...current }));
 };
 
-module.exports = { SALARY_FIELDS, normalizeEmployeeConfiguration, employeeConfigurationError, assertEmployeeConfiguration, validateEmployeeApprovalConfiguration };
+module.exports = { SALARY_FIELDS, employeeFieldNames, isEmployeeMasterApproval, normalizeEmployeeConfiguration, employeeConfigurationError, assertEmployeeConfiguration, validateEmployeeApprovalConfiguration };
