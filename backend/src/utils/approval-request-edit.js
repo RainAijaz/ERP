@@ -1,3 +1,4 @@
+const { PAY_FIELDS } = require('../services/hr-payroll/guaranteed-pay-service');
 const SYSTEM_KEYS = new Set(["created_at", "created_by", "updated_at", "updated_by"]);
 const { employeeFieldNames, isEmployeeMasterApproval } = require("../services/hr-payroll/employee-configuration-service");
 
@@ -32,11 +33,15 @@ const getEditableKeys = (request) => {
   const current = safeJson(request?.new_value);
   if (!current || typeof current !== "object" || Array.isArray(current)) return [];
   if (current.wip_count === true) return [];
+  if (current.mode === 'PAYROLL_FINALIZE') return [];
   const keys = Object.keys(current).filter((key) => !key.startsWith("_") && !SYSTEM_KEYS.has(key));
   // Use the same schema as the form: optional and newly added fields may be
   // absent from the queued payload. Keep status toggles restricted to status.
   if (isEmployeeMasterApproval({ ...request, new_value: current, old_value: safeJson(request?.old_value) }) && keys.some(key => key !== "status"))
     return [...new Set([...keys, ...employeeFieldNames])];
+  const labourMaster = current._scope_key === 'hr_payroll.labours' ||
+    (!current._scope_key && request?.entity_type === 'LABOUR' && 'production_category' in current);
+  if (labourMaster && !current.mode && keys.some(key => key !== 'status')) return [...new Set([...keys, ...PAY_FIELDS])];
   return keys;
 };
 

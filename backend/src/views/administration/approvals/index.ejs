@@ -758,6 +758,7 @@
           currentModalState.status === "PENDING" &&
           (currentModalState.action === "update" || currentModalState.action === "create") &&
           getEditPanel() &&
+          !getEditPanel().hasAttribute('data-preview-readonly') &&
           (getEditPanel().querySelectorAll("[data-field]").length > 0 ||
             getEditPanel().querySelectorAll("[data-approval-rate-row]").length > 0),
       );

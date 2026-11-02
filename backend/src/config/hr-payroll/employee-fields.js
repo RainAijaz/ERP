@@ -1,5 +1,7 @@
 // Shared by the employee form and approval editor; new fields stay editable in legacy requests.
+const { payArrangementField } = require('../../services/hr-payroll/guaranteed-pay-service');
 module.exports = [
+    payArrangementField('employee'),
     {
       name: "name",
       label: "name",
@@ -39,7 +41,7 @@ module.exports = [
         { value: "MULTIPLE", label: "payroll_multiple" },
       ],
     },
-    { name: "salary_effective_from", label: "salary_effective_from", type: "date", required: true },
+    { name: "salary_effective_from", label: "salary_effective_from", type: "date", required: true, hint: 'guarantee_effective_help' },
     { name: "week_ending_day", label: "salary_week_ending", type: "select", required: true,
       showWhen: { field: "payroll_type", values: ["WEEKLY"] },
       options: [0,1,2,3,4,5,6].map(value => ({ value: String(value), label: `salary_weekday_${value}` })) },
@@ -50,6 +52,7 @@ module.exports = [
     {
       name: "basic_salary",
       label: "basic_salary",
+      hint: 'guarantee_salary_help',
       type: "number",
       min: 0,
       step: "0.01",

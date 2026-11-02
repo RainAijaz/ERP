@@ -469,6 +469,10 @@ const navConfig = [
             route: "/hr-payroll/labours",
           },
           {
+            key: 'labour_payroll_periods', labelKey: 'salary_payroll_runs', scopeType: 'SCREEN',
+            scopeKey: 'hr_payroll.labours', moduleGroup: 'HR & Payroll', route: '/hr-payroll/payroll',
+          },
+          {
             key: "labour_rates",
             labelKey: "labour_rates",
             scopeType: "SCREEN",

@@ -15,6 +15,7 @@
   data-approval-preview
   data-preview-type="<%= previewType || '' %>"
   data-preview-action="<%= previewAction || '' %>"
+  <%= typeof previewReadOnly !== 'undefined' && previewReadOnly ? 'data-preview-readonly' : '' %>
   data-preview-values="<%- valuesAttr %>"
   data-preview-editable-fields="<%- escapeAttr(JSON.stringify(typeof editableFields !== 'undefined' ? editableFields : [])) %>"
 >

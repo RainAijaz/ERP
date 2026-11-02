@@ -4,6 +4,7 @@ const { resolveApprovalVoucherLink } = require("../../services/administration/ap
 const { HttpError } = require("../../middleware/errors/http-error");
 const { publicErrorMessage } = require("../../middleware/errors/friendly-error");
 const { validateEmployeeApprovalConfiguration } = require("../../services/hr-payroll/employee-configuration-service");
+const { validateLabourApprovalConfiguration } = require('../../services/hr-payroll/guaranteed-pay-service');
 const {
   requirePermission,
 } = require("../../middleware/access/role-permissions");
@@ -1275,6 +1276,14 @@ const buildPreviewPayload = async (req, res, request, side) => {
     const hydrated = await hydrateHrPage(hrPage, locale, req);
     const previewValues =
       values && typeof values === "object" ? { ...values } : {};
+    if (['hr_payroll.employees','hr_payroll.labours'].includes(hrScopeKey)) {
+      const kind = hrScopeKey === 'hr_payroll.employees' ? 'employee' : 'labour';
+      const existing = request.entity_id === 'NEW' ? null : await knex(hrPage.table).where('id',request.entity_id).first();
+      for (const key of kind === 'employee' ? ['pay_arrangement'] : ['pay_arrangement','basic_salary','salary_effective_from']) {
+        if (!Object.prototype.hasOwnProperty.call(previewValues,key))
+          previewValues[key] = existing?.[key] ?? (key === 'pay_arrangement' ? 'EXISTING' : key === 'basic_salary' ? 0 : null);
+      }
+    }
     if (previewValues && Array.isArray(previewValues.rows)) {
       const normalizedRows = normalizeRowsForLookup(previewValues.rows);
       let mergedRows = normalizedRows;
@@ -2130,6 +2139,8 @@ router.post(
 
         if (resolveHrScopeKey(request, sanitized.nextValue) === "hr_payroll.employees")
           await validateEmployeeApprovalConfiguration(trx, { ...request, new_value: sanitized.nextValue });
+        if (resolveHrScopeKey(request, sanitized.nextValue) === 'hr_payroll.labours')
+          await validateLabourApprovalConfiguration(trx, { ...request, new_value: sanitized.nextValue });
 
         changedFields = sanitized.changedFields;
         await trx("erp.approval_request").where({ id }).update({

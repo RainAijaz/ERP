@@ -10,13 +10,19 @@ registerApprovalPreviewProvider(async ({ req,res,request,side }) => {
   if (!payroll && !Object.prototype.hasOwnProperty.call(values,'eligibility')) return null;
   const summary = [];
   let exceptionRows = [];
-  const employeeIds = values.employee_ids || [values.employee_id || values.input?.employee_id].filter(Boolean);
+  const workerKind = payroll ? (values.snapshot?.worker_kind || 'employee') : 'employee';
+  const employeeIds = payroll ? [values.snapshot?.[`${workerKind}_id`] || values.input?.[`${workerKind}_id`]].filter(Boolean) :
+    values.employee_ids || [values.employee_id].filter(Boolean);
   if (employeeIds.length) {
-    const employees = await knex('erp.employees as e').whereIn('e.id',employeeIds).select(localizedNameSelect('e','name',req.locale));
-    summary.push({label:res.locals.t('employees'),value:employees.map(row=>row.name).join(', ')});
+    const employees = await knex(`${workerKind === 'labour' ? 'erp.labours' : 'erp.employees'} as e`).whereIn('e.id',employeeIds).select(localizedNameSelect('e','name',req.locale));
+    summary.push({label:res.locals.t(workerKind === 'labour' ? 'labours' : 'employees'),value:employees.map(row=>row.name).join(', ')});
   }
   if (payroll) {
     const snapshot = values.snapshot || {};
+    if (snapshot.guarantee_periods?.length) {
+      for (const key of ['guaranteed_salary','eligible_earnings','salary_adjustment','extra_earnings','period_earnings'])
+        summary.push({ label:res.locals.t('guarantee_'+key),value:snapshot[key] ?? 0 });
+    }
     for (const key of ['period_from','period_to','unpaid_days','absence_deduction','opening_balance','total_credit','total_debit','total_payable']) {
       summary.push({ label:res.locals.t('salary_'+key),value:snapshot[key] ?? values.input?.[key] ?? '' });
     }
@@ -53,7 +59,7 @@ registerApprovalPreviewProvider(async ({ req,res,request,side }) => {
         unit:res.locals.t('rate_type_'+String(row.rate_type || values.rate_type || '').toLowerCase())}));
     }
   }
-  return { previewAction:'edit',previewLabel:res.locals.t(payroll?'salary_finalize':'employee_commission_rules'),
+  return { previewAction:'edit',previewReadOnly:payroll,previewLabel:res.locals.t(payroll?'salary_finalize':'employee_commission_rules'),
     previewType:'payroll-configuration',previewTitle:res.locals.t(payroll?'salary_payroll_runs':'employee_commission_rules'),
     locale:req.locale,previewValues:{summary,exceptionRows},formPartial:'../../administration/approvals/payroll-configuration-preview.ejs' };
 });

@@ -26,6 +26,8 @@ const friendlyErrorMessage = (err, t) => {
   if (employeeConstraintKeys[err?.constraint]) return typeof t === 'function' ? t(employeeConstraintKeys[err.constraint]) : DEFAULT_MESSAGE;
   if (String(err?.message || '').includes('salary_period_finalized')) return typeof t === 'function' ? t('salary_period_finalized') : 'This payroll period is finalized.';
   if (String(err?.message || '').includes('salary_frequency_boundary')) return typeof t === 'function' ? t('salary_frequency_boundary') : 'Use a shared salary-period boundary.';
+  const guaranteeKey = ['guarantee_month_boundary','guarantee_monthly_only','guarantee_future_terms'].find(key => String(err?.message || '').includes(key));
+  if (guaranteeKey) return typeof t === 'function' ? t(guaranteeKey) : DEFAULT_MESSAGE;
   if (!err) return typeof t === "function" ? t("error_generic") : DEFAULT_MESSAGE;
   if(typeof t==='function' && typeof err.message==='string') {
     const translated=t(err.message);
@@ -76,7 +78,7 @@ const publicErrorMessage = (err,t,{validation=false}={}) => {
   if (employeeConstraintKeys[err?.constraint]) return t(employeeConstraintKeys[err.constraint]);
   if (["23503", "23505", "23502"].includes(err?.code)) return messageFromCode(err.code, t);
   const message=String(err?.message || '');
-  const marker=['salary_period_finalized','salary_frequency_boundary'].find(key=>message.includes(key));
+  const marker=['salary_period_finalized','salary_frequency_boundary','guarantee_month_boundary','guarantee_monthly_only','guarantee_future_terms'].find(key=>message.includes(key));
   if(marker && t(marker)!==marker)return t(marker);
   const translated=t(message);
   if(message && translated!==message)return translated;

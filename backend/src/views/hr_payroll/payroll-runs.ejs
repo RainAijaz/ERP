@@ -4,10 +4,10 @@
     <p class="mt-2 text-sm text-slate-500"><%= t('salary_payroll_help') %></p>
     <form data-payroll-form class="mt-4 grid gap-4 md:grid-cols-2">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <label class="block text-sm font-semibold text-slate-600"><span><%= t('employees') %></span>
-        <select required name="employee_id" data-searchable-select="true" data-searchable-variant="unified" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+      <label class="block text-sm font-semibold text-slate-600"><span><%= t('guarantee_worker') %></span>
+        <select required name="worker_key" data-searchable-select="true" data-searchable-variant="unified" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
           <option value=""><%= t('select') %></option>
-          <% employees.forEach(employee => { %><option value="<%= employee.id %>"><%= employee.name %></option><% }) %>
+          <% workers.forEach(worker => { %><option value="<%= worker.key %>"><%= worker.name %> — <%= t(worker.kind === 'labour' ? 'labour' : 'employee') %></option><% }) %>
         </select>
       </label>
       <% ['period_from','period_to'].forEach(name => { %>
@@ -15,7 +15,7 @@
           <input required type="date" name="<%= name %>" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm">
         </label>
       <% }) %>
-      <label class="block text-sm font-semibold text-slate-600"><span><%= t('salary_unpaid_days') %></span>
+      <label data-payroll-absence class="block text-sm font-semibold text-slate-600"><span><%= t('salary_unpaid_days') %></span>
         <input type="number" name="unpaid_days" value="0" min="0" max="366" step="0.5" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm">
       </label>
       <div class="flex flex-wrap gap-2">
@@ -26,22 +26,26 @@
     <p class="mt-3 text-sm text-slate-600" data-payroll-notice role="status"></p>
     <div data-payroll-preview hidden class="mt-4 overflow-x-auto rounded-lg border border-slate-200">
       <table class="min-w-full text-sm"><tbody>
+        <% ['guaranteed_salary','eligible_earnings','salary_adjustment','extra_earnings','period_earnings'].forEach(key => { %>
+          <tr hidden data-guarantee-total class="border-b border-slate-100"><th class="px-4 py-2 text-start"><%= t('guarantee_' + key) %></th><td class="px-4 py-2" data-payroll-total="<%= key %>"></td></tr>
+        <% }) %>
         <% ['opening_balance','total_credit','total_debit','absence_deduction','total_payable'].forEach(key => { %>
           <tr class="border-b border-slate-100"><th class="px-4 py-2 text-start"><%= t('salary_' + key) %></th><td class="px-4 py-2" data-payroll-total="<%= key %>"></td></tr>
         <% }) %>
       </tbody></table>
+      <p data-guarantee-explanation hidden class="px-4 py-3 text-sm text-slate-600"><%= t('guarantee_payroll_explanation') %></p>
       <table class="min-w-full text-sm"><thead class="bg-slate-50"><tr><% ['date','voucher_type','debit','credit'].forEach(key=>{ %><th class="whitespace-nowrap px-4 py-2 text-start"><%= t(key) %></th><% }) %></tr></thead><tbody data-payroll-lines></tbody></table>
     </div>
   </section>
   <section class="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
     <table class="min-w-full text-sm">
-      <thead class="bg-slate-50"><tr><% ['employees','salary_period_from','salary_period_to','salary_total_payable','actions'].forEach(key => { %><th class="whitespace-nowrap px-4 py-3 text-start"><%= t(key) %></th><% }) %></tr></thead>
+      <thead class="bg-slate-50"><tr><% ['guarantee_worker','salary_period_from','salary_period_to','salary_total_payable','actions'].forEach(key => { %><th class="whitespace-nowrap px-4 py-3 text-start"><%= t(key) %></th><% }) %></tr></thead>
       <tbody><% runs.forEach(run => { %><tr class="border-t border-slate-100">
-        <td class="px-4 py-3"><%= run.employee_name %></td>
+        <td class="px-4 py-3"><%= run.employee_name %> — <%= t(run.kind === 'labour' ? 'labour' : 'employee') %></td>
         <td class="whitespace-nowrap px-4 py-3"><%= new Date(run.period_from).toLocaleDateString('en-CA') %></td>
         <td class="whitespace-nowrap px-4 py-3"><%= new Date(run.period_to).toLocaleDateString('en-CA') %></td>
         <td class="px-4 py-3"><%= Number(run.total_payable).toFixed(2) %></td>
-        <td class="px-4 py-3"><button type="button" class="text-accent underline" data-payroll-snapshot="<%= run.id %>"><%= t('salary_view_finalized') %></button></td>
+        <td class="px-4 py-3"><button type="button" class="text-accent underline" data-payroll-snapshot="<%= run.id %>" data-payroll-kind="<%= run.kind %>"><%= t('salary_view_finalized') %></button></td>
       </tr><% }) %></tbody>
     </table>
   </section>
@@ -54,17 +58,25 @@
   let previewHash = null; let controller; let revision = 0;
   const invalidate = () => { previewHash=null; finalize.disabled=true; ++revision; controller?.abort(); document.querySelector('[data-payroll-preview]').hidden=true; };
   const renderSnapshot = snapshot => {
-    document.querySelectorAll('[data-payroll-total]').forEach(node=>node.textContent=Number(snapshot[node.dataset.payrollTotal]).toFixed(2));
+    document.querySelectorAll('[data-payroll-total]').forEach(node=>node.textContent=Number(snapshot[node.dataset.payrollTotal] || 0).toFixed(2));
+    document.querySelectorAll('[data-guarantee-total],[data-guarantee-explanation]').forEach(node => node.hidden = !snapshot.guarantee_periods?.length);
     const body=document.querySelector('[data-payroll-lines]');body.replaceChildren();
     (snapshot.rows || []).forEach(row=>{
       const line=document.createElement('tr');line.className='border-t border-slate-100';
-      [row.entry_date,row.voucher_type,Number(row.debit).toFixed(2),Number(row.credit).toFixed(2)].forEach(value=>{
+      const typeLabels = <%- JSON.stringify({ PAYROLL_ACCRUAL:t('salary_accrual_history'), PAYROLL_GUARANTEE:t('guarantee_adjustment'), PAYROLL_DEDUCTION:t('salary_absence_deduction') }) %>;
+      [row.entry_date,typeLabels[row.voucher_type] || row.voucher_type,Number(row.debit).toFixed(2),Number(row.credit).toFixed(2)].forEach(value=>{
         const cell=document.createElement('td');cell.className='whitespace-nowrap px-4 py-2';cell.textContent=value;line.appendChild(cell);
       });body.appendChild(line);
     });
     document.querySelector('[data-payroll-preview]').hidden=false;
   };
   form.addEventListener('input',invalidate); form.addEventListener('change',invalidate);
+  form.elements.worker_key.addEventListener('change',() => {
+    const labour = form.elements.worker_key.value.startsWith('labour:');
+    document.querySelector('[data-payroll-absence]').hidden=labour;
+    form.elements.unpaid_days.disabled=labour;
+    if (labour) form.elements.unpaid_days.value='0';
+  });
   const request = async action => {
     const seq = ++revision;
     controller?.abort(); controller=new AbortController(); finalize.disabled=true;
@@ -87,7 +99,7 @@
   document.querySelectorAll('[data-payroll-snapshot]').forEach(button=>button.addEventListener('click',async()=>{
     invalidate();const seq=revision;notice.textContent=<%- JSON.stringify(t('loading')) %>;
     try {
-      const response=await fetch(`/hr-payroll/payroll/${button.dataset.payrollSnapshot}/snapshot`);
+      const response=await fetch(`/hr-payroll/payroll/${button.dataset.payrollKind}/${button.dataset.payrollSnapshot}/snapshot`);
       const data=await response.json();if(seq!==revision)return;
       if(!response.ok)throw new Error(data.message);
       renderSnapshot(data.snapshot);notice.textContent=<%- JSON.stringify(t('salary_view_finalized')) %>;

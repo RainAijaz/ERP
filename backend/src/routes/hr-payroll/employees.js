@@ -11,6 +11,7 @@ const {
   hasTwoDecimalsOrLess,
 } = require("./validation");
 const { normalizeEmployeeConfiguration, employeeConfigurationError } = require("../../services/hr-payroll/employee-configuration-service");
+const { validatePayChange, preserveOmittedPayFields } = require('../../services/hr-payroll/guaranteed-pay-service');
 const commissionsRoutes = require("./commissions");
 const allowancesRoutes = require("./allowances");
 
@@ -26,6 +27,7 @@ const page = {
   codePrefix: "emp",
   defaults: {
     payroll_type: "MONTHLY",
+    pay_arrangement: "EXISTING",
     salary_proration: "NONE",
     status: "active",
   },
@@ -79,6 +81,7 @@ const page = {
     { key: "cnic", label: "cnic" },
     { key: "phone", label: "phone_number" },
     { key: "payroll_type", label: "payroll_type" },
+    { key: "pay_arrangement", label: "guarantee_pay_arrangement" },
     { key: "basic_salary", label: "basic_salary", adminOnly: true },
     { key: "employment_start_date", label: "employment_start_date" },
     { key: "employment_end_date", label: "employment_end_date" },
@@ -95,8 +98,11 @@ const page = {
       values.basic_salary == null ? null : String(values.basic_salary).trim(),
   }),
   validateValues: async ({ values, req, isUpdate, id }) => {
+    const existingPay = isUpdate ? await knex('erp.employees').where({ id }).first() : null;
+    preserveOmittedPayFields(values, req.body, existingPay, 'employee');
     const configurationError = employeeConfigurationError(values);
     if (configurationError) return { field: configurationError.field, message: req.res.locals.t(configurationError.key) };
+    await validatePayChange({ db: knex, kind: 'employee', values, existing: existingPay });
     if (values.basic_salary === null || !Number.isFinite(Number(values.basic_salary)) || Number(values.basic_salary) < 0)
       return req.res.locals.t("error_invalid_salary");
     if (

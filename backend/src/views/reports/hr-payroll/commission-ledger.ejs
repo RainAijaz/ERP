@@ -96,6 +96,7 @@
   <%/* ── Results ─────────────────────────────────────────────────── */%>
   <% if (reportLoaded) { %>
   <section class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <p class="px-4 py-3 text-sm text-slate-600"><%= t('guarantee_gross_commission_help') %></p>
 
     <% if (!rows.length) { %>
       <div class="px-6 py-10 text-center text-sm text-slate-500"><%= t("no_records_found") || "No records found." %></div>

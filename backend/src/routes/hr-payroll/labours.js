@@ -26,6 +26,7 @@ const {
   applyBulkSkuRateUpsert,
 } = require("../../services/hr-payroll/labour-rates-service");
 const copyService = require("../../services/hr-payroll/labour-rate-copy-service");
+const { payArrangementField, normalizePayConfiguration, payConfigurationError, validatePayChange, preserveOmittedPayFields } = require('../../services/hr-payroll/guaranteed-pay-service');
 const labourAllowancesRoutes = require("./labour-allowances");
 
 let hasLabourRateArticleTypeColumnPromise = null;
@@ -171,6 +172,7 @@ const findLabourDeptUsageMap = async ({ db, labourId, deptIds = [] }) => {
 };
 
 const page = {
+  approvalRequestsEnabled: true,
   titleKey: "labours",
   descriptionKey: "labours_description",
   table: "erp.labours",
@@ -181,6 +183,8 @@ const page = {
   autoCodeFromName: true,
   codePrefix: "lab",
   defaults: {
+    pay_arrangement: 'EXISTING',
+    basic_salary: 0,
     production_category: "finished",
     status: "active",
   },
@@ -216,6 +220,7 @@ const page = {
   ],
   joins: [],
   extraSelect: (locale) => [
+    knex.raw("to_char(t.salary_effective_from, 'YYYY-MM-DD') as salary_effective_from"),
     knex.raw(
       `(SELECT COALESCE(string_agg(x.dept_id::text, ',' ORDER BY x.dept_id), '')
         FROM (
@@ -261,6 +266,8 @@ const page = {
     ),
   ],
   columns: [
+    { key: 'pay_arrangement', label: 'guarantee_pay_arrangement' },
+    { key: 'basic_salary', label: 'guarantee_monthly_salary', adminOnly: true },
     { key: "id", label: "id" },
     { key: "name", label: "name" },
     { key: "name_ur", label: "name_ur" },
@@ -272,6 +279,11 @@ const page = {
     { key: "status", label: "status" },
   ],
   fields: [
+    payArrangementField('labour'),
+    { name: 'basic_salary', label: 'guarantee_monthly_salary', type: 'number', min: 0, step: '0.01', required: true,
+      showWhen: { field: 'pay_arrangement', values: ['MONTHLY_GUARANTEE'] } },
+    { name: 'salary_effective_from', label: 'guarantee_effective_from', type: 'date', hint: 'guarantee_effective_help' },
+
     {
       name: "name",
       label: "name",
@@ -338,7 +350,7 @@ const page = {
     },
   ],
   sanitizeValues: (values) => ({
-    ...values,
+    ...normalizePayConfiguration(values, 'labour'),
     name_ur: String(values.name_ur || "").trim(),
     cnic: normalizeCnic(values.cnic),
     phone: normalizePhone(values.phone),
@@ -355,6 +367,11 @@ const page = {
         : null,
   }),
   validateValues: async ({ values, req, isUpdate, id }) => {
+    const existingPay = isUpdate ? await knex('erp.labours').where({ id }).first() : null;
+    preserveOmittedPayFields(values, req.body, existingPay, 'labour');
+    const payError = payConfigurationError(values, 'labour');
+    if (payError) return { field: payError.field, message: req.res.locals.t(payError.key) };
+    Object.assign(values, await validatePayChange({ db: knex, kind: 'labour', values, existing: existingPay }));
     const categories = new Set(["finished", "semi_finished"]);
     if (!categories.has(values.production_category))
       return req.res.locals.t("error_invalid_production_category");

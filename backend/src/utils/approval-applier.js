@@ -1,5 +1,6 @@
 const { normalizeEligibility, eligibilityKey, validateEligibilityReferences } = require("../services/hr-payroll/commission-eligibility-service");
 const { normalizeEmployeeConfiguration, assertEmployeeConfiguration } = require("../services/hr-payroll/employee-configuration-service");
+const { assertPayConfiguration, validatePayChange } = require('../services/hr-payroll/guaranteed-pay-service');
 // approval-applier.js
 // Purpose: Contains logic for applying approval actions to ERP entities (items, SKUs, accounts, parties, etc).
 // Used by the approval engine to process approved requests and update the database accordingly.
@@ -1502,6 +1503,7 @@ const applyEmployeeMasterApproval = async (trx, request) => {
     return true;
   }
   const payload = assertEmployeeConfiguration(normalizeEmployeeConfiguration({ ...existing, ...newValue }));
+  await validatePayChange({ db: trx, kind: 'employee', values: payload, existing });
   const row = {
     code: payload.code || null,
     name: payload.name || null,
@@ -1517,6 +1519,7 @@ const applyEmployeeMasterApproval = async (trx, request) => {
     absence_deductions_enabled: payload.absence_deductions_enabled,
     absence_day_divisor: payload.absence_day_divisor,
     salary_proration: payload.salary_proration,
+    pay_arrangement: payload.pay_arrangement,
     status: normalizeStatus(payload.status, "active"),
     // Salary accrual reads these; omitting them here would silently drop the
     // dates on approve while the non-approval save path kept them.
@@ -1569,7 +1572,14 @@ const applyLabourMasterApproval = async (trx, request) => {
     return true;
   }
 
-  const payload = newValue || {};
+  const existing = action === 'create' ? null : await trx(LABOUR_TABLE).where({ id: Number(entityId) }).first();
+  if (action !== 'create' && !existing) return false;
+  if (action !== 'create' && Object.keys(newValue || {}).filter(key => !key.startsWith('_')).every(key => key === 'status')) {
+    await trx(LABOUR_TABLE).where({ id: Number(entityId) }).update({ status: normalizeStatus(newValue?.status, 'inactive') });
+    return true;
+  }
+  const payload = assertPayConfiguration({ ...existing, ...newValue }, 'labour');
+  await validatePayChange({ db: trx, kind: 'labour', values: payload, existing });
   const deptIds = toArray(payload.dept_ids)
     .map((id) => Number(id))
     .filter((id) => Number.isInteger(id) && id > 0);
@@ -1584,6 +1594,9 @@ const applyLabourMasterApproval = async (trx, request) => {
     dept_id: deptId,
     status: normalizeStatus(payload.status, "active"),
     production_category: payload.production_category || null,
+    pay_arrangement: payload.pay_arrangement,
+    basic_salary: payload.basic_salary,
+    salary_effective_from: payload.salary_effective_from,
   };
 
   if (action === "create") {
@@ -2195,11 +2208,14 @@ const applyHrApprovalChange = async (trx, request, decidedBy = null) => {
   const target = inferHrTarget({ entityType, request, newValue, oldValue });
 
   if (target === "payroll_finalize") {
-    const { finalizePayroll } = require("../services/hr-payroll/payroll-run-service");
+    const { finalizePayroll, normalizePayrollInput } = require("../services/hr-payroll/payroll-run-service");
+    const normalized = normalizePayrollInput(newValue.input || {});
+    if (normalized.kind.toUpperCase() !== entityType || String(normalized.employeeId) !== String(request.entity_id))
+      throw new Error('guarantee_invalid_worker');
     const { resolveTranslation } = require("../middleware/core/locale");
     const req = { user:{ id:decidedBy,isAdmin:true },locale:"en",branchScope:[],res:{locals:{t:key => resolveTranslation("en",key)}} };
     const run = await finalizePayroll({ trx,req,input:newValue.input,expectedHash:newValue.preview_hash });
-    return { applied:true,entityId:String(run.employee_id),payrollRunId:run.id };
+    return { applied:true,entityId:String(run.employee_id || run.labour_id),payrollRunId:run.id };
   }
   if (target === "commission_recalc")
     return applyCommissionRecalcApproval(trx, request, decidedBy);

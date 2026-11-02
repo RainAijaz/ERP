@@ -5693,6 +5693,8 @@ Object.assign(translations.ur, {
 });
 Object.assign(translations.en, require("../../utils/salary-commission-translations").en);
 Object.assign(translations.ur, require("../../utils/salary-commission-translations").ur);
+Object.assign(translations.en, require('../../utils/guaranteed-pay-translations').en);
+Object.assign(translations.ur, require('../../utils/guaranteed-pay-translations').ur);
 
 Object.assign(translations.en, {
   labour_rate_zero_grade_b: "Rs 0 for Grade B SKUs",

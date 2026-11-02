@@ -12,7 +12,7 @@
         const hrIcon = "h-3.5 w-3.5 shrink-0";
       %>
       <div class="flex flex-wrap items-center gap-2 lg:justify-end">
-        <% const canRequestChange = page.scopeKey === 'hr_payroll.commissions' && page.approvalRequestsEnabled && can('SCREEN',page.scopeKey,'view'); %>
+        <% const canRequestChange = page.approvalRequestsEnabled && can('SCREEN',page.scopeKey,'view'); %>
         <% const canCreate = can("SCREEN", page.scopeKey, "create") || canRequestChange; %>
         <% if (canRequestChange && !can('SCREEN',page.scopeKey,'create')) { %><span class="text-xs text-slate-500"><%= t('commission_request_hint') %></span><% } %>
         <% const canDownload = can("SCREEN", page.scopeKey, "print"); %>
@@ -195,6 +195,8 @@
                       <span class="inline-flex items-center whitespace-nowrap rounded-full border <%= (row[column.key] || "").toLowerCase() === "active" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700" %> px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]">
                         <%= t((row[column.key] || "").toLowerCase() === "active" ? "active" : "inactive") %>
                       </span>
+                    <% } else if (column.key === 'pay_arrangement') { %>
+                      <%= t(row.pay_arrangement === 'MONTHLY_GUARANTEE' ? 'guarantee_option' : (page.scopeKey === 'hr_payroll.labours' ? 'guarantee_existing_labour' : 'guarantee_existing_employee')) %>
                     <% } else if (column.key === "payroll_type") { %>
                       <span class="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
                         <%= t(`payroll_${String(row[column.key] || "").toLowerCase()}`) || row[column.key] %>

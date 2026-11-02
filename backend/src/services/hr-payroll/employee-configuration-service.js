@@ -1,4 +1,5 @@
 const { normalizeRuleDate } = require('./commission-rules-service');
+const { normalizePayConfiguration, payConfigurationError, validatePayChange } = require('./guaranteed-pay-service');
 const employeeFields = require('../../config/hr-payroll/employee-fields');
 
 const employeeFieldNames = employeeFields.map(field => field.name);
@@ -18,12 +19,12 @@ const isEmployeeMasterApproval = request => {
 
 // Shared by direct saves and approval replay. Never guess a weekly boundary.
 const SALARY_FIELDS = ['salary_effective_from', 'week_ending_day',
-  'absence_deductions_enabled', 'absence_day_divisor', 'salary_proration'];
+  'absence_deductions_enabled', 'absence_day_divisor', 'salary_proration', 'pay_arrangement'];
 const optionalNumber = value => value == null || (typeof value === 'string' && value.trim() === '') ? null :
   (typeof value === 'string' || typeof value === 'number') ? Number(value) : NaN;
 
 const normalizeEmployeeConfiguration = values => ({
-  ...values,
+  ...normalizePayConfiguration(values, 'employee'),
   salary_effective_from: normalizeRuleDate(values.salary_effective_from),
   week_ending_day: values.payroll_type === 'WEEKLY' ? optionalNumber(values.week_ending_day) : null,
   absence_deductions_enabled: [true, 'true', 'on', 1, '1'].includes(values.absence_deductions_enabled),
@@ -34,6 +35,8 @@ const normalizeEmployeeConfiguration = values => ({
 });
 
 const employeeConfigurationError = values => {
+  const payError = payConfigurationError(values, 'employee');
+  if (payError) return payError;
   if (!['MONTHLY', 'WEEKLY', 'DAILY', 'PIECE_RATE', 'MULTIPLE'].includes(values.payroll_type))
     return { field: 'payroll_type', key: 'error_invalid_payroll_type' };
   if (!values.salary_effective_from) return { field: 'salary_effective_from', key: 'salary_effective_required' };
@@ -62,7 +65,8 @@ const validateEmployeeApprovalConfiguration = async (db, request) => {
   const current = request.new_value || {};
   if (current.mode || !Object.keys(current).some(key => !key.startsWith('_') && key !== 'status')) return;
   const existing = request.entity_id === 'NEW' ? null : await db('erp.employees').where({ id: request.entity_id }).first();
-  assertEmployeeConfiguration(normalizeEmployeeConfiguration({ ...existing, ...current }));
+  const values = assertEmployeeConfiguration(normalizeEmployeeConfiguration({ ...existing, ...current }));
+  await validatePayChange({ db, kind: 'employee', values, existing });
 };
 
 module.exports = { SALARY_FIELDS, employeeFieldNames, isEmployeeMasterApproval, normalizeEmployeeConfiguration, employeeConfigurationError, assertEmployeeConfiguration, validateEmployeeApprovalConfiguration };
