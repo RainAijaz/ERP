@@ -6,6 +6,7 @@ const {
 } = require("../../utils/approval-activity-log");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const { normalizeConversionFactor } = require("../../utils/uom-conversion");
+const { resolveBomStockCostTx } = require("../bom/bom-stock-cost-service");
 const {
   resolveVoucherApprovalRequiredTx,
 } = require("../../utils/voucher-approval-policy");
@@ -1268,6 +1269,7 @@ const moveSkuStockPairsTx = async ({
   });
   const availableQtyPairs = Number(fromSnapshot?.qty_pairs || 0);
   const availableValue = Number(fromSnapshot?.value || 0);
+  let costSnapshot = null;
   if (revalueAtSource && normalizedCategory === "SFG") {
     const lastReceipt = availableQtyPairs > 0 && availableValue > 0 ? null : await trx("erp.stock_ledger as sl")
       .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
@@ -1277,6 +1279,11 @@ const moveSkuStockPairsTx = async ({
       .orderBy("sl.txn_date", "desc").orderBy("sl.id", "desc").first();
     normalizedUnitCostBase = resolveStockUnitCost({ qty: availableQtyPairs, value: availableValue,
       lastUnitCost: lastReceipt?.unit_cost || 0 });
+    if (!(normalizedUnitCostBase > 0) && availableQtyPairs <= 0) {
+      const bomCost = await resolveBomStockCostTx({ trx, branchId: fromBranchId, skuId });
+      normalizedUnitCostBase = bomCost?.unitCost || 0;
+      costSnapshot = bomCost?.snapshot || null;
+    }
     if (!(normalizedUnitCostBase > 0)) throw new HttpError(409, resolveTranslation("en", "sfg_transfer_cost_missing"));
     value = roundCost2(normalizedQtyPairs * normalizedUnitCostBase);
   }
@@ -1387,7 +1394,7 @@ const moveSkuStockPairsTx = async ({
     value,
     isPacked: usePackedBucket,
   });
-  return { unitCostBase: normalizedUnitCostBase, value };
+  return { unitCostBase: normalizedUnitCostBase, value, costSnapshot };
 };
 
 const fetchSkuMapTx = async ({
@@ -2012,6 +2019,8 @@ const loadTransferOutLinesTx = async ({ trx, voucherId }) => {
       transfer_qty_pairs: Number(meta.transfer_qty_pairs || 0),
       unit_cost_base: Number(meta.unit_cost_base || 0),
       is_wip: meta.is_wip === true,
+      cost_source: meta.cost_source || null,
+      bom_cost: meta.bom_cost || null,
       stage_id: toPositiveInt(meta.stage_id),
       stage_name: String(meta.stage_name || ""),
       dept_id: toPositiveInt(meta.dept_id),
@@ -2465,6 +2474,17 @@ const validateTransferOutPayloadTx = async ({
     sourceBranchId: req.branchId,
   });
 
+  const bomCosts = new Map();
+  if (stockType === "SFG") {
+    for (const skuId of skuIds) {
+      const stock = sourceStock.skuMap[`SFG:${skuId}`];
+      if (!(Number(stock?.transfer_unit_cost || 0) > 0) && Number(stock?.qty_pairs || 0) <= 0) {
+        const bomCost = await resolveBomStockCostTx({ trx, branchId: req.branchId, skuId });
+        if (bomCost) bomCosts.set(skuId, bomCost);
+      }
+    }
+  }
+
   const lines = rawLines.map((raw, index) => {
     const lineNo = index + 1;
     const skuId = toPositiveInt(raw?.sku_id);
@@ -2516,7 +2536,7 @@ const validateTransferOutPayloadTx = async ({
     const hasNegativeStockRisk = shortageQtyPairs > 0;
     const unitCostBase = roundUnitCost6(
       stockType === "SFG"
-        ? Number(stock?.transfer_unit_cost || 0)
+        ? Number(stock?.transfer_unit_cost || bomCosts.get(skuId)?.unitCost || 0)
         : Number(sku?.sale_rate || 0),
     );
     if (stockType === "SFG" && !(unitCostBase > 0)) {
@@ -2549,6 +2569,7 @@ const validateTransferOutPayloadTx = async ({
         negative_stock_risk: hasNegativeStockRisk,
         transfer_qty_pairs: Number(transferQtyPairs),
         unit_cost_base: Number(unitCostBase),
+        ...(bomCosts.has(skuId) ? { cost_source: "APPROVED_BOM", bom_cost: bomCosts.get(skuId).snapshot } : {}),
       },
     };
   });
@@ -2906,6 +2927,7 @@ const validateTransferInPayloadTx = async ({
             dept_id: Number(stnLine.dept_id) || null,
           }
         : {}),
+      ...(stockType === "SFG" ? { cost_source: stnLine.cost_source || "STOCK", bom_cost: stnLine.bom_cost || null } : {}),
     };
 
     if (stockType === "RM") {
@@ -3350,7 +3372,9 @@ const syncStockTransferOutVoucherTx = async ({
         await trx("erp.voucher_line").where({ id: line.id }).update({
           rate: Number((moved.unitCostBase * factorToBase).toFixed(4)),
           amount: moved.value,
-          meta: { ...meta, unit_cost_base: moved.unitCostBase },
+          meta: { ...meta, unit_cost_base: moved.unitCostBase,
+            cost_source: moved.costSnapshot ? "APPROVED_BOM" : "STOCK",
+            bom_cost: moved.costSnapshot },
         });
       }
     }

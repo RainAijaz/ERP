@@ -5,6 +5,8 @@ const {
   logVoucherApprovalWriteTx,
 } = require("../../utils/approval-activity-log");
 const { toLocalDateOnly } = require("../../utils/date-only");
+const { getUomConversionMultiplier } = require("../../utils/rm-uom-stock-conversion");
+const { normalizeConversionFactor } = require("../../utils/uom-conversion");
 const {
   resolveVoucherApprovalRequiredTx,
 } = require("../../utils/voucher-approval-policy");
@@ -1086,6 +1088,7 @@ const loadBomProfileBySkuTx = async ({ trx, skuId }) => {
     itemId: Number(sku.item_id),
     itemType: String(sku.item_type || "").toUpperCase(),
     bomId: Number(bomHeader.id),
+    bomVersion: Number(bomHeader.version_no),
     outputQty: Number(bomHeader.output_qty || 1),
     outputUomId: outputUomId || null,
     outputUomFactorToPair: Number(outputUomFactorToPair.toFixed(6)),
@@ -4562,6 +4565,9 @@ const enrichConsumptionLinesWithRmRatesTx = async ({ trx, lines = [] }) => {
     ),
   ];
   if (!rmItemIds.length) return normalizedLines;
+  const rmItems = await trx("erp.items").select("id", "base_uom_id")
+    .whereIn("id", rmItemIds).where({ item_type: "RM", is_active: true });
+  const baseUomByItem = new Map(rmItems.map(row => [Number(row.id), Number(row.base_uom_id)]));
 
   const rows = await trx("erp.rm_purchase_rates as r")
     .select(
@@ -4609,8 +4615,9 @@ const enrichConsumptionLinesWithRmRatesTx = async ({ trx, lines = [] }) => {
     return 0;
   };
 
-  return normalizedLines.map((line) => {
-    const qty = Number(line?.qty || 0);
+  return Promise.all(normalizedLines.map(async (line) => {
+    const inputQty = Number(line?.qty || 0);
+    let qty = inputQty;
     if (!Number.isFinite(qty) || qty <= 0) {
       return {
         ...line,
@@ -4619,6 +4626,14 @@ const enrichConsumptionLinesWithRmRatesTx = async ({ trx, lines = [] }) => {
       };
     }
     const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
+    if (!toPositiveInt(line.item_id)) return line;
+    const baseUomId = baseUomByItem.get(Number(line.item_id));
+    const factor = normalizeConversionFactor(await getUomConversionMultiplier(trx, line.uom_id, baseUomId));
+    if (!baseUomId || !Number.isFinite(factor) || !(factor > 0)) {
+      throw new HttpError(409, "sfg_bom_cost_incomplete");
+    }
+    qty = roundQty3(inputQty * factor);
+    if (!(qty > 0)) throw new HttpError(409, "sfg_bom_cost_incomplete");
     const resolvedRate = resolveRate({
       itemId: line?.item_id,
       colorId: meta.rm_color_id,
@@ -4628,14 +4643,19 @@ const enrichConsumptionLinesWithRmRatesTx = async ({ trx, lines = [] }) => {
       resolvedRate > 0 ? Number((qty * resolvedRate).toFixed(2)) : 0;
     return {
       ...line,
+      qty,
+      uom_id: baseUomId,
       rate: Number(resolvedRate.toFixed(4)),
       amount,
       meta: {
         ...meta,
+        bom_consumption_qty: inputQty,
+        bom_consumption_uom_id: line.uom_id,
+        consumption_factor_to_base: factor,
         rm_rate_applied: resolvedRate > 0,
       },
     };
-  });
+  }));
 };
 
 const buildLabourLinesFromShortfall = ({
@@ -4643,6 +4663,7 @@ const buildLabourLinesFromShortfall = ({
   skuLine,
   shortfallPlan,
   bomProfile,
+  roundCosts = true,
 }) => {
   const lines = [];
   let lineNo = lineNoStart;
@@ -4655,14 +4676,15 @@ const buildLabourLinesFromShortfall = ({
     );
     for (const labour of deptLabourLines) {
       const rateValue = Number(labour.rate_value || 0);
-      const ratePerPair =
+      const rawRatePerPair =
         String(labour.rate_type || LABOUR_RATE_TYPE.perPair).toUpperCase() ===
         LABOUR_RATE_TYPE.perDozen
-          ? Number((rateValue / PAIRS_PER_DOZEN).toFixed(4))
-          : Number(rateValue.toFixed(4));
+          ? rateValue / PAIRS_PER_DOZEN
+          : rateValue;
+      const ratePerPair = roundCosts ? Number(rawRatePerPair.toFixed(4)) : rawRatePerPair;
       const qtyPairs = Number(shortfallPairs);
       if (!Number.isInteger(qtyPairs) || qtyPairs <= 0) continue;
-      const amount = Number((qtyPairs * ratePerPair).toFixed(2));
+      const amount = roundCosts ? Number((qtyPairs * ratePerPair).toFixed(2)) : qtyPairs * ratePerPair;
       lines.push({
         line_no: lineNo,
         line_kind: "LABOUR",
@@ -4987,6 +5009,23 @@ const applyDcvToWipTx = async ({
     itemTypes: ["FG", "SFG"],
   });
   const bomProfileBySku = new Map();
+  // The generated consumption has already posted. Capitalize the actual RM
+  // ledger cost, rather than its purchase-rate preview, once per SKU/department.
+  const materialRows = await trx("erp.production_generated_links as link")
+    .join("erp.voucher_line as vl", "vl.voucher_header_id", "link.consumption_voucher_id")
+    .join("erp.stock_ledger as sl", "sl.voucher_line_id", "vl.id")
+    .where({ "link.production_voucher_id": voucherId, "sl.category": "RM", "sl.direction": -1 })
+    .select("vl.meta", "sl.value");
+  const materialCosts = new Map();
+  for (const row of materialRows) {
+    const key = `${Number(row.meta?.source_sku_id)}:${Number(row.meta?.department_id)}`;
+    materialCosts.set(key, roundCost2((materialCosts.get(key) || 0) - Number(row.value)));
+  }
+  const remainingMaterialPairs = new Map();
+  for (const line of allLines) {
+    const key = `${Number(line.sku_id)}:${Number(line.dept_id)}`;
+    remainingMaterialPairs.set(key, (remainingMaterialPairs.get(key) || 0) + Number(line.meta?.total_pairs || line.qty || 0));
+  }
   // Output that reached stock this run, collected for the commission write below.
   const commissionOutputs = [];
 
@@ -5130,8 +5169,15 @@ const applyDcvToWipTx = async ({
     }
 
     const ownStageCost = Number(Number(line.amount || 0).toFixed(2));
+    const materialKey = `${skuId}:${deptId}`;
+    const remainingPairs = remainingMaterialPairs.get(materialKey) || 0;
+    const remainingCost = materialCosts.get(materialKey) || 0;
+    const materialCost = remainingPairs > 0
+      ? roundCost2(remainingCost * qtyPairs / remainingPairs) : 0;
+    remainingMaterialPairs.set(materialKey, remainingPairs - qtyPairs);
+    materialCosts.set(materialKey, roundCost2(remainingCost - materialCost));
     const costValue = Number(
-      (previousStageCost + stageSfgConsumedCost + ownStageCost).toFixed(2),
+      (previousStageCost + stageSfgConsumedCost + ownStageCost + materialCost).toFixed(2),
     );
     await adjustWipBalanceTx({
       trx,
@@ -6002,13 +6048,6 @@ const ensureProductionVoucherDerivedDataTx = async ({
       productionVoucherId: normalizedVoucherId,
       allowNegativeRollback: allowNegativeRm === true,
     });
-    await applyDcvToWipTx({
-      trx,
-      voucherId: normalizedVoucherId,
-      branchId: Number(header.branch_id),
-      voucherDate: toDateOnly(header.voucher_date),
-      allowNegativeRm,
-    });
     await applyDcvToGeneratedVouchersTx({
       trx,
       voucherId: normalizedVoucherId,
@@ -6016,6 +6055,13 @@ const ensureProductionVoucherDerivedDataTx = async ({
       voucherDate: toDateOnly(header.voucher_date),
       createdBy: toPositiveInt(actorUserId) || Number(header.created_by),
       voucherNo: Number(header.voucher_no || 0),
+      allowNegativeRm,
+    });
+    await applyDcvToWipTx({
+      trx,
+      voucherId: normalizedVoucherId,
+      branchId: Number(header.branch_id),
+      voucherDate: toDateOnly(header.voucher_date),
       allowNegativeRm,
     });
     return;
@@ -8232,6 +8278,10 @@ module.exports = {
   getProductionVoucherNeighbours,
   loadProductionVoucherDetails,
   loadBomProfileBySkuTx,
+  buildConsumptionLinesFromShortfall,
+  buildLabourLinesFromShortfall,
+  buildSfgRequirementsForStage,
+  enrichConsumptionLinesWithRmRatesTx,
   ensureProductionVoucherDerivedDataTx,
   applyProductionVoucherUpdatePayloadTx,
   applyProductionVoucherDeletePayloadTx,

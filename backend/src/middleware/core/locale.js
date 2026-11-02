@@ -2,7 +2,8 @@ const { parseCookies, setCookie } = require("../utils/cookies");
 
 const translations = {
   en: {
-    sfg_transfer_cost_missing: "The source cost for this SFG is missing. Record or reconcile its production/opening stock cost before transferring it.",
+    sfg_transfer_cost_missing: "This SFG has no usable stock cost. For a new negative-stock transfer, add an approved BOM with material and labour rates. If stock is already on hand without a value, reconcile its production/opening stock cost first.",
+    sfg_bom_cost_incomplete: "The approved SFG BOM cost is incomplete. Check material rates, labour rates, unit conversions and component SFG BOMs before transferring it.",
     stock_value_adjustment: "Stock value adjustment (quantity unchanged)",
     valuation_reconciliation: "Reconcile historical SFG transfer valuation",
     valuation_preview_changed: "Stock records changed since the preview. Generate and review a fresh valuation preview.",
@@ -2221,7 +2222,8 @@ const translations = {
     variants_sent_approval: "Variants will be added once approved.",
   },
   ur: {
-  sfg_transfer_cost_missing: "اس نیم تیار مال کی اصل لاگت موجود نہیں ہے۔ منتقلی سے پہلے پیداوار یا ابتدائی اسٹاک کی لاگت درج یا درست کریں۔",
+  sfg_transfer_cost_missing: "اس نیم تیار مال کی قابل استعمال اسٹاک لاگت موجود نہیں۔ نئے منفی اسٹاک ٹرانسفر کے لیے خام مال اور مزدوری کی شرحوں کے ساتھ منظور شدہ بی او ایم درج کریں۔ اگر اسٹاک موجود ہے مگر اس کی مالیت نہیں، تو پہلے پیداوار یا ابتدائی اسٹاک کی لاگت درست کریں۔",
+  sfg_bom_cost_incomplete: "منظور شدہ نیم تیار مال کے بی او ایم کی لاگت نامکمل ہے۔ منتقلی سے پہلے خام مال اور مزدوری کی شرحیں، اکائیوں کی تبدیلی اور متعلقہ نیم تیار اجزا کے بی او ایم چیک کریں۔",
   stock_value_adjustment: "اسٹاک کی مالیت کی درستگی (مقدار تبدیل نہیں ہوئی)",
   valuation_reconciliation: "سابقہ نیم تیار مال کی منتقلی کی مالیت درست کریں",
   valuation_preview_changed: "پیش نظارہ کے بعد اسٹاک ریکارڈ بدل گیا ہے۔ مالیت کا نیا پیش نظارہ بنا کر جائزہ لیں۔",
