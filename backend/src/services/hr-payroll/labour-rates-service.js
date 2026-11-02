@@ -1,4 +1,7 @@
 const knex = require("../../db/knex");
+const { toBoolean } = require("../../utils/report-filter-types");
+
+const isGradeB = (name) => ["B", "GRADE B", "B GRADE"].includes(String(name || "").trim().replace(/\s+/g, " ").toUpperCase());
 
 const APPLY_ON = {
   ARTICLE: "ARTICLE",
@@ -198,6 +201,7 @@ const normalizeScopeInput = ({ payload, t }) => {
     articleType,
     rateType,
     status: statusRaw,
+    zeroGradeB: toBoolean(payload.zero_grade_b),
   };
 };
 
@@ -357,6 +361,7 @@ const fetchTargetSkus = async ({
   let query = db("erp.skus as s")
     .join("erp.variants as v", "s.variant_id", "v.id")
     .join("erp.items as i", "v.item_id", "i.id")
+    .leftJoin("erp.grades as g", "g.id", "v.grade_id")
     .select(
       "s.id as sku_id",
       "s.sku_code",
@@ -364,6 +369,7 @@ const fetchTargetSkus = async ({
       "i.item_type",
       "i.subgroup_id",
       "i.group_id",
+      "g.name as grade_name",
     )
     .whereIn("i.item_type", resolveItemTypes(articleType))
     .where({ "s.is_active": true, "v.is_active": true, "i.is_active": true });
@@ -556,6 +562,7 @@ const buildBulkPreviewRows = async ({
   articleType,
   rateType,
   baseRate,
+  zeroGradeB = false,
 }) => {
   const targetSkus = await fetchTargetSkus({
     db,
@@ -593,7 +600,10 @@ const buildBulkPreviewRows = async ({
       previous_rate_type: null,
       previous_source: null,
       previous_rule_id: null,
-      new_rate: defaultRate,
+      grade_name: sku.grade_name || "",
+      is_grade_b: isGradeB(sku.grade_name),
+      zero_rate_applied: zeroGradeB && isGradeB(sku.grade_name),
+      new_rate: zeroGradeB && isGradeB(sku.grade_name) ? 0 : defaultRate,
     }));
   }
 
@@ -617,9 +627,21 @@ const buildBulkPreviewRows = async ({
       previous_rate_type: previous.previousRateType,
       previous_source: previous.previousSource,
       previous_rule_id: previous.previousRuleId,
-      new_rate: defaultRate,
+      grade_name: sku.grade_name || "",
+      is_grade_b: isGradeB(sku.grade_name),
+      zero_rate_applied: zeroGradeB && isGradeB(sku.grade_name),
+      new_rate: zeroGradeB && isGradeB(sku.grade_name) ? 0 : defaultRate,
     };
   });
+};
+
+const resolveBulkRateSaveRows = ({ expectedRows, rows }) => {
+  const requested = new Map(rows.map(row => [Number(row.skuId), row.rate]));
+  return expectedRows.map(row => ({
+    sku_id: Number(row.sku_id), sku_code: row.sku_code || "", item_name: row.item_name || "",
+    previous_rate: row.previous_rate ?? null, subgroup_id: row.subgroup_id ?? null, group_id: row.group_id ?? null,
+    new_rate: row.zero_rate_applied ? 0 : requested.get(Number(row.sku_id)) ?? row.previous_rate ?? null,
+  }));
 };
 
 const applyBulkSkuRateUpsert = async ({
@@ -633,6 +655,7 @@ const applyBulkSkuRateUpsert = async ({
   status,
   rows,
   appliesToAllLabours = false,
+  zeroGradeB = false,
   t = (key) => key,
   debugLog,
 }) => {
@@ -674,11 +697,17 @@ const applyBulkSkuRateUpsert = async ({
   const activeSkuRows = await trx("erp.skus as s")
     .join("erp.variants as v", "v.id", "s.variant_id")
     .join("erp.items as i", "i.id", "v.item_id")
-    .select("s.id")
+    .leftJoin("erp.grades as g", "g.id", "v.grade_id")
+    .select("s.id", "g.name as grade_name")
     .whereIn("s.id", skuIds)
     .where({ "s.is_active": true, "v.is_active": true, "i.is_active": true });
   if (activeSkuRows.length !== skuIds.length) {
     throw new Error(t("error_invalid_bulk_labour_rate_payload"));
+  }
+  const gradeBSkus = new Set(activeSkuRows.filter(row => isGradeB(row.grade_name)).map(row => Number(row.id)));
+  rows = rows.map(row => ({ ...row, rate: zeroGradeB && gradeBSkus.has(Number(row.skuId)) ? 0 : row.rate }));
+  if (rows.some(row => row.rate == null || !Number.isFinite(Number(row.rate)) || Number(row.rate) < 0)) {
+    throw new Error(t("error_invalid_rate_value"));
   }
 
   if (appliesToAllLabours) {
@@ -804,5 +833,6 @@ module.exports = {
   normalizeBulkInput,
   resolveLabourIds,
   buildBulkPreviewRows,
+  resolveBulkRateSaveRows,
   applyBulkSkuRateUpsert,
 };

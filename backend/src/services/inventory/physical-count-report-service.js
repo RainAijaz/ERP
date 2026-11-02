@@ -33,9 +33,11 @@ const getLatestPhysicalCounts = async ({ req, filters, options, scopeKey, db = k
 
     const stockType = filters.stockType || filters.stockTypeFilter || filters.category;
     const types = ["FG", "SFG", "RM"].includes(stockType) ? [stockType] : ["FG", "SFG", "RM"];
+    // SKU filters apply to variant stock only, never to a coincidentally equal RM item ID.
+    if (toIdListWithAll(filters.skuIds).length && types.length === 1 && types[0] === "RM") return result;
     const groupIds = toIdListWithAll(filters.productGroupIds);
     const subgroupIds = toIdListWithAll(filters.productSubgroupIds);
-    const stockItemIds = toIdListWithAll(filters.stockItemId ? [filters.stockItemId] : filters.stockItemIds);
+    const stockItemIds = toIdListWithAll(filters.stockItemId ? [filters.stockItemId] : filters.stockItemIds || filters.skuIds);
     const articleIds = toIdListWithAll(filters.articleIds);
     const locale = String(req?.locale || "en").toLowerCase();
     const groups = [];

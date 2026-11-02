@@ -1908,6 +1908,7 @@ const currentSeq = ++state.requestSeq;
       articleType: form.querySelector('[data-field="article_type"]'),
       rateType: form.querySelector('[data-field="rate_type"]'),
       rateValue: form.querySelector('[data-field="rate_value"]'),
+      zeroGradeB: form.querySelector("[data-labour-zero-grade-b]"),
     };
     const fieldsByName = {
       labour_id: fields.labourId,
@@ -2441,6 +2442,7 @@ const currentSeq = ++state.requestSeq;
               data-labour-rate-row-rate
               data-labour-rate-row-index="${idx}"
               value="${newRate}"
+              ${fields.zeroGradeB?.checked && row.is_grade_b ? "readonly" : ""}
             />
           </td>
         </tr>
@@ -2566,7 +2568,10 @@ const currentSeq = ++state.requestSeq;
     const syncHeaderRateInputs = () => {
       const headerRate = String(fields.rateValue?.value || "").trim();
       tbody.querySelectorAll("[data-labour-rate-row-rate]").forEach((input) => {
-        input.value = headerRate;
+        const row = state.rows[Number(input.dataset.labourRateRowIndex)];
+        const forcedZero = fields.zeroGradeB?.checked && row?.is_grade_b;
+        input.value = forcedZero ? "0" : headerRate;
+        input.readOnly = Boolean(forcedZero);
       });
     };
 
@@ -2574,7 +2579,7 @@ const currentSeq = ++state.requestSeq;
       const headerRate = String(fields.rateValue?.value || "").trim();
       if (!state.rows.length) return;
       state.rows.forEach((row) => {
-        row.new_rate = headerRate;
+        row.new_rate = fields.zeroGradeB?.checked && row.is_grade_b ? 0 : headerRate;
       });
       if (!deferRepaint) {
         syncHeaderRateInputs();
@@ -2610,6 +2615,7 @@ const currentSeq = ++state.requestSeq;
         apply_on: applyOn,
         article_type: articleType,
         rate_type: rateType,
+        zero_grade_b: String(Boolean(fields.zeroGradeB?.checked)),
       });
       if (applyOn === "ARTICLE" && skuIds.length) {
         params.set("article_ids", skuIds.join(","));
@@ -2743,6 +2749,7 @@ const currentSeq = ++state.requestSeq;
         clearSelectField(fields.rateType);
       }
       if (fields.rateValue) fields.rateValue.value = "";
+      if (fields.zeroGradeB) fields.zeroGradeB.checked = false;
       hideModalError();
       hideModalNotice();
       hideLabourScope();
@@ -2767,7 +2774,7 @@ const currentSeq = ++state.requestSeq;
           window.clearTimeout(state.headerRateRepaintTimer);
           state.headerRateRepaintTimer = null;
         }
-        state.rows[index].new_rate = target.value;
+        state.rows[index].new_rate = fields.zeroGradeB?.checked && state.rows[index].is_grade_b ? 0 : target.value;
         return;
       }
       if (target.matches("[data-field='rate_value']")) {
@@ -2820,6 +2827,13 @@ const currentSeq = ++state.requestSeq;
     form.addEventListener("change", (event) => {
       const target = event.target;
       if (!target) return;
+      if (target.matches("[data-labour-zero-grade-b]")) {
+        state.rows.forEach(row => {
+          if (row.is_grade_b) row.new_rate = target.checked ? 0 : String(fields.rateValue?.value || "").trim();
+        });
+        renderRows();
+        return;
+      }
       const fieldName = target.getAttribute("data-field");
       if (modal.dataset.mode === "edit" && fieldName && editLockedFields.has(fieldName)) {
         const lockedValue = state.lockedEditValues[fieldName];
@@ -2988,6 +3002,7 @@ const currentSeq = ++state.requestSeq;
           group_ids: groupIds,
           article_type: articleType,
           rate_type: rateType,
+          zero_grade_b: Boolean(fields.zeroGradeB?.checked),
           rows: state.rows.map((row) => ({
             sku_id: row.sku_id,
             subgroup_id: row.subgroup_id || null,

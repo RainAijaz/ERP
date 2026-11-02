@@ -1,4 +1,6 @@
 const knex = require("../../db/knex");
+const { filterConsumptionByProductionArticle } = require("./consumption-source-filter-service");
+const { normalizeReportArticleFilters, loadReportArticleOptions } = require("../inventory/report-article-filter-service");
 const { HttpError } = require("../../middleware/errors/http-error");
 const {
   PRODUCTION_VOUCHER_TYPES,
@@ -87,11 +89,15 @@ const loadApprovedPlanLines = async ({
   fromDate = null,
   toDate = null,
   planKind = "ALL",
+  articleIds = [],
+  skuIds = [],
 }) => {
   let query = knex("erp.voucher_header as vh")
     .join("erp.production_plan_header as pph", "pph.voucher_id", "vh.id")
     .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
     .join("erp.production_plan_line as ppl", "ppl.voucher_line_id", "vl.id")
+    .join("erp.skus as plan_sku", "plan_sku.id", "vl.sku_id")
+    .join("erp.variants as plan_variant", "plan_variant.id", "plan_sku.variant_id")
     .select(
       "vh.id as voucher_id",
       "vh.branch_id",
@@ -111,6 +117,9 @@ const loadApprovedPlanLines = async ({
   if (fromDate) query = query.where("vh.voucher_date", ">=", fromDate);
   if (toDate) query = query.where("vh.voucher_date", "<=", toDate);
   if (planKind !== "ALL") query = query.where("pph.plan_kind", planKind);
+
+  if (articleIds.length) query.whereIn("plan_variant.item_id", articleIds);
+  if (skuIds.length) query.whereIn("vl.sku_id", skuIds);
 
   return query.orderBy("vh.voucher_date", "asc").orderBy("vh.id", "asc");
 };
@@ -2545,6 +2554,7 @@ const getProductionDepartmentWipLedgerReportPageData = async ({
 
 const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
   const locale = resolveLocale(req?.locale);
+  const articleFilters = normalizeReportArticleFilters(input);
   const canFilterAllBranches = reportCanFilterAllBranches(
     req,
     "consumption_report",
@@ -2607,15 +2617,17 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
     })
     .orderBy("sg.name", "asc");
 
-  const [branchOptions, departments, productGroups, productSubgroups] =
+  const [branchOptions, departments, productGroups, productSubgroups, articleFilterOptions] =
     await Promise.all([
       branchOptionsPromise,
       departmentsPromise,
       productGroupsPromise,
       productSubgroupsPromise,
+      loadReportArticleOptions({ locale, itemTypes: ["FG", "SFG"] }),
     ]);
 
   const filters = {
+    ...articleFilters,
     reportLoaded,
     fromDate: fromDate || "",
     toDate: toDate || "",
@@ -2630,6 +2642,7 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
   };
 
   const options = {
+    articleFilterOptions,
     branches: branchOptions,
     departments,
     productGroups,
@@ -2697,6 +2710,7 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
       "vl.qty",
       "vl.meta",
       "src.voucher_no as source_voucher_no",
+      "src.id as source_production_id",
       "dh.dept_id as source_dept_id",
     )
     .where({
@@ -2720,10 +2734,12 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
     .orderBy("vh.voucher_no", "asc")
     .orderBy("vl.line_no", "asc");
 
-  const metaRows = rawRows.map((row) => ({
+  const sourceFilter = await filterConsumptionByProductionArticle({ db: knex, filters, rows: rawRows.map((row) => ({
     ...row,
     metaObj: toMetaObject(row.meta),
-  }));
+  })) });
+  filters.unattributedConsumptionCount = sourceFilter.unattributedCount;
+  const metaRows = sourceFilter.rows;
 
   const skuIds = [
     ...new Set(
@@ -3029,7 +3045,11 @@ const getProductionPlannedConsumptionReportPageData = async ({
     req,
     "planned_consumption_report",
   );
-  const branchOptions = await loadBranchOptions(req, canFilterAllBranches);
+  const [branchOptions, articleFilterOptions] = await Promise.all([
+    loadBranchOptions(req, canFilterAllBranches),
+    loadReportArticleOptions({ locale, itemTypes: ["FG", "SFG"] }),
+  ]);
+  const articleFilters = normalizeReportArticleFilters(input);
   const selectedBranchIds = normalizeBranchFilter({
     req,
     input,
@@ -3046,6 +3066,7 @@ const getProductionPlannedConsumptionReportPageData = async ({
     String(input?.load_report || input?.loadReport || "").trim() === "1";
 
   const filters = {
+    ...articleFilters,
     reportLoaded,
     fromDate: fromDate || "",
     toDate: toDate || "",
@@ -3055,6 +3076,7 @@ const getProductionPlannedConsumptionReportPageData = async ({
   };
 
   const options = {
+    articleFilterOptions,
     branches: branchOptions,
     planKinds: [
       { value: "ALL", labelKey: "all" },
@@ -3093,6 +3115,7 @@ const getProductionPlannedConsumptionReportPageData = async ({
   }
 
   const planLines = await loadApprovedPlanLines({
+    ...articleFilters,
     branchIds: selectedBranchIds,
     fromDate,
     toDate,

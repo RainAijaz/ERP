@@ -2177,6 +2177,7 @@ const applyBulkLabourRateApproval = async (trx, request) => {
     status,
     rows,
     appliesToAllLabours: labourSelection.all === true,
+    zeroGradeB: payload.zero_grade_b === true || payload.zero_grade_b === "true" || payload.zero_grade_b === "1",
   });
   return { applied: true, entityId: String(labourIds[0]) };
 };

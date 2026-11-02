@@ -1897,10 +1897,12 @@ const validateDcvLinesTx = async ({
         deptId: stage.dept_id,
         skuId,
         unitCode: resolvedUnit.code,
+        db: trx,
       });
       if (
         !resolvedRatePayload?.found ||
-        Number(resolvedRatePayload?.rate || 0) <= 0
+        !Number.isFinite(Number(resolvedRatePayload?.rate)) ||
+        Number(resolvedRatePayload.rate) < 0
       ) {
         const skuLabel = buildSkuDisplayLabel(sku);
         const fallback = `Line ${rowNo}: Labour rate is missing for ${skuLabel}. Please add Labour+Department+SKU rate in Labour Rates.`;
@@ -5419,10 +5421,10 @@ const applyDcvToGeneratedVouchersTx = async ({
       lineNo: Number(line.line_no || 0) || null,
       skuLabel: fgSkuLabel,
     });
-    // Keyed by SKU *and* department: a voucher covering several departments consumes
-    // each stage's own SFG, and the consumption line has to say which stage took it.
+    // Keep the component, department and produced SKU together so consumption
+    // remains attributable when one voucher produces several articles.
     stageSfgRequirements.forEach((reqRow) => {
-      const key = `${Number(reqRow.sfg_sku_id)}:${Number(deptId)}`;
+      const key = `${Number(reqRow.sfg_sku_id)}:${Number(deptId)}:${Number(skuId)}`;
       const existing = sfgPairsBySku.get(key);
       if (existing) {
         existing.pairs = Number(existing.pairs) + Number(reqRow.required_pairs || 0);
@@ -5430,6 +5432,7 @@ const applyDcvToGeneratedVouchersTx = async ({
       }
       sfgPairsBySku.set(key, {
         sfg_sku_id: Number(reqRow.sfg_sku_id),
+        source_sku_id: Number(skuId),
         dept_id: Number(deptId),
         stage_id: toPositiveInt(stageId),
         pairs: Number(reqRow.required_pairs || 0),
@@ -5471,6 +5474,7 @@ const applyDcvToGeneratedVouchersTx = async ({
           stage_id: toPositiveInt(requirement.stage_id),
           auto_generated: true,
           source: "DCV_SFG_CONSUMPTION",
+          source_sku_id: Number(requirement.source_sku_id),
         },
       });
       consumptionLineNo += 1;
@@ -7526,6 +7530,7 @@ const resolveDcvRateForSku = async ({
   deptId,
   skuId,
   unitCode,
+  db = knex,
 }) => {
   const normalizedLabourId = toPositiveInt(labourId);
   const normalizedDeptId = toPositiveInt(deptId);
@@ -7534,7 +7539,7 @@ const resolveDcvRateForSku = async ({
     return { rate: 0, found: false, reason: "MISSING_INPUT" };
   }
 
-  await knex.transaction(async (trx) => {
+  await db.transaction(async (trx) => {
     await validateLabourTx({
       trx,
       req,
@@ -7549,7 +7554,7 @@ const resolveDcvRateForSku = async ({
     });
   });
 
-  const dcvUnits = await loadPairConvertibleUomOptionsTx(knex);
+  const dcvUnits = await loadPairConvertibleUomOptionsTx(db);
   const unitMap = new Map(
     (dcvUnits || [])
       .map((row) => [
@@ -7571,7 +7576,7 @@ const resolveDcvRateForSku = async ({
   if (!selectedUnit)
     return { rate: 0, found: false, reason: "UNIT_NOT_CONFIGURED" };
 
-  const sku = await knex("erp.skus as s")
+  const sku = await db("erp.skus as s")
     .join("erp.variants as v", "v.id", "s.variant_id")
     .join("erp.items as i", "i.id", "v.item_id")
     .select("s.id", "i.item_type", "i.subgroup_id", "i.group_id")
@@ -7587,8 +7592,8 @@ const resolveDcvRateForSku = async ({
     .trim()
     .toUpperCase();
   const hasArticleTypeColumn =
-    await hasLabourRateRulesArticleTypeColumnTx(knex);
-  let rulesQuery = knex("erp.labour_rate_rules as r")
+    await hasLabourRateRulesArticleTypeColumnTx(db);
+  let rulesQuery = db("erp.labour_rate_rules as r")
     .select(
       "r.id",
       "r.labour_id",
@@ -7611,7 +7616,7 @@ const resolveDcvRateForSku = async ({
     // as 'ACTIVE'/' active ', which then fell through to a broader SUBGROUP/GROUP
     // rate — the same wrong rate for every article.
     .whereRaw("lower(trim(coalesce(r.status, ''))) = 'active'")
-    .whereIn(knex.raw("upper(trim(coalesce(r.apply_on::text, '')))"), [
+    .whereIn(db.raw("upper(trim(coalesce(r.apply_on::text, '')))"), [
       "SKU",
       "ARTICLE",
       "SUBGROUP",
@@ -7716,7 +7721,7 @@ const resolveDcvRateForSku = async ({
 // Which articles may a labour be booked against on a DCV?
 //
 // The DCV save path rejects any line whose Labour + Department + SKU has no
-// positive labour rate (error_dcv_missing_labour_rate_for_sku), so listing the
+// configured non-negative labour rate (including explicit zero), so listing the
 // whole FG/SFG catalogue in the line dropdown just invited a save-time failure.
 // This resolves the rated set up-front, using the same scope semantics as
 // resolveDcvRateForSku: a rule pinned to a sku_id wins for that one article,
@@ -7768,9 +7773,7 @@ const loadDcvRatedSkuIdsForLabour = async ({ req, labourId, deptId }) => {
       "SUBGROUP",
       "GROUP",
     ])
-    // A zero rate is rejected on save exactly like a missing one, so it must
-    // not put the article back in the dropdown.
-    .where("r.rate_value", ">", 0);
+    .where("r.rate_value", ">=", 0);
   if (normalizedDeptId) {
     rulesQuery = rulesQuery.andWhere("r.dept_id", normalizedDeptId);
   }

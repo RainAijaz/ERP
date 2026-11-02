@@ -1,6 +1,7 @@
 "use strict";
 
 const knex = require("../../db/knex");
+const { normalizeReportArticleFilters, loadReportArticleOptions, applyReportArticleFilters } = require("./report-article-filter-service");
 const { withLatestPhysicalCounts } = require("./physical-count-report-service");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const { normalizeConversionFactor } = require("../../utils/uom-conversion");
@@ -368,6 +369,7 @@ const parseFilters = ({
       : null;
 
   return {
+    ...normalizeReportArticleFilters(input),
     reportLoaded: toBoolean(input.load_report || input.loadReport, false),
     locale: String(req?.locale || "en").toLowerCase(),
     asOfDate: parsedAsOfDate.value,
@@ -432,6 +434,7 @@ const parseDeadStockFilters = ({ req, input = {} }) => {
   const sortBy = normalizeDeadStockSortBy(input.sort_by || input.sortBy);
 
   return {
+    ...normalizeReportArticleFilters(input),
     reportLoaded: toBoolean(input.load_report || input.loadReport, false),
     from,
     to,
@@ -861,6 +864,8 @@ const loadFgSfgDetailRows = async ({
     query = query.orderBy("s.sku_code", "asc").orderBy("i.name", "asc");
   }
 
+  applyReportArticleFilters(query, filters);
+
   const rows = await query;
 
   return rows
@@ -1025,6 +1030,8 @@ const loadRmDetailRows = async ({
   if (filters.productSubgroupIds.length) {
     query = query.whereIn("i.subgroup_id", filters.productSubgroupIds);
   }
+
+  applyReportArticleFilters(query, filters, { skuColumn: null });
 
   const rows = await query
     .orderBy("i.name", "asc")
@@ -1335,12 +1342,13 @@ const getInventoryStockReportPageData = async ({
   // column) for permitted non-admins, mirroring the admin experience.
   filters.canFilterAllBranches = canAllBranches;
 
-  const [branches, productGroups, productSubgroups, unitOptions] =
+  const [branches, productGroups, productSubgroups, unitOptions, articleFilterOptions] =
     await Promise.all([
       loadBranchOptions(req, canAllBranches),
       loadProductGroupOptions(filters.stockType),
       loadProductSubgroupOptions(filters.stockType),
       loadUnitOptions(filters.stockType),
+      loadReportArticleOptions({ locale: filters.locale }),
     ]);
   const conversionUnits = resolvePackedConversionUnits({
     filters,
@@ -1383,6 +1391,7 @@ const getInventoryStockReportPageData = async ({
       };
 
   const options = {
+    articleFilterOptions,
     branches,
     productGroups,
     productSubgroups,
@@ -2493,6 +2502,8 @@ const loadDeadStockClosingRows = async ({
         : query.whereRaw(`${packedFlagSql} = true`);
   }
 
+  applyReportArticleFilters(query, filters);
+
   const rows = await query;
 
   return rows
@@ -2640,6 +2651,8 @@ const loadDeadStockSalesQtyRows = async ({
         : query.whereRaw(`${packedFlagSql} = true`);
   }
 
+  applyReportArticleFilters(query, filters);
+
   const rows = await query;
   const salesQtyByKey = new Map();
   rows.forEach((row) => {
@@ -2752,10 +2765,11 @@ const getInventoryDeadStockReportPageData = async ({ req, input = {} }) => {
   const canAllBranches = userCanFilterAllBranches(req, "dead_stock_report");
   const filters = parseDeadStockFilters({ req, input });
 
-  const [branches, productGroups, productSubgroups] = await Promise.all([
+  const [branches, productGroups, productSubgroups, articleFilterOptions] = await Promise.all([
     loadBranchOptions(req, canAllBranches),
     loadDeadStockProductGroupOptions(),
     loadDeadStockProductSubgroupOptions(),
+    loadReportArticleOptions({ locale: req.locale, itemTypes: ["FG", "SFG"] }),
   ]);
 
   const sanitizeSelectedIds = (selectedIds, allowedRows) => {
@@ -2817,6 +2831,7 @@ const getInventoryDeadStockReportPageData = async ({ req, input = {} }) => {
   filters.unitLabel = selectedUnitLabel;
 
   const options = {
+    articleFilterOptions,
     branches,
     productGroups,
     productSubgroups,

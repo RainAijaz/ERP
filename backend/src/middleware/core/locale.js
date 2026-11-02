@@ -5693,3 +5693,17 @@ Object.assign(translations.ur, {
 });
 Object.assign(translations.en, require("../../utils/salary-commission-translations").en);
 Object.assign(translations.ur, require("../../utils/salary-commission-translations").ur);
+
+Object.assign(translations.en, {
+  labour_rate_zero_grade_b: "Rs 0 for Grade B SKUs",
+  labour_rate_zero_grade_b_hint: "Set Grade B SKUs to zero for all selected articles and labours in this batch. Other grades keep their entered rates.",
+  production_articles: "Production articles",
+});
+Object.assign(translations.ur, {
+  labour_rate_zero_grade_b: "گریڈ بی کے ایس کے یوز کی شرح صفر روپے",
+  labour_rate_zero_grade_b_hint: "اس بیچ کے تمام منتخب آرٹیکلز اور لیبرز کے گریڈ بی ایس کے یوز کی شرح صفر کریں۔ دوسرے گریڈز کی درج کردہ شرحیں برقرار رہیں گی۔",
+  production_articles: "پیداواری آرٹیکلز",
+});
+
+Object.assign(translations.en, { consumption_source_unattributed: "{count} older consumption entries could not be linked reliably to an individual production article and are excluded from this filtered result. Select ALL to include them." });
+Object.assign(translations.ur, { consumption_source_unattributed: "{count} پرانے استعمال کے اندراجات کو کسی ایک پیداواری آرٹیکل سے قابل اعتماد طریقے سے منسلک نہیں کیا جا سکا، اس لیے وہ اس فلٹر شدہ نتیجے میں شامل نہیں۔ انہیں دیکھنے کے لیے تمام منتخب کریں۔" });

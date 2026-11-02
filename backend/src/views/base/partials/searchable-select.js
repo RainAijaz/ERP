@@ -940,6 +940,7 @@
       }
 
       return Array.from(select.options).filter((opt) => {
+        if (opt.hidden) return false;
         const isEmptyOption = !opt.value;
         if (isEmptyOption && isMulti) return false;
         const label = opt.textContent.trim();

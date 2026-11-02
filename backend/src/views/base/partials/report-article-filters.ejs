@@ -1,0 +1,20 @@
+<% const articleFilterData = options.articleFilterOptions || { articles: [], skus: [] }; %>
+<div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12" data-report-article-filter data-source-articles="<%= typeof sourceArticles !== 'undefined' && sourceArticles ? 'true' : 'false' %>">
+  <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t(typeof articleLabelKey !== 'undefined' ? articleLabelKey : 'articles') %></label>
+  <div class="sm:col-span-9">
+    <select name="article_ids" multiple data-report-article-select data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+      <option value="__ALL__" <%= !filters.articleIds?.length ? 'selected' : '' %>><%= t('all') %></option>
+      <% articleFilterData.articles.forEach(row => { %><option value="<%= row.id %>" data-item-type="<%= row.item_type %>" data-group-id="<%= row.group_id || '' %>" data-subgroup-id="<%= row.subgroup_id || '' %>" <%= filters.articleIds?.includes(Number(row.id)) ? 'selected' : '' %>><%= row.name %></option><% }) %>
+    </select>
+  </div>
+</div>
+<div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12" data-report-sku-filter>
+  <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t('sku') %></label>
+  <div class="sm:col-span-9">
+    <select name="sku_ids" multiple data-report-sku-select data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+      <option value="__ALL__" <%= !filters.skuIds?.length ? 'selected' : '' %>><%= t('all') %></option>
+      <% articleFilterData.skus.forEach(row => { %><option value="<%= row.id %>" data-item-type="<%= row.item_type %>" data-article-id="<%= row.article_id %>" data-group-id="<%= row.group_id || '' %>" data-subgroup-id="<%= row.subgroup_id || '' %>" <%= filters.skuIds?.includes(Number(row.id)) ? 'selected' : '' %>><%= row.name %></option><% }) %>
+    </select>
+  </div>
+</div>
+<script><%- include('report-article-filters.js') %></script>

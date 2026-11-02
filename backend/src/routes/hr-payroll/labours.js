@@ -22,6 +22,7 @@ const {
   normalizeBulkInput,
   resolveLabourIds,
   buildBulkPreviewRows,
+  resolveBulkRateSaveRows,
   applyBulkSkuRateUpsert,
 } = require("../../services/hr-payroll/labour-rates-service");
 const copyService = require("../../services/hr-payroll/labour-rate-copy-service");
@@ -553,8 +554,8 @@ const labourRatesPage = {
     },
   },
   applyExtraFilters: (query, { filters = {} } = {}) => {
-    // Zero-value rules are considered non-effective; hide them from list view.
-    query = query.whereRaw("COALESCE(t.rate_value, 0) > 0");
+    // An explicit zero is a configured rate, not a missing rule.
+    query = query.where("t.rate_value", ">=", 0);
     query = query.where(function activeSkuOrScopeRule() {
       this.whereNull("t.sku_id").orWhere(function activeSkuRule() {
         this.where({ "s.is_active": true, "v.is_active": true, "i.is_active": true });
@@ -1270,7 +1271,8 @@ ratesRouter.get(
         groupIds: normalized.groupIds,
         articleType: normalized.articleType,
         rateType: normalized.rateType,
-        baseRate: req.query.rate_value || null,
+        baseRate: req.query.rate_value ?? null,
+        zeroGradeB: normalized.zeroGradeB,
       });
 
       return res.json({ rows });
@@ -1344,31 +1346,9 @@ ratesRouter.post(
         articleType: normalized.articleType,
         rateType: normalized.rateType,
         baseRate: null,
+        zeroGradeB: normalized.zeroGradeB,
       });
-      const requestedRateBySku = new Map(
-        normalized.rows
-          .map((row) => [Number(row.skuId), row.rate])
-          .filter(([skuId]) => Number.isInteger(skuId) && skuId > 0),
-      );
-      const queuedRows = expectedRows.map((row) => {
-        const skuId = Number(row.sku_id || 0);
-        const requestedRate = requestedRateBySku.has(skuId)
-          ? requestedRateBySku.get(skuId)
-          : row.new_rate;
-        const nextRate =
-          requestedRate === null || requestedRate === undefined
-            ? row.previous_rate ?? null
-            : requestedRate;
-        return {
-          sku_id: skuId,
-          sku_code: row.sku_code || "",
-          item_name: row.item_name || "",
-          previous_rate: row.previous_rate ?? null,
-          subgroup_id: row.subgroup_id ?? null,
-          group_id: row.group_id ?? null,
-          new_rate: nextRate ?? null,
-        };
-      });
+      const queuedRows = resolveBulkRateSaveRows({ expectedRows, rows: normalized.rows });
       logLabourRateSaveDebug(req, "bulk_upsert:expected_rows_done", {
         traceId,
         expectedRowsCount: expectedRows.length,
@@ -1420,6 +1400,7 @@ ratesRouter.post(
         oldValue: null,
         newValue: {
           mode: "BULK_LABOUR_RATE_SKU_UPSERT",
+          zero_grade_b: normalized.zeroGradeB,
           labour_id: normalized.labourSelection?.raw || null,
           dept_id: normalized.deptId,
           apply_on: normalized.applyOn,
@@ -1509,6 +1490,7 @@ ratesRouter.post(
           status: normalized.status,
           rows: normalizedRowsForSave,
           appliesToAllLabours: normalized.labourSelection?.all === true,
+          zeroGradeB: normalized.zeroGradeB,
           t: res.locals.t,
           debugLog: (stage, details = {}) =>
             logLabourRateSaveDebug(req, `bulk_upsert:service_${stage}`, {
@@ -1534,6 +1516,7 @@ ratesRouter.post(
         action: "UPDATE",
         context: {
           source: "labour-rate-bulk-upsert",
+          zero_grade_b: normalized.zeroGradeB,
           apply_on: normalized.applyOn,
           rate_type: normalized.rateType,
           created: result.created,
@@ -1555,8 +1538,8 @@ ratesRouter.post(
       });
       console.error("Error in LabourRateRulesService:", err);
       return res
-        .status(400)
-        .json({ message: err?.message || res.locals.t("generic_error") });
+        .status(err?.code ? 500 : 400)
+        .json({ message: err?.code ? res.locals.t("generic_error") : err?.message || res.locals.t("generic_error") });
     }
   },
 );

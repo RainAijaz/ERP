@@ -296,6 +296,8 @@
           </div>
         </div>
 
+        <%- include("../base/partials/report-article-filters", { filters, options }) %>
+
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
           <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canFilterAllBranches ? tt("branches", "Branches") : tt("branch", "Branch") %></label>
           <div class="sm:col-span-9">
