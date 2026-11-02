@@ -260,6 +260,10 @@
       </div>
     </div>
 
+    <% if (reportLoaded && selectedPartyId) { %>
+      <%- include('../../base/partials/payable-summary', { totalPayable: totals.totalPayable || 0, totalReceivable: totals.totalReceivable || 0, formatNumber, t }) %>
+    <% } %>
+
     <% if (!reportLoaded) { %>
       <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t('load_report_to_view') %></div>
     <% } else if (!selectedPartyId) { %>
@@ -282,7 +286,7 @@
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="qty"><%= t('quantity') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="debit"><%= t('debit') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="credit"><%= t('credit') %></th>
-              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="balance"><%= t('balance') %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="balance"><%= t('balance') %> (<%= t('payable') %> / <%= t('receivable') %>)</th>
               <% if (includeBranchColumn) { %>
                 <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch"><%= t('branch') %></th>
               <% } %>
@@ -301,7 +305,7 @@
               <td class="px-3 py-2 text-right" data-sort-value="0">0.000</td>
               <td class="px-3 py-2 text-right" data-sort-value="0">0.00</td>
               <td class="px-3 py-2 text-right" data-sort-value="0">0.00</td>
-              <td class="px-3 py-2 text-right font-semibold" data-sort-value="<%= Number(reportData?.openingBalance || 0) %>"><%= formatNumber(reportData?.openingBalance || 0, 2) %></td>
+              <td class="px-3 py-2 text-right font-semibold" data-sort-value="<%= Number(reportData?.openingBalance || 0) %>"><%- include('../../base/partials/payable-balance', { balance: reportData?.openingBalance || 0, balanceOrientation: 'receivable', formatNumber, t }) %></td>
               <% if (includeBranchColumn) { %>
                 <td class="px-3 py-2">-</td>
               <% } %>
@@ -322,7 +326,7 @@
                 <td class="px-3 py-2 text-right" data-sort-value="<%= Number(row.qty || 0) %>"><%= formatNumber(row.qty || 0, 3) %></td>
                 <td class="px-3 py-2 text-right" data-sort-value="<%= Number(row.debit || 0) %>"><%= formatNumber(row.debit || 0, 2) %></td>
                 <td class="px-3 py-2 text-right" data-sort-value="<%= Number(row.credit || 0) %>"><%= formatNumber(row.credit || 0, 2) %></td>
-                <td class="px-3 py-2 text-right font-semibold" data-sort-value="<%= Number(row.balance || 0) %>"><%= formatNumber(row.balance || 0, 2) %></td>
+                <td class="px-3 py-2 text-right font-semibold" data-sort-value="<%= Number(row.balance || 0) %>"><%- include('../../base/partials/payable-balance', { balance: row.balance || 0, balanceOrientation: 'receivable', formatNumber, t }) %></td>
                 <% if (includeBranchColumn) { %>
                   <td class="px-3 py-2"><%= row.branch_name || '-' %></td>
                 <% } %>
@@ -334,7 +338,7 @@
               <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(totals.qty || 0, 3) %></td>
               <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(totals.debit || 0, 2) %></td>
               <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(totals.credit || 0, 2) %></td>
-              <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(totals.closingBalance || 0, 2) %></td>
+              <td class="px-3 py-2 text-right font-semibold text-slate-900"><%- include('../../base/partials/payable-balance', { balance: totals.closingBalance || 0, balanceOrientation: 'receivable', formatNumber, t }) %></td>
               <% if (includeBranchColumn) { %>
                 <td class="px-3 py-2"></td>
               <% } %>

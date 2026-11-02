@@ -1932,6 +1932,8 @@ const getLedgerRows = async ({
     };
   }
 
+  const closingBalance = rows.length ? rows[rows.length - 1].balance : openingBalance;
+
   return {
     entity: selectedEntity || null,
     openingBalance,
@@ -1941,9 +1943,9 @@ const getLedgerRows = async ({
       qty: totalQty,
       debit: totalDebit,
       credit: totalCredit,
-      closingBalance: rows.length
-        ? rows[rows.length - 1].balance
-        : openingBalance,
+      closingBalance,
+      totalPayable: Math.max(closingBalance, 0),
+      totalReceivable: Math.max(-closingBalance, 0),
     },
     categoryBreakdown,
     includeBranchColumn,
@@ -2342,6 +2344,8 @@ const getLabourBalancesReportPageData = async ({ req, input = {} }) => {
     options,
     reportData: {
       rows,
+      totalPayable: toAmount(rows.reduce((sum, row) => sum + Math.max(Number(row.amount || 0), 0), 0), 2),
+      totalReceivable: toAmount(rows.reduce((sum, row) => sum + Math.max(-Number(row.amount || 0), 0), 0), 2),
       totalAmount: toAmount(
         rows.reduce((sum, row) => sum + Number(row.amount || 0), 0),
         2,
@@ -2366,6 +2370,8 @@ const getEmployeeBalancesReportPageData = async ({ req, input = {} }) => {
     options,
     reportData: {
       rows,
+      totalPayable: toAmount(rows.reduce((sum, row) => sum + Math.max(Number(row.amount || 0), 0), 0), 2),
+      totalReceivable: toAmount(rows.reduce((sum, row) => sum + Math.max(-Number(row.amount || 0), 0), 0), 2),
       totalAmount: toAmount(
         rows.reduce((sum, row) => sum + Number(row.amount || 0), 0),
         2,

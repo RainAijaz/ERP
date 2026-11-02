@@ -2126,6 +2126,8 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
     };
   });
 
+  const closingBalance = rows.length ? rows[rows.length - 1].balance : openingBalance;
+
   return {
     customer: selectedCustomer || null,
     openingBalance,
@@ -2135,9 +2137,9 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
       qty: totalQty,
       debit: totalDebit,
       credit: totalCredit,
-      closingBalance: rows.length
-        ? rows[rows.length - 1].balance
-        : openingBalance,
+      closingBalance,
+      totalPayable: Math.max(-closingBalance, 0),
+      totalReceivable: Math.max(closingBalance, 0),
     },
     includeBranchColumn,
   };
@@ -2242,6 +2244,9 @@ const getCustomerBalancesReportPageData = async ({ req, input = {} }) => {
     options,
     reportData: {
       rows,
+      // Customer debit balances are receivables; credit balances are payables.
+      totalPayable: toAmount(rows.reduce((sum, row) => sum + Math.max(-Number(row.amount || 0), 0), 0), 2),
+      totalReceivable: toAmount(rows.reduce((sum, row) => sum + Math.max(Number(row.amount || 0), 0), 0), 2),
       totalAmount: toAmount(
         rows.reduce((sum, row) => sum + Number(row.amount || 0), 0),
         2,
