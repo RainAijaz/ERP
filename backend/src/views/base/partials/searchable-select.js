@@ -31,7 +31,7 @@
   const unifiedVariantClass =
     "h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 transition focus:border-black focus:outline-none focus:ring-2 focus:ring-black/20";
   const navbarVariantClass =
-    "h-auto w-14 max-w-14 overflow-hidden text-ellipsis whitespace-nowrap rounded-none border-0 bg-transparent px-1 pr-6 py-0 text-sm font-semibold text-slate-700 transition focus:border-transparent focus:outline-none focus:ring-0 shadow-none";
+    "h-auto w-24 max-w-36 overflow-hidden text-ellipsis whitespace-nowrap rounded-none border-0 bg-transparent px-1 pr-6 py-0 text-sm font-semibold text-slate-700 transition focus:border-transparent focus:outline-none focus:ring-0 shadow-none sm:w-36";
   const escapeAttributeValue = (value) => {
     const text = String(value || "");
     if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
@@ -478,9 +478,6 @@
         "min-w-[8rem] flex-1 border-0 bg-transparent px-1 py-0 text-sm text-slate-700 focus:outline-none focus:ring-0";
     } else if (variant === "navbar") {
       input.className = navbarVariantClass;
-      input.style.width = "3.5rem";
-      input.style.minWidth = "3rem";
-      input.style.maxWidth = "3.5rem";
     } else if (variant === "unified") {
       input.className = `${baseClassName || unifiedFallbackClass} pr-10`;
       if (!input.className.includes("border") && !isTransparentInlineControl) {

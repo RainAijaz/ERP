@@ -5,19 +5,21 @@
     : user?.name || user?.username || "-";
 %>
 <div class="contents text-xs text-muted">
-  <div class="flex min-w-0 items-center gap-2 px-1 py-2">
-    <span class="hidden text-xs text-muted xl:inline"><%= t("signed_in_as") %></span>
-    <span class="max-w-40 truncate font-semibold text-slate-800" title="<%= signedInName %>"><%= signedInName %></span>
+  <div class="flex min-w-0 items-center gap-2 px-2 py-2" aria-label="<%= t('signed_in_as') %>">
+    <svg class="h-4 w-4 shrink-0 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.5" /><path d="M5 21v-2a7 7 0 0 1 14 0v2" stroke-linecap="round" />
+    </svg>
+    <span class="max-w-40 truncate font-medium text-slate-700" title="<%= signedInName %>"><%= signedInName %></span>
   </div>
   <form method="get" action="/" class="flex items-center">
     <label for="branch-select" class="sr-only"><%= t("branch") %></label>
-    <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+    <div class="flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1">
       <span class="text-xs text-muted"><%= t("branch") %></span>
       <% if (branchScope && branchScope.length > 1) { %>
         <select
           id="branch-select"
           name="branch_id"
-          class="w-14 max-w-22 flex-none truncate border-0 bg-transparent py-0 pl-1 pr-4 text-sm font-semibold text-slate-700"
+          class="w-24 max-w-36 flex-none truncate border-0 bg-transparent py-0 pl-1 pr-4 text-sm font-semibold text-slate-700 sm:w-36"
           data-searchable-select="true"
           data-searchable-variant="navbar"
           onchange="if (!event.isTrusted) return; if (window.__syncBranchSelection) window.__syncBranchSelection(this.value); if (window.__navigateWithBranch) { window.__navigateWithBranch(this.value); } else { this.form.submit(); }"
@@ -43,12 +45,12 @@
   </form>
   <form method="post" action="/auth/logout" class="flex items-center">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-    <button type="submit" class="rounded-lg px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30">
+    <button type="submit" class="inline-flex min-h-9 items-center rounded-lg px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30">
       <%= t("logout") %>
     </button>
   </form>
-  <div class="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs" role="group" aria-label="<%= t('language') %>">
-    <a class="rounded-md px-2.5 py-1 font-medium text-slate-600 transition hover:text-accent <%= !isUrduLocale ? 'bg-white text-accent shadow-sm' : '' %>" href="?lang=en" <%- !isUrduLocale ? 'aria-current="true"' : '' %>><%= t("english") %></a>
-    <a class="rounded-md px-2.5 py-1 font-medium text-slate-600 transition hover:text-accent <%= isUrduLocale ? 'bg-white text-accent shadow-sm' : '' %>" href="?lang=ur" <%- isUrduLocale ? 'aria-current="true"' : '' %>><%= t("urdu") %></a>
+  <div class="flex min-h-9 items-center gap-1 rounded-lg bg-slate-50 p-1 text-xs" role="group" aria-label="<%= t('language') %>">
+    <a class="rounded-md px-2.5 py-0.5 font-medium text-slate-600 transition hover:text-accent <%= !isUrduLocale ? 'bg-white text-accent shadow-sm' : '' %>" href="?lang=en" <%- !isUrduLocale ? 'aria-current="true"' : '' %>><%= t("english") %></a>
+    <a class="rounded-md px-2.5 py-0.5 font-medium text-slate-600 transition hover:text-accent <%= isUrduLocale ? 'bg-white text-accent shadow-sm' : '' %>" href="?lang=ur" <%- isUrduLocale ? 'aria-current="true"' : '' %>><%= t("urdu") %></a>
   </div>
 </div>

@@ -19,6 +19,14 @@
     line-height: 1.6;
   }
 
+  /* Notification counts are badges, rather than body labels. */
+  html[lang] body [data-notif-root] [data-notif-badge] {
+    font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+    font-size: 0.625rem;
+    line-height: 1.125rem;
+    direction: ltr;
+  }
+
   html:not(.dark) body :is(.text-slate-400, .text-slate-500) {
     color: #475569;
   }
@@ -87,6 +95,15 @@
     font-size: 1rem;
     line-height: 2.2;
     letter-spacing: normal;
+  }
+}
+
+/* Keep all modules on one row on smaller laptops without clipping flyouts. */
+@media screen and (min-width: 1024px) and (max-width: 1279px) {
+  [data-primary-navigation] > [data-submenu-wrap] > button {
+    gap: 0.25rem;
+    padding-inline: 0.25rem;
+    font-size: 0.8125rem;
   }
 }
 
