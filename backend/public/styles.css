@@ -481,6 +481,9 @@
   .m-4 {
     margin: calc(var(--spacing) * 4);
   }
+  .m-auto {
+    margin: auto;
+  }
   .mx-auto {
     margin-inline: auto;
   }
@@ -3138,6 +3141,14 @@
       text-transform: uppercase;
     }
   }
+  .backdrop\:bg-slate-900\/40 {
+    &::backdrop {
+      background-color: color-mix(in srgb, oklch(20.8% 0.042 265.755) 40%, transparent);
+      @supports (color: color-mix(in lab, red, red)) {
+        background-color: color-mix(in oklab, var(--color-slate-900) 40%, transparent);
+      }
+    }
+  }
   .last\:border-r-0 {
     &:last-child {
       border-right-style: var(--tw-border-style);
@@ -4788,6 +4799,11 @@
   .xl\:grid-cols-7 {
     @media (width >= 80rem) {
       grid-template-columns: repeat(7, minmax(0, 1fr));
+    }
+  }
+  .print\:hidden {
+    @media print {
+      display: none;
     }
   }
 }

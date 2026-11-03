@@ -5709,3 +5709,6 @@ Object.assign(translations.ur, {
 
 Object.assign(translations.en, { consumption_source_unattributed: "{count} older consumption entries could not be linked reliably to an individual production article and are excluded from this filtered result. Select ALL to include them." });
 Object.assign(translations.ur, { consumption_source_unattributed: "{count} پرانے استعمال کے اندراجات کو کسی ایک پیداواری آرٹیکل سے قابل اعتماد طریقے سے منسلک نہیں کیا جا سکا، اس لیے وہ اس فلٹر شدہ نتیجے میں شامل نہیں۔ انہیں دیکھنے کے لیے تمام منتخب کریں۔" });
+
+Object.assign(translations.en, require('../../utils/salary-review-translations').en);
+Object.assign(translations.ur, require('../../utils/salary-review-translations').ur);

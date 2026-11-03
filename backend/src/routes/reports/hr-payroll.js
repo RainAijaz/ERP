@@ -11,6 +11,8 @@ const {
 } = require("../../services/hr-payroll/commission-ledger-report-service");
 
 const router = express.Router();
+require('../../utils/approval-previews/salary-review-preview-provider');
+router.post('/salary-review', require('../../controllers/hr-payroll/salary-review-controller').save);
 
 const renderPage = async ({ req, res, next, pageDataLoader, input, titleKey, view, reportPath, extraLocals = {} }) => {
   try {

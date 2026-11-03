@@ -1,6 +1,7 @@
 "use strict";
 const { loadSalaryAccruals } = require("./salary-accrual-service");
 const { loadGuaranteedPayRows } = require('./guaranteed-pay-service');
+const { parseSalaryReviewFilters, attachSalaryReviews } = require('./salary-review-service');
 
 const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
@@ -24,12 +25,12 @@ const { resolveTranslation } = require("../../middleware/core/locale");
 // per-account restrictions on the Account Activity Ledger. Admins bypass; every
 // other user's view is scoped to the entities they're allowed to see. kind
 // ('employee' | 'labour') maps to the entity_type stored by the access service.
-const resolveBlockedEntityIds = async ({ req, kind }) => {
+const resolveBlockedEntityIds = async ({ req, kind, db = knex }) => {
   if (req?.user?.isAdmin) return new Set();
   const userId = Number(req?.user?.id || 0);
   if (!Number.isInteger(userId) || userId <= 0) return new Set();
   const entityType = kind === "employee" ? "EMPLOYEE" : "LABOUR";
-  return getUserEntityBlockedSet({ userId, entityType });
+  return getUserEntityBlockedSet({ db, userId, entityType });
 };
 
 const ALL_MULTI_FILTER_VALUE = "__ALL__";
@@ -161,7 +162,8 @@ const normalizeCommissionEntries = (linesDetail) =>
 const commissionTypeLabelKey = (type) =>
   `commission_type_${String(type || "").toLowerCase()}`;
 
-const normalizeCommissionRuleRows = async ({ ruleIds, locale }) => {
+const normalizeCommissionRuleRows = async ({ ruleIds, locale, db = knex }) => {
+  const knex = db;
   const ids = [...new Set(ruleIds.map(toPositiveId).filter(Boolean))];
   if (!ids.length) return new Map();
   const localizedName = (alias) =>
@@ -201,6 +203,7 @@ const normalizeCommissionRuleRows = async ({ ruleIds, locale }) => {
   ].filter((id) => !result.has(id));
   if (sourceRuleIds.length) {
     const sourceRows = await normalizeCommissionRuleRows({
+      db,
       ruleIds: sourceRuleIds,
       locale,
     });
@@ -225,7 +228,8 @@ const normalizePairsFromCommissionLine = (line = {}) => {
   return pairs || 0;
 };
 
-const loadCommissionSkuContextMap = async ({ skuIds, locale }) => {
+const loadCommissionSkuContextMap = async ({ skuIds, locale, db = knex }) => {
+  const knex = db;
   const ids = [...new Set(skuIds.map(toPositiveId).filter(Boolean))];
   if (!ids.length) return new Map();
   const localizedName = (alias) =>
@@ -396,15 +400,18 @@ const pushCommissionFact = (facts, fact) => {
 };
 
 const buildCommissionHierarchyRows = async ({
+  db = knex,
   facts,
   fallbackRows,
   locale,
 }) => {
   const skuContextMap = await loadCommissionSkuContextMap({
+    db,
     skuIds: facts.map((fact) => fact.skuId),
     locale,
   });
   const ruleContextMap = await normalizeCommissionRuleRows({
+    db,
     ruleIds: facts.map((fact) => fact.ruleId),
     locale,
   });
@@ -796,9 +803,9 @@ const buildDailyAccrualRowsInRange = ({
   return rows;
 };
 
-const loadEmployeeAccrualProfiles = async ({ entityIds=[] }) => {
+const loadEmployeeAccrualProfiles = async ({ entityIds=[], db=knex }) => {
   if (!entityIds.length) return new Map();
-  const rows=await knex("erp.employees").whereIn("id",entityIds).select("id","payroll_type","employment_start_date","employment_end_date","created_at");
+  const rows=await db("erp.employees").whereIn("id",entityIds).select("id","payroll_type","employment_start_date","employment_end_date","created_at");
   return new Map(rows.map(row=>[Number(row.id),{
     payrollType:row.payroll_type,monthlyAmount:0,dailyAmount:0,monthlySalaryOnly:0,dailySalaryOnly:0,monthlyAllowanceOnly:0,dailyAllowanceOnly:0,
     employmentStartYmd:toLocalDateOnly(row.employment_start_date || row.created_at),employmentEndYmd:toLocalDateOnly(row.employment_end_date)||null
@@ -833,7 +840,7 @@ const normalizeLabourAllowanceRule = (row = {}) => {
   };
 };
 
-const loadLabourAllowanceRules = async ({ entityIds = [] }) => {
+const loadLabourAllowanceRules = async ({ entityIds = [], db = knex }) => {
   const normalizedIds = [
     ...new Set(
       (entityIds || [])
@@ -843,7 +850,7 @@ const loadLabourAllowanceRules = async ({ entityIds = [] }) => {
   ];
   if (!normalizedIds.length) return [];
 
-  const rows = await knex("erp.labour_allowance_rules as ar")
+  const rows = await db("erp.labour_allowance_rules as ar")
     .select(
       "ar.id",
       "ar.labour_id",
@@ -880,10 +887,11 @@ const labourAllowanceRuleAmountUpTo = (rule, asOnYmd) => {
 };
 
 const loadLabourAllowanceAmountByEntityUpTo = async ({
+  db = knex,
   entityIds = [],
   asOnYmd,
 }) => {
-  const rules = await loadLabourAllowanceRules({ entityIds });
+  const rules = await loadLabourAllowanceRules({ entityIds, db });
   const totals = new Map();
   rules.forEach((rule) => {
     const amount = labourAllowanceRuleAmountUpTo(rule, asOnYmd);
@@ -897,13 +905,14 @@ const loadLabourAllowanceAmountByEntityUpTo = async ({
 };
 
 const buildLabourAllowanceAccrualRowsInRange = async ({
+  db = knex,
   entityId,
   fromYmd,
   toYmdValue,
 }) => {
   const labourId = Number(entityId || 0);
   if (!Number.isInteger(labourId) || labourId <= 0) return [];
-  const rules = await loadLabourAllowanceRules({ entityIds: [labourId] });
+  const rules = await loadLabourAllowanceRules({ entityIds: [labourId], db });
   const amountByDate = new Map();
 
   rules.forEach((rule) => {
@@ -1024,6 +1033,7 @@ const parseEntityBalanceFilters = ({ req, input = {}, scopeKey }) => {
 
   return {
     asOn,
+    ...parseSalaryReviewFilters(input),
     branchIds,
     canFilterAllBranches,
     viewMode,
@@ -1226,7 +1236,8 @@ const applyEntityVoucherScope = ({
     });
 };
 
-const loadLedgerOptions = async ({ req, filters, kind, blockedEntityIds }) => {
+const loadLedgerOptions = async ({ req, filters, kind, blockedEntityIds, db = knex }) => {
+  const knex = db;
   const locale = String(req?.locale || "en").toLowerCase();
   const branchNameSql =
     locale === "ur"
@@ -1236,7 +1247,7 @@ const loadLedgerOptions = async ({ req, filters, kind, blockedEntityIds }) => {
   const blocked =
     blockedEntityIds instanceof Set
       ? blockedEntityIds
-      : await resolveBlockedEntityIds({ req, kind });
+      : await resolveBlockedEntityIds({ req, kind, db });
   const canUseAllBranches =
     req.user?.isAdmin || Boolean(filters?.canFilterAllBranches);
   const scopedBranchIds = canUseAllBranches
@@ -1316,7 +1327,7 @@ const getLedgerRows = async ({
   const blocked =
     blockedEntityIds instanceof Set
       ? blockedEntityIds
-      : await resolveBlockedEntityIds({ req, kind });
+      : await resolveBlockedEntityIds({ req, kind, db });
 
   // A restricted user cannot pull a blocked entity's ledger even by posting its
   // id directly — treat it as if nothing was selected.
@@ -1405,6 +1416,7 @@ const getLedgerRows = async ({
     if (openingAsOnDate) {
       const allowanceOpeningByLabour =
         await loadLabourAllowanceAmountByEntityUpTo({
+          db,
           entityIds: [Number(filters.entityId)],
           asOnYmd: openingAsOnDate,
         });
@@ -1561,6 +1573,7 @@ const getLedgerRows = async ({
   let accrualMeta = null;
   if (kind === "employee" && Number(filters.entityId || 0) > 0) {
     const accrualProfileMap = await loadEmployeeAccrualProfiles({
+      db,
       entityIds: [Number(filters.entityId)],
     });
     accrualMeta = accrualProfileMap.get(Number(filters.entityId)) || null;
@@ -1644,6 +1657,7 @@ const getLedgerRows = async ({
   }
   if (kind === "labour" && Number(filters.entityId || 0) > 0) {
     syntheticLabourAllowanceRows = await buildLabourAllowanceAccrualRowsInRange({
+      db,
       entityId: Number(filters.entityId),
       fromYmd: filters.from,
       toYmdValue: filters.to,
@@ -2065,6 +2079,7 @@ const getLedgerRows = async ({
     }
 
     const breakdown = await buildCommissionHierarchyRows({
+      db,
       facts: commissionFacts,
       fallbackRows: commissionFallbackRows,
       locale,
@@ -2174,7 +2189,8 @@ const getLedgerRows = async ({
   };
 };
 
-const loadBalanceOptions = async ({ req, filters }) => {
+const loadBalanceOptions = async ({ req, filters, db = knex }) => {
+  const knex = db;
   const locale = String(req?.locale || "en").toLowerCase();
   const branchNameSql =
     locale === "ur"
@@ -2195,7 +2211,8 @@ const loadBalanceOptions = async ({ req, filters }) => {
   return { branches };
 };
 
-const getBalanceRows = async ({ req, filters, kind }) => {
+const getBalanceRows = async ({ req, filters, kind, db = knex }) => {
+  const knex = db;
   const cfg = getEntityConfig(kind);
   if (!filters.reportLoaded) return [];
   const voucherScopeContext = await resolveEntityVoucherScopeContext(cfg);
@@ -2272,10 +2289,11 @@ const getBalanceRows = async ({ req, filters, kind }) => {
 
   // Drop entities this user isn't allowed to see, so the balances list stays
   // consistent with the (restricted) ledger it links to. Admins bypass.
-  const blocked = await resolveBlockedEntityIds({ req, kind });
+  const blocked = await resolveBlockedEntityIds({ req, kind, db });
   const rows = (await query).filter((row) => !blocked.has(Number(row.id)));
 
   const staffBalanceRows = await buildStaffCreditSaleQuery({
+    db,
     cfg,
     scopedBranchIds,
   })
@@ -2300,7 +2318,7 @@ const getBalanceRows = async ({ req, filters, kind }) => {
 
   let commissionByEmployee = new Map();
   if (kind === "employee") {
-    const commissionRows = await buildCommissionQuery({ scopedBranchIds })
+    const commissionRows = await buildCommissionQuery({ scopedBranchIds, db })
       .andWhere("vh.voucher_date", "<=", filters.asOn)
       .groupBy("cl.employee_id", "cl.commission_type")
       .select("cl.employee_id as entity_id", "cl.commission_type")
@@ -2329,6 +2347,7 @@ const getBalanceRows = async ({ req, filters, kind }) => {
       .map((row) => Number(row.id || 0))
       .filter((id) => Number.isInteger(id) && id > 0);
     const accrualProfileMap = await loadEmployeeAccrualProfiles({
+      db,
       entityIds: employeeIds,
     });
     accrualProfileMap.forEach((meta, employeeId) => {
@@ -2390,6 +2409,7 @@ const getBalanceRows = async ({ req, filters, kind }) => {
       .filter((id) => Number.isInteger(id) && id > 0);
     labourAllowanceAmountByLabour =
       await loadLabourAllowanceAmountByEntityUpTo({
+        db,
         entityIds: labourIds,
         asOnYmd: filters.asOn,
       });
@@ -2526,70 +2546,88 @@ const getBalanceRows = async ({ req, filters, kind }) => {
   });
 };
 
-const getLabourLedgerReportPageData = async ({ req, input = {} }) => {
+const withReportSnapshot = async (loadReport) => {
+  try {
+    await Promise.all([hasDcvLineTable(), supportsVoucherRemarksUr()]);
+    return await knex.transaction(loadReport, { isolationLevel: 'repeatable read', readOnly: true });
+  } catch (err) { console.error('Error in HrPayrollReportSnapshotService:', err); throw err; }
+};
+
+const getLabourLedgerReportPageData = async ({ req, input = {} }) => withReportSnapshot(async (db) => {
   const filters = parseEntityLedgerFilters({
     req,
     input,
     scopeKey: "labour_ledger",
   });
-  const blockedEntityIds = await resolveBlockedEntityIds({ req, kind: "labour" });
+  const blockedEntityIds = await resolveBlockedEntityIds({ req, kind: "labour", db });
   const options = await loadLedgerOptions({
+    db,
     req,
     filters,
     kind: "labour",
     blockedEntityIds,
   });
   const reportData = await getLedgerRows({
+    db,
     req,
     filters,
     options,
     kind: "labour",
     blockedEntityIds,
   });
+  await attachSalaryReviews({ db, req, kind: 'labour', filters, options, reportData });
   return { filters, options, reportData };
-};
+});
 
-const getEmployeeLedgerReportPageData = async ({ req, input = {} }) => {
+const getEmployeeLedgerReportPageData = async ({ req, input = {} }) => withReportSnapshot(async (db) => {
   const filters = parseEntityLedgerFilters({
     req,
     input,
     scopeKey: "employee_ledger",
   });
   const blockedEntityIds = await resolveBlockedEntityIds({
+    db,
     req,
     kind: "employee",
   });
   const options = await loadLedgerOptions({
+    db,
     req,
     filters,
     kind: "employee",
     blockedEntityIds,
   });
   const reportData = await getLedgerRows({
+    db,
     req,
     filters,
     options,
     kind: "employee",
     blockedEntityIds,
   });
+  await attachSalaryReviews({ db, req, kind: 'employee', filters, options, reportData });
   return { filters, options, reportData };
-};
+});
 
-const getLabourBalancesReportPageData = async ({ req, input = {} }) => {
+const getLabourBalancesReportPageData = async ({ req, input = {} }) => withReportSnapshot(async (db) => {
   const filters = parseEntityBalanceFilters({
     req,
     input,
     scopeKey: "labour_balances",
   });
-  const [options, rows] = await Promise.all([
-    loadBalanceOptions({ req, filters }),
-    getBalanceRows({ req, filters, kind: "labour" }),
+  const [options, sourceRows] = await Promise.all([
+    loadBalanceOptions({ req, filters, db }),
+    getBalanceRows({ req, filters, kind: "labour", db }),
   ]);
+  const reviewData = { rows: sourceRows };
+  await attachSalaryReviews({ db, req, kind: 'labour', filters, options, reportData: reviewData, balances: true });
+  const rows = reviewData.rows;
 
   return {
     filters,
     options,
     reportData: {
+      ...reviewData,
       rows,
       totalPayable: toAmount(rows.reduce((sum, row) => sum + Math.max(Number(row.amount || 0), 0), 0), 2),
       totalReceivable: toAmount(rows.reduce((sum, row) => sum + Math.max(-Number(row.amount || 0), 0), 0), 2),
@@ -2599,23 +2637,27 @@ const getLabourBalancesReportPageData = async ({ req, input = {} }) => {
       ),
     },
   };
-};
+});
 
-const getEmployeeBalancesReportPageData = async ({ req, input = {} }) => {
+const getEmployeeBalancesReportPageData = async ({ req, input = {} }) => withReportSnapshot(async (db) => {
   const filters = parseEntityBalanceFilters({
     req,
     input,
     scopeKey: "employee_balances",
   });
-  const [options, rows] = await Promise.all([
-    loadBalanceOptions({ req, filters }),
-    getBalanceRows({ req, filters, kind: "employee" }),
+  const [options, sourceRows] = await Promise.all([
+    loadBalanceOptions({ req, filters, db }),
+    getBalanceRows({ req, filters, kind: "employee", db }),
   ]);
+  const reviewData = { rows: sourceRows };
+  await attachSalaryReviews({ db, req, kind: 'employee', filters, options, reportData: reviewData, balances: true });
+  const rows = reviewData.rows;
 
   return {
     filters,
     options,
     reportData: {
+      ...reviewData,
       rows,
       totalPayable: toAmount(rows.reduce((sum, row) => sum + Math.max(Number(row.amount || 0), 0), 0), 2),
       totalReceivable: toAmount(rows.reduce((sum, row) => sum + Math.max(-Number(row.amount || 0), 0), 0), 2),
@@ -2625,7 +2667,7 @@ const getEmployeeBalancesReportPageData = async ({ req, input = {} }) => {
       ),
     },
   };
-};
+});
 
 const loadGuaranteeEarningsByMonth = async ({ db = knex, kind, entityIds, from, to }) => {
   try {
@@ -2659,7 +2701,52 @@ const getPayrollLedgerData = async ({ db = knex, req, kind, entity, from, to }) 
   filters: { entityId: Number(entity.id), from, to, reportLoaded: true, ledgerView: 'detail', canFilterAllBranches: true, branchIds: [] },
   options: { entities: [entity] } });
 
+// One statement for the entire report: signatures use the same financial sources
+// and entity/branch rules as the ledgers. Per-review cutoffs exclude later entries.
+const loadSalaryReviewFingerprints = async ({ db = knex, kind, reviews, branchIds = [] }) => {
+  try {
+    if (!reviews.length) return new Map();
+    const { createHash } = require('node:crypto');
+    const cfg = getEntityConfig(kind);
+    const context = await resolveEntityVoucherScopeContext(cfg);
+    const cutoffs = JSON.stringify(reviews.map(row => ({ entity_id: Number(row.entity_id), checked_through: row.checked_through, key: String(row.key || row.entity_id) })));
+    const parts = [];
+    const add = (query, entitySql, dateSql, payloadSql, source) => {
+      query.joinRaw(`JOIN jsonb_to_recordset(?::jsonb) AS review_cutoff(entity_id bigint, checked_through date, key text) ON ${entitySql} = review_cutoff.entity_id`, [cutoffs]);
+      if (dateSql) query.whereRaw(`${dateSql} <= review_cutoff.checked_through`);
+      parts.push(query.select(db.raw('?::text as source', [source]), 'review_cutoff.key',
+        db.raw(`encode(sha256(convert_to(COALESCE(string_agg((${payloadSql})::text, '|' ORDER BY (${payloadSql})::text), ''), 'UTF8')), 'hex') as fingerprint`))
+        .groupBy('review_cutoff.key'));
+    };
+    let lines = db('erp.voucher_line as vl').join('erp.voucher_header as vh', 'vh.id', 'vl.voucher_header_id').where('vh.status', 'APPROVED');
+    if (branchIds.length) lines.whereIn('vh.branch_id', branchIds);
+    lines = applyEntityVoucherScope({ query: lines, cfg, scopeContext: context });
+    add(lines, kind === 'employee' ? 'vl.employee_id' : context.labourEntitySql, 'vh.voucher_date',
+      `jsonb_build_array(to_jsonb(vl), to_jsonb(vh)${kind === 'labour' ? ', to_jsonb(dcv)' + (context.supportsDcvLine ? ', to_jsonb(dcvl)' : '') : ''})`, 'vouchers');
+    add(buildStaffCreditSaleQuery({ cfg, scopedBranchIds: branchIds, db }), `sh.${cfg.buyerCol}`, 'vh.voucher_date',
+      'jsonb_build_array(to_jsonb(ge), to_jsonb(gb), to_jsonb(vh), to_jsonb(sh))', 'staff_credit');
+    if (kind === 'employee') add(buildCommissionQuery({ scopedBranchIds: branchIds, db }), 'cl.employee_id', 'vh.voucher_date',
+      'jsonb_build_array(to_jsonb(cl), to_jsonb(vh))', 'commissions');
+    add(db(`${cfg.table} as p`), 'p.id', null, kind === 'employee'
+      ? 'jsonb_build_array(p.employment_start_date, p.employment_end_date, p.created_at)' : 'jsonb_build_array(p.id)', 'profile');
+    add(db(`${cfg.branchMapTable} as bm`), `bm.${cfg.branchMapEntityCol}`, null, 'to_jsonb(bm)', 'branches');
+    const histories = [['erp.worker_guarantee_history', `${kind}_id`, 'guarantee']];
+    if (kind === 'employee') histories.push(['erp.employee_salary_history', 'employee_id', 'salary']);
+    histories.push([`erp.${kind}_allowance_rules`, `${kind}_id`, 'allowances']);
+    for (const [table, column, source] of histories) {
+      add(db(`${table} as h`), `h.${column}`, "COALESCE(h.effective_from, DATE '1900-01-01')",
+        "(to_jsonb(h) - 'effective_to' - 'updated_at') || jsonb_build_object('effective_to', LEAST(COALESCE(h.effective_to, review_cutoff.checked_through), review_cutoff.checked_through))", source);
+    }
+    add(db(`erp.${kind}_payroll_runs as pr`), `pr.${kind}_id`, 'pr.period_to', 'to_jsonb(pr)', 'payroll');
+    const rows = await db.unionAll(parts, true).orderBy(['key', 'source']);
+    const sources = new Map(reviews.map(row => [String(row.key || row.entity_id), []]));
+    rows.forEach(row => sources.get(row.key).push([row.source, row.fingerprint]));
+    return new Map([...sources].map(([key, values]) => [key, createHash('sha256').update(JSON.stringify(values)).digest('hex')]));
+  } catch (err) { console.error('Error in SalaryReviewFingerprintService:', err); throw err; }
+};
+
 module.exports = {
+  loadSalaryReviewFingerprints,
   loadGuaranteeEarningsByMonth,
   getPayrollLedgerData,
   getLabourLedgerReportPageData,

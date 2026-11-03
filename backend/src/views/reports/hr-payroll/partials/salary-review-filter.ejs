@@ -1,0 +1,19 @@
+<label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" for="<%= name %>-trigger"><%= t(labelKey) %></label>
+<div class="relative" data-multi-select data-name="<%= name %>" data-placeholder="<%= t('all') %>" data-multi-all-value="__ALL__" data-multi-auto-all="1">
+  <button id="<%= name %>-trigger" type="button" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 pr-10 text-left text-sm text-slate-700" data-multi-trigger></button>
+  <span class="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-slate-500" aria-hidden="true">⌄</span>
+  <div class="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 hidden rounded-xl border border-slate-200 bg-white p-2 shadow-xl" data-multi-panel>
+    <div class="max-h-52 overflow-auto pr-1" data-multi-options>
+      <label class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+        <input type="checkbox" value="__ALL__" <%= selected.length ? '' : 'checked' %>><span><%= t('all') %></span>
+      </label>
+      <% entries.forEach(entry => { %>
+        <label class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+          <input type="checkbox" value="<%= entry.id %>" <%= selected.map(String).includes(String(entry.id)) ? 'checked' : '' %>>
+          <span><%= entry.labelKey ? t(entry.labelKey) : entry.name %></span>
+        </label>
+      <% }) %>
+    </div>
+  </div>
+  <input type="hidden" name="<%= name %>" value="<%= selected.join(',') %>" data-multi-hidden>
+</div>

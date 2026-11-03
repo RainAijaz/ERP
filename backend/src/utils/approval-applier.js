@@ -2323,6 +2323,7 @@ const applyMasterDataChange = async (trx, request, userId) => {
     return true;
   }
   if (entityType === "EMPLOYEE" || entityType === "LABOUR") {
+    if (newValue?.mode === 'SALARY_REVIEW') return require('../services/hr-payroll/salary-review-service').applySalaryReviewApproval(trx, request, userId);
     return applyHrApprovalChange(trx, request, userId);
   }
   return false;

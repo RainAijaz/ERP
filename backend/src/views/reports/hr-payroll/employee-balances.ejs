@@ -113,6 +113,7 @@
           </label>
         </div>
 
+        <%- include('./partials/salary-review-filters') %>
         <div class="hidden lg:block"></div>
         <div class="flex gap-2">
           <button type="submit" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t('load') %></button>
@@ -131,7 +132,7 @@
 
     <div class="flex flex-col gap-3 border-b border-slate-200 px-2 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div class="text-sm font-semibold text-slate-700"><%= t('employee_balances_report') %></div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" type="button" data-download-button <%= reportLoaded && rows.length ? '' : 'disabled' %>>
           <%= t('download') %>
         </button>
@@ -169,11 +170,7 @@
                 <td class="px-3 py-2" data-sort-value="<%= rowIndex + 1 %>"><%= rowIndex + 1 %></td>
                 <td class="px-3 py-2"><%= row.entity_code || '-' %></td>
                 <td class="px-3 py-2">
-                  <% if (ledgerHref) { %>
-                    <a href="<%= ledgerHref %>" class="text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-accent"><%= resolveEntityName(row) %></a>
-                  <% } else { %>
-                    <%= resolveEntityName(row) %>
-                  <% } %>
+                  <%- include('./partials/salary-review-person', { review: row.salaryReview, name: resolveEntityName(row), href: ledgerHref, mode: 'balances' }) %>
                 </td>
                 <td class="px-3 py-2 text-right font-semibold" data-sort-value="<%= Number(row.amount || 0) %>"><%- include('../../base/partials/payable-balance', { balance: row.amount, formatNumber, t }) %></td>
               </tr>
@@ -202,13 +199,13 @@
               <% const breakdown = Array.isArray(row.breakdown) ? row.breakdown : []; %>
               <tr class="bg-slate-50/70" data-row data-active="true">
                 <td class="px-3 py-2 font-semibold" colspan="6">
+                  <div class="flex items-start gap-2">
                   <span class="mr-2 text-slate-500"><%= rowIndex + 1 %>.</span>
                   <span class="mr-2 text-slate-500"><%= row.entity_code || '-' %></span>
-                  <% if (ledgerHref) { %>
-                    <a href="<%= ledgerHref %>" class="text-slate-800 underline decoration-slate-300 underline-offset-2 hover:text-accent"><%= resolveEntityName(row) %></a>
-                  <% } else { %>
-                    <%= resolveEntityName(row) %>
-                  <% } %>
+                  <div class="min-w-0 flex-1">
+                  <%- include('./partials/salary-review-person', { review: row.salaryReview, name: resolveEntityName(row), href: ledgerHref, mode: 'balances' }) %>
+                  </div>
+                  </div>
                 </td>
               </tr>
               <% if (!breakdown.length) { %>
@@ -262,5 +259,6 @@
   modalOpen: false,
   modalMode: "add"
 }) %>
+<%- include('./partials/salary-review-dialog') %>
 
 

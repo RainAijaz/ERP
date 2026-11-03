@@ -1,0 +1,27 @@
+<% if (review) { const ledger = mode === 'ledger'; const canManage = Boolean(reportData.salaryReviewContext?.canManage); %>
+<div class="<%= ledger ? 'mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3' : '' %>"
+  data-salary-review-person data-entity-id="<%= review.entityId %>" data-person-name="<%= name %>"
+  data-review-id="<%= review.id %>" data-checked-through="<%= review.checkedThrough %>" data-checked-through-display="<%= review.checkedThrough ? formatDateDisplay(review.checkedThrough, '-') : '' %>" data-checked-by="<%= review.checkedBy %>"
+  data-checked-on="<%= review.checkedOn ? formatDateDisplay(review.checkedOn, '-') : '' %>" data-fingerprint="<%= review.fingerprint %>" data-review-status="<%= review.status %>">
+  <div>
+    <div class="flex items-center justify-between gap-3">
+      <% if (!ledger && href) { %><a href="<%= href %>" class="text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-accent"><%= name %></a>
+      <% } else { %><span class="font-semibold text-slate-700"><%= name %></span><% } %>
+      <% if (canManage && !ledger) { %>
+        <details class="relative inline-block print:hidden" data-salary-review-menu>
+          <summary class="inline-flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600" aria-label="<%= t('salary_review_actions') %>">⋮</summary>
+          <div class="absolute right-0 top-full z-50 mt-1 w-56 rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
+            <button type="button" class="w-full rounded-lg px-3 py-2 text-start text-xs font-semibold text-slate-700 hover:bg-slate-50" data-salary-review-open><%= t('salary_review_mark') %></button>
+          </div>
+        </details>
+      <% } %>
+    </div>
+    <% const statusClass = review.status === 'checked' ? 'text-emerald-700' : review.status === 'recheck' ? 'text-red-700' : review.status === 'needs' ? 'text-amber-700' : 'text-slate-500'; %>
+    <button type="button" class="mt-1 block text-start text-xs <%= statusClass %>" data-salary-review-open>
+      <% if (review.status === 'recheck') { %><%= t('salary_review_recheck') %> · <% } %>
+      <% if (review.checkedThrough) { %><%= review.status === 'checked' ? '✓ ' : '' %><%= t('salary_review_through') %>: <%= formatDateDisplay(review.checkedThrough, '-') %><% } else { %><%= t('salary_review_never') %><% } %>
+    </button>
+  </div>
+  <% if (ledger && canManage) { %><button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 print:hidden" data-salary-review-open><%= t('salary_review_mark') %></button><% } %>
+</div>
+<% } else if (mode !== 'ledger') { %><%= name %><% } %>

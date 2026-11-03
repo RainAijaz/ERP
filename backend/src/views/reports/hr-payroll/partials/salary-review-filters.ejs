@@ -1,0 +1,5 @@
+<%- include('./salary-review-filter', { name: 'salary_review_status', labelKey: 'salary_review_status', selected: filters.salaryReviewStatuses || [],
+  entries: ['needs','checked','never','recheck'].map(id => ({ id, labelKey: 'salary_review_' + id })) }) %>
+<%- include('./salary-review-filter', { name: 'salary_review_user_ids', labelKey: 'salary_review_checked_by', selected: filters.salaryReviewUserIds || [], entries: options.salaryReviewers || [] }) %>
+<div class="hidden lg:block"></div>
+<p class="text-xs text-slate-500"><%= t('salary_review_filter_help') %></p>
