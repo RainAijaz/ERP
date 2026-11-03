@@ -435,9 +435,6 @@ const navConfig = [
             route: "/hr-payroll/employees",
           },
           {
-            key: "payroll_periods", labelKey: "salary_payroll_runs", scopeType: "SCREEN", scopeKey: "hr_payroll.employees", moduleGroup: "HR & Payroll", route: "/hr-payroll/payroll",
-          },
-          {
             key: "sales_commission",
             labelKey: "employee_commission_rules",
             scopeType: "SCREEN",
@@ -467,10 +464,6 @@ const navConfig = [
             scopeKey: "hr_payroll.labours",
             moduleGroup: "HR & Payroll",
             route: "/hr-payroll/labours",
-          },
-          {
-            key: 'labour_payroll_periods', labelKey: 'salary_payroll_runs', scopeType: 'SCREEN',
-            scopeKey: 'hr_payroll.labours', moduleGroup: 'HR & Payroll', route: '/hr-payroll/payroll',
           },
           {
             key: "labour_rates",

@@ -465,6 +465,7 @@
   modalMode: "add"
 }) %>
 <%- include('./partials/salary-review-dialog') %>
+<%- include('./partials/payroll-dialog', { payrollName: resolveEntityName(selectedEntity) }) %>
 
 <script><%- include("../../base/partials/date-range-picker.js") %></script>
 

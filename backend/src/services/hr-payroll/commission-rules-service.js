@@ -749,6 +749,7 @@ module.exports = {
   supersedeCommissionRule,
   updateCommissionRule,
   normalizeRuleDate,
+  addDaysYmd,
   todayYmd,
   hasTwoDecimalsOrLess,
   toMoney,

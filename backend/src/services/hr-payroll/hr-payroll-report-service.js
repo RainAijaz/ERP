@@ -2,6 +2,7 @@
 const { loadSalaryAccruals } = require("./salary-accrual-service");
 const { loadGuaranteedPayRows } = require('./guaranteed-pay-service');
 const { parseSalaryReviewFilters, attachSalaryReviews } = require('./salary-review-service');
+const { attachPayrollReports } = require('./payroll-report-service');
 
 const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
@@ -2576,6 +2577,7 @@ const getLabourLedgerReportPageData = async ({ req, input = {} }) => withReportS
     blockedEntityIds,
   });
   await attachSalaryReviews({ db, req, kind: 'labour', filters, options, reportData });
+  await attachPayrollReports({ db, req, kind: 'labour', filters, reportData });
   return { filters, options, reportData };
 });
 
@@ -2606,6 +2608,7 @@ const getEmployeeLedgerReportPageData = async ({ req, input = {} }) => withRepor
     blockedEntityIds,
   });
   await attachSalaryReviews({ db, req, kind: 'employee', filters, options, reportData });
+  await attachPayrollReports({ db, req, kind: 'employee', filters, reportData });
   return { filters, options, reportData };
 });
 
@@ -2621,6 +2624,7 @@ const getLabourBalancesReportPageData = async ({ req, input = {} }) => withRepor
   ]);
   const reviewData = { rows: sourceRows };
   await attachSalaryReviews({ db, req, kind: 'labour', filters, options, reportData: reviewData, balances: true });
+  await attachPayrollReports({ db, req, kind: 'labour', filters, reportData: reviewData, balances: true });
   const rows = reviewData.rows;
 
   return {
@@ -2651,6 +2655,7 @@ const getEmployeeBalancesReportPageData = async ({ req, input = {} }) => withRep
   ]);
   const reviewData = { rows: sourceRows };
   await attachSalaryReviews({ db, req, kind: 'employee', filters, options, reportData: reviewData, balances: true });
+  await attachPayrollReports({ db, req, kind: 'employee', filters, reportData: reviewData, balances: true });
   const rows = reviewData.rows;
 
   return {

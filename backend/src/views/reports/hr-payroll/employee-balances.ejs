@@ -170,7 +170,7 @@
                 <td class="px-3 py-2" data-sort-value="<%= rowIndex + 1 %>"><%= rowIndex + 1 %></td>
                 <td class="px-3 py-2"><%= row.entity_code || '-' %></td>
                 <td class="px-3 py-2">
-                  <%- include('./partials/salary-review-person', { review: row.salaryReview, name: resolveEntityName(row), href: ledgerHref, mode: 'balances' }) %>
+                  <%- include('./partials/salary-review-person', { review: row.salaryReview, payroll: row.payroll, name: resolveEntityName(row), href: ledgerHref, mode: 'balances' }) %>
                 </td>
                 <td class="px-3 py-2 text-right font-semibold" data-sort-value="<%= Number(row.amount || 0) %>"><%- include('../../base/partials/payable-balance', { balance: row.amount, formatNumber, t }) %></td>
               </tr>
@@ -203,7 +203,7 @@
                   <span class="mr-2 text-slate-500"><%= rowIndex + 1 %>.</span>
                   <span class="mr-2 text-slate-500"><%= row.entity_code || '-' %></span>
                   <div class="min-w-0 flex-1">
-                  <%- include('./partials/salary-review-person', { review: row.salaryReview, name: resolveEntityName(row), href: ledgerHref, mode: 'balances' }) %>
+                  <%- include('./partials/salary-review-person', { review: row.salaryReview, payroll: row.payroll, name: resolveEntityName(row), href: ledgerHref, mode: 'balances' }) %>
                   </div>
                   </div>
                 </td>

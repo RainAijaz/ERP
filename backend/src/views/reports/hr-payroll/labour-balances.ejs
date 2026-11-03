@@ -151,7 +151,7 @@
                 <td class="px-3 py-2" data-sort-value="<%= rowIndex + 1 %>"><%= rowIndex + 1 %></td>
                 <td class="px-3 py-2"><%= row.entity_code || '-' %></td>
                 <td class="px-3 py-2">
-                  <%- include('./partials/salary-review-person', { review: row.salaryReview, name: resolveEntityName(row), href: ledgerHref, mode: 'balances' }) %>
+                  <%- include('./partials/salary-review-person', { review: row.salaryReview, payroll: row.payroll, name: resolveEntityName(row), href: ledgerHref, mode: 'balances' }) %>
                 </td>
                 <td class="px-3 py-2 text-right" data-sort-value="<%= Number(row.guarantee_salary || 0) %>"><%= formatNumber(row.guarantee_salary) %></td>
                 <td class="px-3 py-2 text-right" data-sort-value="<%= Number(row.guarantee_adjustment || 0) %>"><%= formatNumber(row.guarantee_adjustment) %></td>

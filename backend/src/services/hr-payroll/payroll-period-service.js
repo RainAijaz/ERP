@@ -7,7 +7,8 @@ const { absenceDeduction, salaryPeriod, sameSalaryCadence } = require('./salary-
 const { toLocalDateOnly } = require('../../utils/date-only');
 const { workerConfig } = require('./guaranteed-pay-service');
 const { canAccessScope } = require('../../middleware/access/role-permissions');
-const { localizedNameSelect } = require('../../utils/localized-name');
+const { handleScreenApproval } = require('../../middleware/approvals/screen-approval');
+const { insertActivityLog } = require('../../utils/audit-log');
 
 const normalizePayrollInput = input => {
   const key = input.worker_key == null ? null : String(input.worker_key).split(':');
@@ -42,30 +43,32 @@ const assertEmployeeScope = async (db, req, employeeId, kind = 'employee') => {
   return employee;
 };
 
+// Shared by the ledger's suggested dates and the guarded payroll preview.
+const configuredPayrollPeriod = async ({ db, kind, employeeId, onDate }) => {
+  if (kind === 'labour') return { ...salaryPeriod(onDate, 'MONTHLY'), frequency: 'MONTHLY', profile: null };
+  const profile = await db('erp.employee_salary_history').where('employee_id', employeeId)
+    .where('effective_from', '<=', onDate).where(q => q.whereNull('effective_to').orWhere('effective_to', '>=', onDate))
+    .orderBy('effective_from', 'desc').first();
+  if (!profile) throw new Error('salary_effective_required');
+  const period = salaryPeriod(onDate, profile.payroll_type, profile.week_ending_day);
+  if (['MONTHLY', 'WEEKLY'].includes(profile.payroll_type)) {
+    const previous = await db('erp.employee_salary_history').where('employee_id', employeeId).where('effective_from', '<', profile.effective_from).orderBy('effective_from', 'desc').first();
+    const next = await db('erp.employee_salary_history').where('employee_id', employeeId).where('effective_from', '>', profile.effective_from).orderBy('effective_from').first();
+    if (previous && !sameSalaryCadence(previous, profile) && toLocalDateOnly(profile.effective_from) > period.from) period.from = toLocalDateOnly(profile.effective_from);
+    if (next && !sameSalaryCadence(profile, next) && toLocalDateOnly(profile.effective_to) < period.to) period.to = toLocalDateOnly(profile.effective_to);
+  }
+  return { ...period, frequency: profile.payroll_type, profile };
+};
+
 const previewPayroll = async ({ db = knex, req, input }) => {
   try {
     const normalized = normalizePayrollInput(input); const cfg = workerConfig(normalized.kind);
     const employee = await assertEmployeeScope(db, req, normalized.employeeId, normalized.kind);
     if (await db(cfg.runTable).where(cfg.idColumn, normalized.employeeId)
       .where('period_from', '<=', normalized.to).where('period_to', '>=', normalized.from).first('id')) throw new Error('salary_period_finalized');
-    let profile;
-    if (normalized.kind === 'employee') {
-      profile = await db('erp.employee_salary_history').where('employee_id', normalized.employeeId)
-        .where('effective_from', '<=', normalized.to).where(q => q.whereNull('effective_to').orWhere('effective_to', '>=', normalized.to))
-        .orderBy('effective_from', 'desc').first();
-      if (!profile) throw new Error('salary_effective_required');
-      if (['MONTHLY', 'WEEKLY'].includes(profile.payroll_type)) {
-        const period = salaryPeriod(normalized.to, profile.payroll_type, profile.week_ending_day);
-        const previous = await db('erp.employee_salary_history').where('employee_id', normalized.employeeId).where('effective_from', '<', profile.effective_from).orderBy('effective_from', 'desc').first();
-        const next = await db('erp.employee_salary_history').where('employee_id', normalized.employeeId).where('effective_from', '>', profile.effective_from).orderBy('effective_from').first();
-        if (previous && !sameSalaryCadence(previous, profile) && toLocalDateOnly(profile.effective_from) > period.from) period.from = toLocalDateOnly(profile.effective_from);
-        if (next && !sameSalaryCadence(profile, next) && toLocalDateOnly(profile.effective_to) < period.to) period.to = toLocalDateOnly(profile.effective_to);
-        if (period.from !== normalized.from || period.to !== normalized.to) throw new Error('salary_invalid_period');
-      }
-    } else {
-      const period = salaryPeriod(normalized.to, 'MONTHLY');
-      if (period.from !== normalized.from || period.to !== normalized.to) throw new Error('salary_invalid_period');
-    }
+    const period = await configuredPayrollPeriod({ db, kind: normalized.kind, employeeId: normalized.employeeId, onDate: normalized.to });
+    const profile = period.profile;
+    if (['MONTHLY', 'WEEKLY'].includes(period.frequency) && (period.from !== normalized.from || period.to !== normalized.to)) throw new Error('salary_invalid_period');
     if (normalized.unpaidDays > (new Date(normalized.to) - new Date(normalized.from)) / 86400000 + 1) throw new Error('salary_invalid_unpaid_days');
     const absence = profile ? absenceDeduction({ profile, unpaidDays: normalized.unpaidDays }) : 0;
     const { getPayrollLedgerData } = require('./hr-payroll-report-service');
@@ -102,32 +105,29 @@ const finalizePayroll = async ({ trx, req, input, expectedHash }) => {
     const [run] = await trx(cfg.runTable).insert({ [cfg.idColumn]: normalized.employeeId,
       period_from: normalized.from, period_to: normalized.to, snapshot: preview.snapshot, total_payable: preview.snapshot.total_payable,
       created_by: req.user?.id || null }).returning('*');
+    await insertActivityLog(trx, { branch_id: req.branchId || null, user_id: req.user?.id || null,
+      entity_type: cfg.type, entity_id: normalized.employeeId, action: 'CREATE', ip_address: req.ip,
+      context: { source: 'payroll-finalize', payroll_run_id: run.id,
+        summary: `${req.user?.id} performed PAYROLL_FINALIZE on ${normalized.employeeId} at ${new Date().toISOString()}.` } });
     return run;
   } catch (err) { console.error('Error in PayrollRunService:', err); throw err; }
 };
 
-const payrollPageData = async ({ db = knex, req }) => {
+const submitPayroll = async ({ req, input, t }) => {
   try {
-    const workers = []; const runs = [];
-    for (const kind of ['employee', 'labour']) {
-      const cfg = workerConfig(kind);
-      if (!canAccessScope(req, 'SCREEN', cfg.scopeKey, 'view')) continue;
-      let entities = db(`${cfg.table} as e`).select('e.id', localizedNameSelect('e','name',req.locale)).orderBy('e.name');
-      if (!req.user?.isAdmin) {
-        const allowed = (req.branchScope || []).map(Number);
-        entities.whereExists(function () { this.select(1).from(`${cfg.branchTable} as eb`).whereRaw(`eb.${cfg.idColumn}=e.id`).whereIn('eb.branch_id', allowed); })
-          .whereNotExists(function () { this.select(1).from(`${cfg.branchTable} as eb`).whereRaw(`eb.${cfg.idColumn}=e.id`).whereNotIn('eb.branch_id', allowed); });
-        const { getUserEntityBlockedSet } = require('../administration/entity-ledger-access-service');
-        const blocked = await getUserEntityBlockedSet({ userId: Number(req.user?.id), entityType: cfg.type });
-        if (blocked.size) entities.whereNotIn('e.id', [...blocked]);
-      }
-      const list = await entities;
-      workers.push(...list.map(row => ({ ...row, kind, key: `${kind}:${row.id}` })));
-      const saved = await db(`${cfg.runTable} as p`).join(`${cfg.table} as e`, 'e.id', `p.${cfg.idColumn}`)
-        .whereIn(`p.${cfg.idColumn}`, list.map(row => row.id)).select('p.*', localizedNameSelect('e','employee_name',req.locale)).orderBy('p.id', 'desc').limit(100);
-      runs.push(...saved.map(row => ({ ...row, kind })));
-    }
-    return { workers, employees: workers.filter(row => row.kind === 'employee'), runs: runs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 100) };
+    const preview = await knex.transaction(db => previewPayroll({ db, req, input }), { isolationLevel: 'repeatable read', readOnly: true });
+    const cfg = workerConfig(preview.normalized.kind);
+    assertPayrollPeriodEnded(preview.normalized);
+    if (preview.hash !== input.preview_hash) throw new Error('salary_preview_changed');
+    const cleanInput = { worker_key: `${cfg.kind}:${preview.normalized.employeeId}`, period_from: preview.normalized.from,
+      period_to: preview.normalized.to, unpaid_days: preview.normalized.unpaidDays };
+    const approval = await handleScreenApproval({ req, scopeKey: cfg.scopeKey, action: 'edit', entityType: cfg.type,
+      entityId: preview.normalized.employeeId,
+      summary: `${t('salary_finalize')} ${preview.employee.name} (${preview.normalized.from} / ${preview.normalized.to})`,
+      oldValue: null, newValue: { mode: 'PAYROLL_FINALIZE', input: cleanInput, preview_hash: preview.hash, snapshot: preview.snapshot }, t });
+    if (approval.queued) return { queued: true, message: t('approval_sent') };
+    const run = await knex.transaction(trx => finalizePayroll({ trx, req, input: cleanInput, expectedHash: preview.hash }));
+    return { id: run.id, queued: false, message: t('salary_finalized') };
   } catch (err) { console.error('Error in PayrollRunService:', err); throw err; }
 };
 
@@ -142,4 +142,5 @@ const loadPayrollSnapshot = async ({ db = knex, req, id, kind = 'employee' }) =>
   } catch (err) { console.error('Error in PayrollRunService:', err); throw err; }
 };
 
-module.exports = { normalizePayrollInput, assertPayrollPeriodEnded, assertEmployeeScope, previewPayroll, finalizePayroll, payrollPageData, loadPayrollSnapshot };
+module.exports = { normalizePayrollInput, assertPayrollPeriodEnded, assertEmployeeScope, configuredPayrollPeriod,
+  previewPayroll, finalizePayroll, submitPayroll, loadPayrollSnapshot };
