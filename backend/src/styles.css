@@ -911,6 +911,7 @@ select[data-searchable-ready="true"] {
   [data-mobile-report-card] tbody td,
   [data-mobile-report-card] tfoot td {
     display: block;
+    white-space: normal !important;
     border: 0 !important;
     padding: 0 !important;
     min-width: 0;

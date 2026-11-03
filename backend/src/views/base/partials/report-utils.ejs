@@ -570,7 +570,13 @@
       const allRows = Array.from(tableBody.querySelectorAll("tr"));
       if (!allRows.length) return;
 
-      const controlledRows = allRows.filter((row) => !row.hasAttribute("data-report-grand-total"));
+      const groupedControls = table.hasAttribute("data-report-grouped-controls");
+      const groupBands = groupedControls
+        ? allRows.filter((row) => row.matches("[data-report-group-header], [data-report-group-total]"))
+        : [];
+      const groupBandSet = new Set(groupBands);
+      const controlledRows = allRows.filter((row) => !row.hasAttribute("data-report-grand-total") && !groupBandSet.has(row));
+      const controlledRowSet = new Set(controlledRows);
       const grandTotalRows = allRows.filter((row) => row.hasAttribute("data-report-grand-total"));
 
       controlledRows.forEach((row) => {
@@ -585,8 +591,12 @@
 
       const computeFilteredRows = () => {
         const query = normalizeText(searchInput?.value || "");
-        if (!query) return controlledRows;
-        return controlledRows.filter((row) => String(row.dataset.searchText || "").includes(query));
+        // Sorting moves existing DOM rows; read their current order before paging.
+        const orderedRows = groupedControls
+          ? Array.from(tableBody.rows).filter((row) => controlledRowSet.has(row))
+          : controlledRows;
+        if (!query) return orderedRows;
+        return orderedRows.filter((row) => String(row.dataset.searchText || "").includes(query));
       };
 
       const render = () => {
@@ -612,6 +622,17 @@
           row.dataset.inFilter = filteredSet.has(row) ? "true" : "false";
           row.style.display = show ? "" : "none";
         });
+
+        if (groupedControls) {
+          const visibleGroups = new Set([...visibleSet].map((row) => row.dataset.reportGroupKey));
+          const filteredGroups = new Set(filteredRows.map((row) => row.dataset.reportGroupKey));
+          groupBands.forEach((row) => {
+            const show = visibleGroups.has(row.dataset.reportGroupKey);
+            row.dataset.active = show ? "true" : "false";
+            row.dataset.inFilter = filteredGroups.has(row.dataset.reportGroupKey) ? "true" : "false";
+            row.style.display = show ? "" : "none";
+          });
+        }
 
         grandTotalRows.forEach((row) => {
           row.dataset.active = "true";
