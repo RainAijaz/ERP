@@ -4770,6 +4770,7 @@ module.exports = {
   getSalesVoucherSeriesStats,
   getSalesVoucherNeighbours,
   loadSalesVoucherDetails,
+  loadSalesOrderReceivableSummaryMapTx,
   loadSalesGatePassDetails,
   applySalesVoucherUpdatePayloadTx,
   applySalesVoucherDeletePayloadTx,

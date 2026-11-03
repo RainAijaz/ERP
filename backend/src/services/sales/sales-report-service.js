@@ -17,6 +17,9 @@ const {
 } = require("../../utils/localized-name");
 const { resolveTranslation } = require("../../middleware/core/locale");
 const {
+  loadSalesOrderReceivableSummaryMapTx,
+} = require("./sales-voucher-service");
+const {
   evaluateSalesDiscountPolicy,
   loadActiveSalesDiscountPolicyMapTx,
 } = require("./sales-discount-policy-service");
@@ -1040,7 +1043,6 @@ const getSalesReportRows = async ({
     .leftJoin("erp.employees as e", "e.id", "sh.salesman_employee_id")
     .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
     .leftJoin("erp.accounts as ra", "ra.id", "sh.receive_into_account_id")
-    .leftJoin("erp.sales_order_header as soh", "soh.voucher_id", "sh.linked_sales_order_id")
     .select(
       "vh.id as voucher_id",
       "vh.voucher_type_code",
@@ -1079,15 +1081,6 @@ const getSalesReportRows = async ({
       localizedNameSelect("sg", "subgroup_name", locale),
       "i.product_type_id",
       localizedNameSelect("pt", "category_name", locale),
-      knex.raw("COALESCE(soh.payment_received_amount, 0) as so_advance_amount"),
-      knex.raw(`COALESCE((
-        SELECT SUM(sh2.payment_received_amount)
-        FROM erp.sales_header sh2
-        JOIN erp.voucher_header vh2 ON vh2.id = sh2.voucher_id
-        WHERE sh2.linked_sales_order_id = sh.linked_sales_order_id
-          AND sh.linked_sales_order_id IS NOT NULL
-          AND upper(coalesce(vh2.status::text, '')) <> 'REJECTED'
-      ), 0) as order_linked_vouchers_received`),
     )
     .where("vh.voucher_type_code", "SALES_VOUCHER")
     .whereNot("vh.status", "REJECTED")
@@ -1165,6 +1158,36 @@ const getSalesReportRows = async ({
   }
 
   const rows = await query;
+  // Reuse the voucher's order totals, discount and receipts. Report date/article
+  // filters must not reduce the order balance, including for partial deliveries.
+  const orderIdsByBranch = new Map();
+  if (filters.orderBy === SALES_ORDER_REPORT_ORDER_TYPES.voucher) {
+    rows.forEach((row) => {
+      const orderId = toPositiveId(row.linked_sales_order_id);
+      const branchId = toPositiveId(row.branch_id);
+      if (!orderId || !branchId) return;
+      if (!orderIdsByBranch.has(branchId)) {
+        orderIdsByBranch.set(branchId, new Set());
+      }
+      orderIdsByBranch.get(branchId).add(orderId);
+    });
+  }
+  const receivablesByBranch = new Map();
+  try {
+    for (const [branchId, orderIds] of orderIdsByBranch) {
+      receivablesByBranch.set(
+        branchId,
+        await loadSalesOrderReceivableSummaryMapTx({
+          trx: knex,
+          req: { ...req, branchId },
+          salesOrderIds: [...orderIds],
+        }),
+      );
+    }
+  } catch (err) {
+    console.error("Error in SalesReportsService:", err);
+    throw err;
+  }
   const mappedRows = rows.map((row) => {
     const meta = row?.meta && typeof row.meta === "object" ? row.meta : {};
     const lineMovementKind =
@@ -1246,8 +1269,9 @@ const getSalesReportRows = async ({
       walk_in_customer_name: String(row.walk_in_customer_name || "").trim(),
       customer_phone: String(row.customer_phone1 || row.walk_in_customer_phone || "").trim(),
       linked_sales_order_id: Number(row.linked_sales_order_id || 0) || null,
-      so_advance_amount: toAmount(row.so_advance_amount || 0, 2),
-      order_linked_vouchers_received: toAmount(row.order_linked_vouchers_received || 0, 2),
+      sales_order_receivable_summary: receivablesByBranch
+        .get(Number(row.branch_id))
+        ?.get(Number(row.linked_sales_order_id)) || null,
       salesman_employee_id: Number(row.salesman_employee_id || 0) || null,
       salesman_name: String(row.salesman_name || "").trim(),
       line_no: Number(row.line_no || 0) || 1,
@@ -1331,8 +1355,7 @@ const getSalesReportGroupIdentity = (row, orderBy, locale) => {
       extra_discount: toAmount(row.extra_discount || 0, 2),
       item_label: "",
       linked_sales_order_id: row.linked_sales_order_id || null,
-      so_advance_amount: toAmount(row.so_advance_amount || 0, 2),
-      order_linked_vouchers_received: toAmount(row.order_linked_vouchers_received || 0, 2),
+      sales_order_receivable_summary: row.sales_order_receivable_summary || null,
     };
   }
 
@@ -1430,8 +1453,7 @@ const buildSalesReportData = ({ rows, filters, req }) => {
         total_remaining_amount: toAmount(identity.remaining_amount, 2),
         item_label: identity.item_label,
         linked_sales_order_id: identity.linked_sales_order_id || null,
-        so_advance_amount: toAmount(identity.so_advance_amount || 0, 2),
-        order_linked_vouchers_received: toAmount(identity.order_linked_vouchers_received || 0, 2),
+        sales_order_receivable_summary: identity.sales_order_receivable_summary || null,
         total_qty: 0,
         total_packed_qty_input: 0,
         total_loose_qty_input: 0,
@@ -1501,19 +1523,15 @@ const buildSalesReportData = ({ rows, filters, req }) => {
       const paymentType = String(group.payment_type || "").trim().toUpperCase();
       const paymentReceivedAmount = toAmount(group.payment_received_amount || 0, 2);
       group.total_payment_received_amount = paymentReceivedAmount;
-      // For FROM_SO vouchers, include SO advance + all linked voucher payments for the order
-      const effectiveTotalReceived = group.linked_sales_order_id
-        ? toAmount(
-            Number(group.so_advance_amount || 0) + Number(group.order_linked_vouchers_received || 0),
-            2,
-          )
+      const orderSummary = group.sales_order_receivable_summary;
+      // The shared summary includes the current voucher exactly once, together
+      // with the order advance, other deliveries and linked cash receipts.
+      const effectiveTotalReceived = orderSummary
+        ? toAmount(orderSummary.previousPaymentsReceived, 2)
         : paymentReceivedAmount;
-      // Mirror the voucher screen: final amount = net lines - extra discount.
-      // FROM_SO vouchers cannot carry their own extra discount (rejected at entry),
-      // so this stays a no-op for them.
       const finalAmount = toAmount(
-        Number(group.total_net_amount || 0) -
-          Number(group.total_extra_discount || 0),
+        Number(orderSummary?.totalOrderAmount ?? group.total_net_amount ?? 0) -
+          Number(orderSummary?.soExtraDiscount ?? group.total_extra_discount ?? 0),
         2,
       );
       group.remaining_amount =
