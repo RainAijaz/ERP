@@ -14,6 +14,10 @@ const {
 } = require("../../services/inventory/inventory-report-service");
 
 const router = express.Router();
+const stockCountReport = require('../../controllers/inventory/stock-count-report-controller');
+router.route('/stock-count-details')
+  .get(requirePermission('REPORT', 'stock_count_details', 'load'), stockCountReport.load)
+  .post(requirePermission('REPORT', 'stock_count_details', 'load'), stockCountReport.load);
 
 const translate = (res, key, fallback) => {
   const value = res?.locals?.t?.(key);

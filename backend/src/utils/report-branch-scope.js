@@ -23,7 +23,7 @@ const parseList = (value) => {
     .filter(Boolean);
 };
 
-const toIdListWithAll = (value) => {
+const toStringListWithAll = (value) => {
   const tokens = parseList(value);
   const hasAll = tokens.some((entry) => {
     const normalized = String(entry || "").trim().toUpperCase();
@@ -33,6 +33,11 @@ const toIdListWithAll = (value) => {
     );
   });
   if (hasAll) return [];
+  return [...new Set(tokens)];
+};
+
+const toIdListWithAll = (value) => {
+  const tokens = toStringListWithAll(value);
   return [
     ...new Set(
       tokens.map(toPositiveInt).filter((entry) => Number.isInteger(entry)),
@@ -92,4 +97,5 @@ module.exports = {
   normalizeReportBranchIds,
   reportCanFilterAllBranches,
   toIdListWithAll,
+  toStringListWithAll,
 };

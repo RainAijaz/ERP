@@ -5712,3 +5712,6 @@ Object.assign(translations.ur, { consumption_source_unattributed: "{count} پر�
 
 Object.assign(translations.en, require('../../utils/salary-review-translations').en);
 Object.assign(translations.ur, require('../../utils/salary-review-translations').ur);
+
+Object.assign(translations.en, require('../../utils/stock-production-report-translations').en);
+Object.assign(translations.ur, require('../../utils/stock-production-report-translations').ur);

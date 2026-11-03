@@ -1,6 +1,8 @@
 const knex = require("../../db/knex");
 const { filterConsumptionByProductionArticle } = require("./consumption-source-filter-service");
 const { normalizeReportArticleFilters, loadReportArticleOptions } = require("../inventory/report-article-filter-service");
+const { resolveTranslation } = require('../../middleware/core/locale');
+const { parseLabourFilter, matchesLabourFilter, loadProductionLabours, resolveConsumptionLabours } = require('./production-labour-report-service');
 const { HttpError } = require("../../middleware/errors/http-error");
 const {
   PRODUCTION_VOUCHER_TYPES,
@@ -56,25 +58,27 @@ const getAllowedBranchIds = (req) => {
   return getReportAllowedBranchIds(req);
 };
 
-const loadBranchOptions = async (req, canAllBranches = false) => {
+const loadBranchOptions = async (req, canAllBranches = false, db = knex) => {
   const allowed = getAllowedBranchIds(req);
   const locale = resolveLocale(req?.locale);
-  let query = knex("erp.branches")
+  let query = db("erp.branches")
     .select("id", localizedNameSelect("branches", "name", locale))
     .where({ is_active: true })
     .orderByRaw(`${localizedNameSql("branches", locale)} asc`);
-  if (!req?.user?.isAdmin && !canAllBranches && allowed.length) {
+  if (!req?.user?.isAdmin && !canAllBranches) {
     query = query.whereIn("id", allowed);
   }
   return query;
 };
 
-const normalizeBranchFilter = ({ req, input, scopeKey }) =>
-  normalizeReportBranchIds({
+const normalizeBranchFilter = ({ req, input, scopeKey }) => {
+  if (!req?.user?.isAdmin && !reportCanFilterAllBranches(req, scopeKey) && !getAllowedBranchIds(req).length) throw new HttpError(403, 'error_branch_out_of_scope');
+  return normalizeReportBranchIds({
     req,
     input,
     canAllBranches: reportCanFilterAllBranches(req, scopeKey),
   });
+};
 
 const normalizePlanKind = (value) => {
   const kind = String(value || "ALL")
@@ -155,7 +159,7 @@ const normalizeSkuUnit = (value) => {
 };
 
 const normalizeStageScope = (value) => {
-  const normalized = String(value || "FINAL_ONLY")
+  const normalized = String(value || "ALL")
     .trim()
     .toUpperCase();
   return normalized === "FINAL_ONLY" ? "FINAL_ONLY" : "ALL";
@@ -275,6 +279,9 @@ const hasTableColumn = async (tableName, columnName) => {
 
 const getProductionControlReportPageData = async ({ req, input = {} }) => {
   const locale = resolveLocale(req?.locale);
+  const selectedBranchIds = normalizeBranchFilter({ req, input, scopeKey: 'production_report' });
+  const labourSelection = parseLabourFilter(input?.labour_ids || input?.labourIds);
+  const selectedLabourIds = labourSelection.labourIds;
   const canFilterAllBranches = reportCanFilterAllBranches(
     req,
     "production_report",
@@ -284,10 +291,8 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     .select("id", localizedNameSelect("departments", "name", locale))
     .where({ is_active: true, is_production: true })
     .orderByRaw(`${localizedNameSql("departments", locale)} asc`);
-  const laboursPromise = knex("erp.labours")
-    .select("id", localizedNameSelect("labours", "name", locale))
-    .whereRaw("lower(coalesce(status, '')) = 'active'")
-    .orderByRaw(`${localizedNameSql("labours", locale)} asc`);
+  const laboursPromise = loadProductionLabours({ req, scopeKey: 'production_report',
+    branchIds: selectedBranchIds });
   const productGroupsPromise = knex("erp.product_groups")
     .select("id", localizedNameSelect("product_groups", "name", locale))
     .where({ is_active: true })
@@ -316,17 +321,9 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     })
     .orderBy("i.name", "asc");
 
-  const selectedBranchIds = normalizeBranchFilter({
-    req,
-    input,
-    scopeKey: "production_report",
-  });
   const { fromDate, toDate } = normalizeDateRange(input);
   const selectedDeptIds = normalizeIdList(
     input?.department_ids || input?.departmentIds,
-  );
-  const selectedLabourIds = normalizeIdList(
-    input?.labour_ids || input?.labourIds,
   );
   const selectedProductGroupIds = normalizeIdList(
     input?.product_group_ids || input?.productGroupIds,
@@ -377,6 +374,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     canFilterAllBranches,
     departmentIds: selectedDeptIds,
     labourIds: selectedLabourIds,
+    labourUnassigned: labourSelection.labourUnassigned,
     productGroupIds: selectedProductGroupIds,
     productSubgroupIds: selectedProductSubgroupIds,
     articleIds: selectedArticleIds,
@@ -607,12 +605,13 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       query = query.whereRaw("1 = 0");
     }
   }
-  if (selectedLabourIds.length) {
-    if (labourExprParts.length) {
-      query = query.whereIn(knex.raw(labourExpr), selectedLabourIds);
-    } else {
-      query = query.whereRaw("1 = 0");
-    }
+  if (labourSelection.labourUnassigned) {
+    query.where(function filterWorkers() {
+      this.whereNull(knex.raw(labourExpr));
+      if (selectedLabourIds.length) this.orWhereIn(knex.raw(labourExpr), selectedLabourIds);
+    });
+  } else if (selectedLabourIds.length) {
+    query.whereIn(knex.raw(labourExpr), selectedLabourIds);
   }
 
   const rawRows = await query
@@ -691,7 +690,8 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       bill_book_no: String(row.bill_book_no || "").trim() || "-",
       branch_name: String(row.branch_name || "-"),
       department_name: String(row.dept_name || "-"),
-      labour_name: String(row.labour_name || "-"),
+      labour_id: toPositiveInt(row.effective_labour_id),
+      labour_name: String(row.labour_name || resolveTranslation(locale, 'production_report_unassigned')),
       stage_name: String(row.stage_name || row.stage_code || "-"),
       effective_sku_id: toPositiveInt(effectiveSkuId),
       effective_stage_id: toPositiveInt(row.effective_stage_id),
@@ -936,6 +936,8 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       : null;
     const entry = entryKey ? voucherEntries.get(entryKey) : null;
     if (entry) {
+      entry.labourNames.add(row.labour_name);
+      entry.row.labour_name = summarizeNameSet(entry.labourNames);
       if (row.bill_book_no && row.bill_book_no !== "-") {
         entry.billBookNumbers.add(row.bill_book_no);
       }
@@ -947,6 +949,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     if (entryKey) {
       voucherEntries.set(entryKey, {
         row: displayRow,
+        labourNames: new Set([row.labour_name]),
         billBookNumbers: new Set(
           row.bill_book_no && row.bill_book_no !== "-" ? [row.bill_book_no] : [],
         ),
@@ -2552,7 +2555,8 @@ const getProductionDepartmentWipLedgerReportPageData = async ({
   };
 };
 
-const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
+const loadProductionConsumptionReportTx = async ({ req, input = {}, db }) => {
+  const knex = db;
   const locale = resolveLocale(req?.locale);
   const articleFilters = normalizeReportArticleFilters(input);
   const canFilterAllBranches = reportCanFilterAllBranches(
@@ -2577,6 +2581,7 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
   const consumptionType = normalizeConsumptionReportType(
     input?.type || input?.consumption_type || input?.consumptionType,
   );
+  const labourSelection = parseLabourFilter(input?.labour_ids || input?.labourIds);
   const orderBy = normalizeConsumptionReportOrderBy(
     input?.order_by || input?.orderBy,
     consumptionType,
@@ -2589,7 +2594,7 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
 
   const stockItemTypes = consumptionType === "RAWMATERIAL" ? ["RM"] : ["SFG"];
 
-  const branchOptionsPromise = loadBranchOptions(req, canFilterAllBranches);
+  const branchOptionsPromise = loadBranchOptions(req, canFilterAllBranches, db);
   const departmentsPromise = knex("erp.departments")
     .select("id", localizedNameSelect("departments", "name", locale))
     .where({ is_active: true, is_production: true })
@@ -2617,13 +2622,14 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
     })
     .orderBy("sg.name", "asc");
 
-  const [branchOptions, departments, productGroups, productSubgroups, articleFilterOptions] =
+  const [branchOptions, departments, productGroups, productSubgroups, articleFilterOptions, labours] =
     await Promise.all([
       branchOptionsPromise,
       departmentsPromise,
       productGroupsPromise,
       productSubgroupsPromise,
-      loadReportArticleOptions({ locale, itemTypes: ["FG", "SFG"] }),
+      loadReportArticleOptions({ db, locale, itemTypes: ["FG", "SFG"] }),
+      loadProductionLabours({ req, branchIds: selectedBranchIds, scopeKey: 'consumption_report', db }),
     ]);
 
   const filters = {
@@ -2632,6 +2638,7 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
     fromDate: fromDate || "",
     toDate: toDate || "",
     type: consumptionType,
+    ...labourSelection,
     branchIds: selectedBranchIds,
     canFilterAllBranches,
     departmentIds: selectedDepartmentIds,
@@ -2645,6 +2652,7 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
     articleFilterOptions,
     branches: branchOptions,
     departments,
+    labours,
     productGroups,
     productSubgroups,
     consumptionTypes: [
@@ -2711,6 +2719,7 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
       "vl.meta",
       "src.voucher_no as source_voucher_no",
       "src.id as source_production_id",
+      'src.id as source_voucher_id',
       "dh.dept_id as source_dept_id",
     )
     .where({
@@ -2737,9 +2746,11 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
   const sourceFilter = await filterConsumptionByProductionArticle({ db: knex, filters, rows: rawRows.map((row) => ({
     ...row,
     metaObj: toMetaObject(row.meta),
+    report_locale: locale,
   })) });
   filters.unattributedConsumptionCount = sourceFilter.unattributedCount;
   const metaRows = sourceFilter.rows;
+  const labourByRow = await resolveConsumptionLabours({ rows: metaRows, db });
 
   const skuIds = [
     ...new Set(
@@ -2849,6 +2860,9 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
         ? skuById.get(Number(sourceSkuId)) || null
         : null;
       const base = {
+        labour_id: labourByRow.get(row)?.id || null,
+        labour_name: labourByRow.get(row)?.name || resolveTranslation(locale, 'production_report_unassigned'),
+        labour_ambiguous: labourByRow.get(row)?.ambiguous || false,
         voucher_id: Number(row.voucher_id || 0),
         line_id: Number(row.line_id || 0),
         line_no: Number(row.line_no || 0),
@@ -2900,6 +2914,7 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
       };
     })
     .filter((row) => {
+      if (!matchesLabourFilter(row.labour_id, labourSelection)) return false;
       if (
         selectedDepartmentIds.length &&
         (!row.department_id ||
@@ -2974,6 +2989,7 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
       branch_names: new Set(),
       department_ids: new Set(),
       item_ids: new Set(),
+      labour_names: new Set(),
       qty: 0,
       line_count: 0,
     };
@@ -2983,6 +2999,7 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
     }
     if (row.department_id) existing.department_ids.add(Number(row.department_id));
     if (row.item_id) existing.item_ids.add(Number(row.item_id));
+    existing.labour_names.add(row.labour_name);
     existing.qty = Number(existing.qty || 0) + Number(row.qty || 0);
     existing.line_count += 1;
     summaryMap.set(row.order_group_key, existing);
@@ -2996,6 +3013,7 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
       branch_label: summarizeNameSet(row.branch_names),
       department_count: row.department_ids.size,
       item_count: row.item_ids.size,
+      labour_label: summarizeNameSet(row.labour_names),
       line_count: Number(row.line_count || 0),
       qty: Number(Number(row.qty || 0).toFixed(3)),
     }))
@@ -3034,6 +3052,17 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
       totals,
     },
   };
+};
+
+const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
+  try {
+    return await knex.transaction(db => loadProductionConsumptionReportTx({ req, input, db }), {
+      isolationLevel: 'repeatable read', readOnly: true,
+    });
+  } catch (err) {
+    console.error('Error in ProductionConsumptionReportService:', err);
+    throw err;
+  }
 };
 
 const getProductionPlannedConsumptionReportPageData = async ({

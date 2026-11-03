@@ -1,0 +1,12 @@
+<% const selectedValues = (selected || []).map(String); %>
+<div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+  <label for="report-filter-<%= name %>" class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t(labelKey) %></label>
+  <div class="sm:col-span-9">
+    <select id="report-filter-<%= name %>" name="<%= name %>" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+      <option value="__ALL__" <%= selectedValues.length ? '' : 'selected' %>><%= t('all') %></option>
+      <% (entries || []).forEach(entry => { %>
+        <option value="<%= entry.id %>" <%= selectedValues.includes(String(entry.id)) ? 'selected' : '' %>><%= entry.labelKey ? t(entry.labelKey) : entry.name %></option>
+      <% }) %>
+    </select>
+  </div>
+</div>

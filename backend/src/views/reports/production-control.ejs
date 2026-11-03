@@ -22,7 +22,7 @@
   const selectedSkuUnit = ["ALL", "PAIR", "DZN"].includes(String(filters?.skuUnit || "").toUpperCase())
     ? String(filters?.skuUnit || "").toUpperCase()
     : "ALL";
-  const selectedStageScope = String(filters?.stageScope || "FINAL_ONLY").toUpperCase() === "FINAL_ONLY" ? "FINAL_ONLY" : "ALL";
+  const selectedStageScope = String(filters?.stageScope || "ALL").toUpperCase() === "FINAL_ONLY" ? "FINAL_ONLY" : "ALL";
   const branchAllSelected = !selectedBranchIds.length;
   const departmentAllSelected = !selectedDepartmentIds.length;
   const labourAllSelected = !selectedLabourIds.length;
@@ -209,17 +209,7 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("labours") %></label>
-          <div class="sm:col-span-9">
-            <select name="labour_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
-              <option value="<%= allMultiOptionValue %>" <%= labourAllSelected ? "selected" : "" %>><%= t("all") %></option>
-              <% (options?.labours || []).forEach((labour) => { %>
-                <option value="<%= labour.id %>" <%= selectedLabourIds.includes(Number(labour.id)) ? "selected" : "" %>><%= labour.name %></option>
-              <% }) %>
-            </select>
-          </div>
-        </div>
+        <%- include('../base/partials/report-multi-select',{name:'labour_ids',labelKey:'labours',selected:[...selectedLabourIds,...(filters.labourUnassigned ? ['__UNASSIGNED__'] : [])],entries:[...(options.labours || []),{id:'__UNASSIGNED__',labelKey:'production_report_unassigned'}]}) %>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
           <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("product_groups") %></label>
@@ -363,7 +353,7 @@
   <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" data-print-area>
     <div class="flex flex-col gap-3 border-b border-slate-200 px-2 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div class="text-sm font-semibold text-slate-700"><%= t("production_control_report") %></div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" type="button" data-download-button <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("download") %></button>
         <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" type="button" data-print-button <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("print") %></button>
         <%- include("../base/partials/table-controls", { t, showStatus: false }) %>

@@ -959,6 +959,14 @@ const navConfig = [
             route: "/reports/inventory/dead-stock",
           },
           {
+            key: "stock_count_details_report",
+            labelKey: "stock_count_details_report",
+            scopeType: "REPORT",
+            scopeKey: "stock_count_details",
+            moduleGroup: "Inventory",
+            route: "/reports/inventory/stock-count-details",
+          },
+          {
             key: "stock_count_accuracy_report",
             labelKey: "stock_count_accuracy_report",
             scopeType: "REPORT",

@@ -27,5 +27,25 @@ const toLocalDateOnlyOrRaw = (value) => {
 module.exports = {
   toLocalDateOnly,
   toLocalDateOnlyOrRaw,
+  normalizeDateOnly,
 };
+
+// Shared date validation, preserving the payroll date normalizer's existing
+// null (not supplied) versus undefined (invalid) contract.
+function normalizeDateOnly(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return undefined;
+    return new Date(value.getTime() - value.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+  const raw = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const parsed = new Date(`${raw}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== raw) return undefined;
+    return raw;
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
 
