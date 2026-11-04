@@ -10,9 +10,8 @@
 //   NOT_TRACKED - localized "Not tracked" string
 //   svg         - (name, cls) => inline SVG string
 //
-// A `daily` card carries data-today/data-yest attributes that the Today/
-// Yesterday toggle script swaps. That script scopes itself to [data-kpi-scope],
-// so this grid must render inside that element to participate in the toggle.
+// Daily cards show yesterday as a quiet comparison, keeping date controls in
+// the shared dashboard header.
 %>
 <!-- 2-up on phones: full-width cards would otherwise be a very long scroll. -->
 <div class="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
@@ -25,11 +24,14 @@
     <a href="<%= card.href %>" class="group rounded-2xl border <%= tn.wrap %> p-3 transition sm:p-5"<% if (card.daily) { %> data-kpi-daily<% } %>>
       <div class="flex items-start justify-between gap-2 sm:gap-3">
         <div class="min-w-0 space-y-1 sm:space-y-2">
-          <div class="text-[10px] font-semibold uppercase tracking-[0.14em] <%= tn.label %> sm:text-[11px] sm:tracking-[0.24em]"<% if (card.daily) { %> data-kpi-label data-today="<%= todayLabel %>" data-yest="<%= yestLabel %>"<% } %>><%= todayLabel %></div>
+          <div class="text-[10px] font-semibold uppercase tracking-[0.14em] <%= tn.label %> sm:text-[11px] sm:tracking-[0.24em]"><%= todayLabel %></div>
           <% if (card.value === null && !card.daily) { %>
             <div class="text-base font-semibold text-slate-400 sm:text-lg"><%= NOT_TRACKED %></div>
           <% } else { %>
-            <div class="text-xl font-semibold <%= tn.value %> sm:text-3xl"><span<% if (card.daily) { %> data-kpi-value data-today="<%= todayVal %>" data-yest="<%= yestVal %>"<% } %>><%= todayVal %></span><% if (card.suffix) { %><span class="ml-1 text-xs font-medium <%= tn.label %> sm:text-base"><%= card.suffix %></span><% } %></div>
+            <div class="text-xl font-semibold <%= tn.value %> sm:text-3xl"><span><%= todayVal %></span><% if (card.suffix && card.value !== null && Number.isFinite(Number(card.value))) { %><span class="ml-1 text-xs font-medium <%= tn.label %> sm:text-base"><%= card.suffix %></span><% } %></div>
+          <% } %>
+          <% if (card.daily) { %>
+            <div class="text-xs <%= tn.label %>" data-kpi-comparison title="<%= yestLabel %>"><%= t("yesterday") %>: <%= yestVal %><% if (card.suffix && card.valueAlt !== null && card.valueAlt !== undefined && Number.isFinite(Number(card.valueAlt))) { %> <%= card.suffix %><% } %></div>
           <% } %>
         </div>
         <span class="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl <%= tn.chip %> transition group-hover:scale-105 sm:inline-flex">

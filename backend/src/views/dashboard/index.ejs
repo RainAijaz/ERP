@@ -16,6 +16,8 @@
       : Boolean(user && user.isAdmin);
 
   const kpis = (metrics && metrics.kpis) || {};
+  const rollingPeriod = dashboardPeriod.mode === "rolling";
+  const monthCaption = t(rollingPeriod ? "dashboard_last_30_days" : "period_month");
   const alerts = (metrics && metrics.alerts) || {};
   const branchRows = (branchBreakdown && Array.isArray(branchBreakdown.rows)) ? branchBreakdown.rows : [];
   const branchTotals = (branchBreakdown && branchBreakdown.totals) || null;
@@ -24,7 +26,7 @@
 
   const canSales = gate("REPORT", "sales_report");
   const canCash = gate("REPORT", "cash_book");
-  const canCustomerBalances = gate("REPORT", "customer_balances") || canSales;
+  const canCustomerBalances = gate("REPORT", "customer_balances");
   const canSupplierBalances = gate("REPORT", "supplier_balances");
   const canInventory = gate("REPORT", "stock_quantity") || gate("REPORT", "stock_ledger");
   const canProduction = gate("REPORT", "production_report");
@@ -36,9 +38,9 @@
   const NOT_TRACKED = t("not_tracked");
   // Format a numeric metric; null/undefined => null (caller renders "Not tracked").
   const fmt = (v) =>
-    v === null || v === undefined ? null : formatNumberDisplay(v, { decimals: 0, fallback: null });
+    v === null || v === undefined ? t("dashboard_unavailable") : formatNumberDisplay(v, { decimals: 0, fallback: null });
   const fmtPct = (v) => (v === null || v === undefined ? null : `${formatNumberDisplay(v, { decimals: 0 })}%`);
-  const fmtQty = (v) => (v === null || v === undefined ? null : formatNumberDisplay(v, { decimals: 1, fallback: null }));
+  const fmtQty = (v) => (v === null || v === undefined ? t("dashboard_unavailable") : formatNumberDisplay(v, { decimals: 1, fallback: null }));
 
   // Tailwind tone presets (aligned with existing ERP card palette).
   const TONES = {
@@ -76,11 +78,11 @@
   // ---- KPI card definitions (only shown if permitted) --------------------
   const kpiCards = [
     { show: canSales,             href: "/reports/sales/sales-report",            label: t("todays_sales"),        value: fmt(kpis.todaysSales),     tone: "emerald", icon: "cash", daily: true, labelAlt: t("yesterdays_sales"),       valueAlt: fmt(kpis.todaysSalesYesterday) },
-    { show: canSales,             href: "/reports/sales/sales-report",            label: t("monthly_revenue"),     value: fmt(kpis.monthlyRevenue),  tone: "blue",    icon: "trend" },
-    { show: canPurchase,          href: "/reports/purchases",                     label: t("monthly_purchase"),    value: fmt(kpis.monthlyPurchase), tone: "amber",   icon: "box" },
+    { show: canSales,             href: "/reports/sales/sales-report",            label: t(rollingPeriod ? "dashboard_revenue_30_days" : "dashboard_revenue_this_month"), value: fmt(kpis.monthlyRevenue), tone: "blue", icon: "trend" },
+    { show: canPurchase,          href: "/reports/purchases",                     label: t(rollingPeriod ? "dashboard_purchases_30_days" : "dashboard_purchases_this_month"), value: fmt(kpis.monthlyPurchase), tone: "amber", icon: "box" },
     { show: canSales,             href: "/reports/sales/sales-report",            label: t("dozens_sold_today"),   value: fmtQty(kpis.dozensToday),  tone: "teal",    icon: "box", suffix: t("dzn"), daily: true, labelAlt: t("dozens_sold_yesterday"), valueAlt: fmtQty(kpis.dozensYesterday) },
-    { show: canSales,             href: "/reports/sales/sales-report",            label: t("dozens_sold_week"),    value: fmtQty(kpis.dozensWeek),   tone: "cyan",    icon: "box", suffix: t("dzn") },
-    { show: canSales,             href: "/reports/sales/sales-report",            label: t("dozens_sold_month"),   value: fmtQty(kpis.dozensMonth),  tone: "violet",  icon: "box", suffix: t("dzn") },
+    { show: canSales,             href: "/reports/sales/sales-report",            label: t(rollingPeriod ? "dashboard_dozens_7_days" : "dozens_sold_week"), value: fmtQty(kpis.dozensWeek), tone: "cyan", icon: "box", suffix: t("dzn") },
+    { show: canSales,             href: "/reports/sales/sales-report",            label: t(rollingPeriod ? "dashboard_dozens_30_days" : "dozens_sold_month"), value: fmtQty(kpis.dozensMonth), tone: "violet", icon: "box", suffix: t("dzn") },
     { show: canCash,              href: "/reports/financial/cash_book",           label: t("cash_bank_balance"),   value: fmt(kpis.cashBank),        tone: "indigo",  icon: "wallet" },
     { show: canCustomerBalances,  href: "/reports/sales/customer-balances",       label: t("accounts_receivable"), value: fmt(kpis.receivable),      tone: "cyan",    icon: "inbox" },
     { show: canSupplierBalances,  href: "/reports/purchases/supplier-balances",   label: t("accounts_payable"),    value: fmt(kpis.payable),         tone: "amber",   icon: "users" },
@@ -98,7 +100,7 @@
   // Booked — which is the whole point of this section.
   const pipelineCards = [
     { show: canSales, href: "/reports/sales/sales-order-report", label: t("orders_booked_today"),       value: fmt(kpis.ordersBookedToday),    tone: "teal",    icon: "doc",    daily: true, labelAlt: t("orders_booked_yesterday"),     valueAlt: fmt(kpis.ordersBookedYesterday) },
-    { show: canSales, href: "/reports/sales/sales-order-report", label: t("orders_booked_month"),       value: fmt(kpis.ordersBookedMonth),    tone: "indigo",  icon: "trend" },
+    { show: canSales, href: "/reports/sales/sales-order-report", label: t(rollingPeriod ? "dashboard_orders_30_days" : "orders_booked_month"), value: fmt(kpis.ordersBookedMonth), tone: "indigo", icon: "trend" },
     { show: canSales, href: "/reports/sales/sales-order-report", label: t("open_order_value"),          value: fmt(kpis.openOrderValue),       tone: "violet",  icon: "doc" },
     { show: canSales, href: "/reports/sales/sales-order-report", label: t("advances_received_today"),   value: fmt(kpis.advancesToday),        tone: "emerald", icon: "wallet", daily: true, labelAlt: t("advances_received_yesterday"), valueAlt: fmt(kpis.advancesYesterday) },
     { show: canSales, href: "/reports/sales/sales-order-report", label: t("advances_held_open_orders"), value: fmt(kpis.advancesOnOpenOrders), tone: "slate",   icon: "wallet" },
@@ -107,10 +109,10 @@
   // ---- Alert definitions -------------------------------------------------
   const alertItems = [
     { show: canCustomerBalances, href: "/reports/sales/customer-balances",     label: t("overdue_customer_invoices"),        count: alerts.overdueReceivables,       tone: "rose",  icon: "warn" },
-    { show: canSupplierBalances, href: "/reports/purchases/supplier-balances", label: t("overdue_supplier_bills"),           count: alerts.overduePayables,          tone: "rose",  icon: "warn" },
+    { show: canSupplierBalances, href: "/reports/purchases/supplier-balances", label: t("overdue_supplier_bills"),           count: alerts.overduePayables,          tone: "rose",  icon: "warn", tracked: false },
     { show: canInventory,        href: "/reports/inventory/stock-balances",    label: t("raw_materials_below_min"),          count: alerts.rawMaterialsBelowMin,     tone: "amber", icon: "box" },
-    { show: true,                href: "/hr-payroll",                          label: t("employees_absent_today"),           count: alerts.employeesAbsent,          tone: "slate", icon: "users" },
-    { show: canProduction,       href: "/reports/production/production-report", label: t("production_behind_schedule"),      count: alerts.productionBehindSchedule, tone: "slate", icon: "gauge" },
+    { show: true,                href: "/hr-payroll",                          label: t("employees_absent_today"),           count: alerts.employeesAbsent,          tone: "slate", icon: "users", tracked: false },
+    { show: canProduction,       href: "/reports/production/production-report", label: t("production_behind_schedule"),      count: alerts.productionBehindSchedule, tone: "slate", icon: "gauge", tracked: false },
     { show: canPurchase,         href: "/reports/purchases/pending-grn",       label: t("purchase_orders_awaiting_receipt"), count: alerts.poAwaitingReceipt,        tone: "blue",  icon: "inbox" },
     { show: isAdminUser,         href: "/administration/whatsapp-notifications", label: t("whatsapp_messages_not_sent"),     count: alerts.failedWhatsappNotifications, tone: "rose", icon: "warn" },
   ].filter((c) => c.show);
@@ -140,41 +142,34 @@
 
   // ---- Section 3 analytics chart cards (permission-gated) ----------------
   const chartDefs = [
-    { id: "salesTrend",           show: canSales,                                  title: t("monthly_sales_trend"),  href: "/reports/sales/sales-report" },
-    { id: "salesVsPurchase",      show: canSales || canPurchase,                   title: t("sales_vs_purchase"),    href: "/reports/purchases" },
-    { id: "revenueVsExpenses",    show: canFinancial,                              title: t("revenue_vs_expenses"),  href: "/reports/financial/profit_and_loss" },
+    { id: "salesTrend",           show: canSales,                                  title: t("dashboard_sales_trend"), href: "/reports/sales/sales-report" },
+    { id: "salesVsPurchase",      show: canSales || canPurchase,                   title: t("sales_vs_purchase"),    href: canPurchase ? "/reports/purchases" : "/reports/sales/sales-report" },
+    { id: "revenueVsExpenses",    show: canFinancial,                              title: t("revenue_vs_expenses"),  href: gate("REPORT", "profit_and_loss") ? "/reports/financial/profit_and_loss" : "/reports/financial/expense_trends" },
     { id: "topProducts",          show: canSales,                                  title: t("top_selling_products"), href: "/reports/sales/sales-report",
       measures: [{ key: "amount", label: t("amount") }, { key: "dozens", label: t("dozens") }] },
     { id: "productionByStage",    show: canProduction,                             title: t("production_by_stage"),  href: "/reports/production/production-report" },
-    { id: "inventoryStatus",      show: canInventory,                              title: t("inventory_status"),     href: "/reports/inventory/stock-balances" },
-    { id: "receivablesVsPayables", show: canCustomerBalances || canSupplierBalances, title: t("receivables_vs_payables"), href: "/reports/sales/customer-balances" },
+    { id: "inventoryStatus",      show: canInventory,                              title: t("inventory_status"),     href: gate("REPORT", "stock_quantity") ? "/reports/inventory/stock-balances" : "/reports/inventory/stock-ledger", snapshot: true },
+    { id: "receivablesVsPayables", show: canCustomerBalances || canSupplierBalances, title: t("receivables_vs_payables"), href: canCustomerBalances ? "/reports/sales/customer-balances" : "/reports/purchases/supplier-balances", snapshot: true },
   ].filter((c) => c.show);
-
-  const periodPresets = [
-    { key: "today", label: t("period_today") },
-    { key: "week",  label: t("period_week") },
-    { key: "month", label: t("period_month") },
-    { key: "year",  label: t("period_year") },
-    { key: "custom", label: t("period_custom") },
-  ];
 
   // Strings the client-side chart renderer needs.
   const chartI18n = {
     loading: t("loading"),
+    error: t("generic_error"),
     noData: t("no_data_available"),
     noAccess: t("not_tracked"),
-    available: t("inv_available"),
-    reserved: t("inv_reserved"),
-    lowStock: t("inv_low_stock"),
-    outOfStock: t("inv_out_of_stock"),
+    available: t("dashboard_skus_available"),
+    lowStock: t("dashboard_rm_low"),
+    outOfStock: t("dashboard_skus_empty"),
     revenue: t("revenue"),
     expense: t("expense"),
-    sales: t("todays_sales"),
+    sales: t("sales"),
     salesLabel: t("sales"),
     purchaseLabel: t("purchase"),
     receivable: t("accounts_receivable"),
     payable: t("accounts_payable"),
-    production: t("production_by_stage"),
+    production: t("dashboard_completed_pairs"),
+    unassigned: t("dashboard_stage_unassigned"),
     apply: t("apply"),
     amountLabel: t("amount"),
     dozensLabel: t("dozens"),
@@ -191,27 +186,28 @@
       </div>
       <% if (typeof branchName !== "undefined" && branchName) { %>
         <span class="inline-flex items-center gap-2 self-start rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
-          <%= branchName %>
+          <%= isAdminUser ? t("all_branches") : branchName %>
         </span>
       <% } %>
     </div>
 
+    <% if (isAdminUser) { %>
+      <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-xs text-slate-500"><%= t(rollingPeriod ? "dashboard_period_rolling_note" : "dashboard_period_calendar_note") %></p>
+        <nav class="inline-flex self-start rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs font-semibold" aria-label="<%= t('dashboard_period') %>" data-dashboard-period>
+          <% ["rolling", "calendar"].forEach((mode) => { const active = dashboardPeriod.mode === mode; %>
+            <a href="?periodMode=<%= mode %>" data-period-mode="<%= mode %>"<% if (active) { %> aria-current="page"<% } %> class="rounded-md px-3 py-1.5 transition <%= active ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700' %>"><%= t(mode === "rolling" ? "dashboard_rolling_period" : "dashboard_calendar_period") %></a>
+          <% }) %>
+        </nav>
+      </div>
+    <% } %>
+
     <!-- ===== SECTION 1: Executive KPI cards (admin only) ===== -->
     <% if (isAdminUser && (kpiCards.length || pipelineCards.length)) { %>
-      <% const hasDailyKpi = kpiCards.some((c) => c.daily) || pipelineCards.some((c) => c.daily); %>
       <div class="mt-6" data-kpi-scope>
-        <% if (hasDailyKpi) { %>
-          <div class="mb-3 flex justify-end">
-            <div class="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs font-semibold" role="group" aria-label="<%= t('today') %> / <%= t('yesterday') %>">
-              <button type="button" data-kpi-period="today" aria-pressed="true" class="rounded-md px-3 py-1.5 transition bg-white text-slate-800 shadow-sm"><%= t("today") %></button>
-              <button type="button" data-kpi-period="yesterday" aria-pressed="false" class="rounded-md px-3 py-1.5 transition text-slate-500 hover:text-slate-700"><%= t("yesterday") %></button>
-            </div>
-          </div>
-        <% } %>
         <%- include("../base/partials/kpi-card-grid", { cards: kpiCards, TONES, NOT_TRACKED, svg }) %>
 
-        <%# Order Pipeline — commitments, NOT revenue. Sits inside the same
-            [data-kpi-scope] so its daily cards join the Today/Yesterday toggle. %>
+        <%# Order Pipeline — commitments, kept separate from revenue. %>
         <% if (pipelineCards.length) { %>
           <div class="mt-8">
             <div class="mb-3 flex items-center gap-3">
@@ -286,7 +282,7 @@
                      Awaiting Receipt" was unreadable as "Purchase Orders Awai…". -->
                 <div class="text-sm font-medium text-slate-800"><%= item.label %></div>
                 <% if (!isTracked) { %>
-                  <div class="text-xs text-slate-400"><%= NOT_TRACKED %></div>
+                  <div class="text-xs text-slate-400"><%= item.tracked === false ? NOT_TRACKED : t("dashboard_unavailable") %></div>
                 <% } %>
               </div>
               <% if (isTracked) { %>
@@ -302,9 +298,11 @@
           <div class="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
             <a href="/administration/approvals" class="group flex items-center justify-between rounded-lg -m-1 p-1 transition hover:bg-amber-50">
               <div class="text-sm font-semibold text-slate-800 group-hover:text-amber-800"><%= t("pending_approvals") %></div>
-              <span class="inline-flex min-w-[2rem] items-center justify-center rounded-full bg-amber-100 px-2 py-1 text-sm font-semibold text-amber-700"><%= formatNumberDisplay(approvals.total, { decimals: 0 }) %></span>
+              <span class="inline-flex min-w-[2rem] items-center justify-center rounded-full bg-amber-100 px-2 py-1 text-sm font-semibold text-amber-700"><%= fmt(approvals.total) %></span>
             </a>
-            <% if (approvalRows.length) { %>
+            <% if (approvals.unavailable) { %>
+              <p class="mt-3 text-sm text-slate-500"><%= t("generic_error") %></p>
+            <% } else if (approvalRows.length) { %>
               <ul class="mt-3 divide-y divide-slate-200">
                 <% approvalRows.forEach((row) => { %>
                   <li class="flex items-center justify-between py-2 text-sm">
@@ -328,6 +326,12 @@
   <% } %>
 
   <!-- ===== Branch Performance (admin only, consolidated dashboard breakdown) ===== -->
+  <% if (isAdminUser && branchBreakdown?.unavailable) { %>
+    <section class="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-md" role="status">
+      <h3 class="text-sm font-semibold text-slate-700"><%= t("branch_performance") %></h3>
+      <p class="mt-3 text-sm text-slate-500"><%= t("generic_error") %></p>
+    </section>
+  <% } %>
   <% if (isAdminUser && branchRows.length) { %>
     <%
       // Eleven figures per row, several of them eight digits wide. Ungrouped,
@@ -376,11 +380,11 @@
               <th class="px-3 pb-2.5 text-start"><%= t("branch") %></th>
               <th class="px-3 pb-2.5 text-end <%= grp %>"><%= t("today") %></th>
               <th class="px-3 pb-2.5 text-end"><%= t("yesterday") %></th>
-              <th class="px-3 pb-2.5 text-end text-slate-700"><%= t("month_to_date") %></th>
-              <th class="px-3 pb-2.5 text-end" title="<%= t("dozens_sold_month") %>"><%= t("dozens") %></th>
+              <th class="px-3 pb-2.5 text-end text-slate-700"><%= monthCaption %></th>
+              <th class="px-3 pb-2.5 text-end" title="<%= monthCaption %>"><%= t("dozens") %></th>
               <th class="px-3 pb-2.5 text-end <%= grp %>"><%= t("today") %></th>
               <th class="px-3 pb-2.5 text-end"><%= t("yesterday") %></th>
-              <th class="px-3 pb-2.5 text-end text-slate-700"><%= t("month_to_date") %></th>
+              <th class="px-3 pb-2.5 text-end text-slate-700"><%= monthCaption %></th>
               <th class="px-3 pb-2.5 text-end" title="<%= t("pending_order_value") %>"><%= t("pending") %></th>
               <th class="px-3 pb-2.5 text-end text-slate-700 <%= grp %>"><%= t("receivable") %></th>
               <th class="px-3 pb-2.5 text-end text-slate-700"><%= t("payable") %></th>
@@ -432,35 +436,27 @@
       class="rounded-2xl border border-slate-200 bg-white/95 shadow-md"
       data-analytics
       data-analytics-endpoint="/dashboard/analytics"
+      data-range-from="<%= dashboardPeriod.month.from %>"
+      data-range-to="<%= dashboardPeriod.month.to %>"
       data-locale="<%= locale %>"
       data-i18n='<%= JSON.stringify(chartI18n) %>'
     >
       <div class="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("business_analytics") %></h3>
-        <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-          <!-- flex-wrap (not inline-flex): five presets cannot fit one phone row. -->
-          <div class="flex flex-wrap gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="tablist" data-period-group>
-            <% periodPresets.forEach((p) => { %>
-              <button type="button" data-period="<%= p.key %>"
-                class="grow rounded-md px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap text-slate-600 transition hover:text-slate-900 data-[active=true]:bg-white data-[active=true]:text-slate-900 data-[active=true]:shadow-sm sm:grow-0 sm:px-3"
-                <%= p.key === "month" ? 'data-active="true"' : "" %>><%= p.label %></button>
-            <% }) %>
-          </div>
-          <div class="hidden flex-wrap items-center gap-2" data-custom-range>
-            <input type="date" data-from class="min-w-0 flex-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 sm:flex-none" />
-            <span class="text-slate-400">–</span>
-            <input type="date" data-to class="min-w-0 flex-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 sm:flex-none" />
-            <button type="button" data-apply class="rounded-md bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-900"><%= t("apply") %></button>
-          </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <p class="text-xs text-slate-500"><%= monthCaption %> · <span dir="ltr"><%= formatDateDisplay(dashboardPeriod.month.from) %> – <%= formatDateDisplay(dashboardPeriod.month.to) %></span></p>
+          <button type="button" hidden data-analytics-retry class="hidden rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-accent"><%= t("dashboard_retry") %></button>
         </div>
       </div>
 
       <div class="grid gap-4 p-4 sm:p-5 lg:grid-cols-2">
-        <% chartDefs.forEach((c) => { %>
-          <article class="rounded-xl border border-slate-200 bg-white p-4">
+        <% chartDefs.forEach((c) => {
+          const chartHref = c.snapshot ? c.href : `${c.href}?from_date=${dashboardPeriod.month.from}&to_date=${dashboardPeriod.month.to}`;
+        %>
+          <article class="min-w-0 rounded-xl border border-slate-200 bg-white p-4">
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h4 class="text-sm font-semibold text-slate-700"><%= c.title %></h4>
-              <div class="flex items-center gap-2">
+              <div class="flex flex-wrap items-center gap-2">
                 <% if (c.measures) { %>
                   <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="group" data-measure-group="<%= c.id %>">
                     <% c.measures.forEach((m, mi) => { %>
@@ -470,12 +466,13 @@
                     <% }) %>
                   </div>
                 <% } %>
-                <a href="<%= c.href %>" class="text-xs font-semibold uppercase tracking-[0.16em] text-accent"><%= t("view") %></a>
+                <a href="<%= chartHref %>" class="text-xs font-semibold uppercase tracking-[0.16em] text-accent"><%= t("view") %></a>
               </div>
             </div>
+            <p class="mb-3 text-xs text-slate-500"><%= c.snapshot ? t("dashboard_current_snapshot") : c.id === "productionByStage" ? t("dashboard_stage_note") : c.id === "topProducts" ? t("dashboard_top_products_note") : c.id === "salesTrend" || c.id === "salesVsPurchase" ? t("dashboard_net_sales_note") : t("dashboard_approved_entries_note") %></p>
             <div class="relative h-[240px] sm:h-[260px]"<% if (c.measures) { %> data-chart-swipe="<%= c.id %>"<% } %>>
-              <canvas data-chart="<%= c.id %>" data-href="<%= c.href %>"></canvas>
-              <div data-chart-state="<%= c.id %>" class="absolute inset-0 flex items-center justify-center text-sm text-slate-400"><%= chartI18n.loading %></div>
+              <canvas role="img" aria-label="<%= c.title %>" class="max-w-full" data-chart="<%= c.id %>" data-href="<%= chartHref %>"></canvas>
+              <div role="status" aria-live="polite" data-chart-state="<%= c.id %>" class="absolute inset-0 flex items-center justify-center text-sm text-slate-400"><%= chartI18n.loading %></div>
             </div>
           </article>
         <% }) %>
@@ -546,7 +543,7 @@
       class="rounded-2xl border border-slate-200 bg-white/95 shadow-md"
       data-activity-feed
       data-activity-endpoint="/dashboard/activity"
-      data-i18n='<%= JSON.stringify({ noData: t("no_entries"), loading: t("loading"), viewRecord: t("view_record"), system: t("system") }) %>'
+      data-i18n='<%= JSON.stringify({ noData: t("no_entries"), error: t("generic_error"), loading: t("loading"), viewRecord: t("view_record"), system: t("system") }) %>'
     >
       <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-5 py-4">
         <div>
@@ -595,34 +592,6 @@
   })();
 </script>
 
-<!-- ===== Section 1 KPI Today/Yesterday toggle ===== -->
-<script>
-  (function () {
-    const scope = document.querySelector("[data-kpi-scope]");
-    if (!scope) return;
-    const btns = scope.querySelectorAll("[data-kpi-period]");
-    if (!btns.length) return;
-
-    const apply = (period) => {
-      const key = period === "yesterday" ? "yest" : "today";
-      scope.querySelectorAll("[data-kpi-value], [data-kpi-label]").forEach((el) => {
-        const v = el.getAttribute("data-" + key);
-        if (v !== null) el.textContent = v;
-      });
-      btns.forEach((b) => {
-        const active = b.getAttribute("data-kpi-period") === period;
-        b.setAttribute("aria-pressed", active ? "true" : "false");
-        b.classList.toggle("bg-white", active);
-        b.classList.toggle("text-slate-800", active);
-        b.classList.toggle("shadow-sm", active);
-        b.classList.toggle("text-slate-500", !active);
-      });
-    };
-
-    btns.forEach((b) => b.addEventListener("click", () => apply(b.getAttribute("data-kpi-period"))));
-  })();
-</script>
-
 <!-- ===== Section 3 analytics: lazy Chart.js renderer ===== -->
 <script>
   (function () {
@@ -634,13 +603,7 @@
     // Defaults guarantee readable labels even if the server-rendered JSON is ever
     // malformed — an unescaped apostrophe in "Today's Sales" once broke this
     // attribute and rendered the whole Inventory Status legend as "undefined".
-    const I18N_DEFAULTS = {
-      loading: "Loading…", noData: "No data available", noAccess: "Not tracked",
-      available: "Available", reserved: "Reserved", lowStock: "Low Stock", outOfStock: "Out of Stock",
-      revenue: "Revenue", expense: "Expense", sales: "Sales", salesLabel: "Sales",
-      purchaseLabel: "Purchase", receivable: "Receivable", payable: "Payable",
-      production: "Production", apply: "Apply", byAmount: "Amount", byDozens: "Dozens",
-    };
+    const I18N_DEFAULTS = <%- JSON.stringify(chartI18n).replace(/</g, "\\u003c") %>;
     let I18N = Object.assign({}, I18N_DEFAULTS);
     try {
       I18N = Object.assign({}, I18N_DEFAULTS, JSON.parse(root.dataset.i18n || "{}"));
@@ -654,9 +617,11 @@
       const n = parseInt(hex.slice(1), 16);
       return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
     };
-    const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    const nf = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+    const nf = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
     const nf1 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+    const chartFont = { family: getComputedStyle(root).fontFamily, size: locale.startsWith("ur") ? 13 : 12, lineHeight: locale.startsWith("ur") ? 2 : 1.4 };
+    const dayFormat = new Intl.DateTimeFormat(locale.startsWith("ur") ? "ur-PK" : "en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+    const monthFormat = new Intl.DateTimeFormat(locale.startsWith("ur") ? "ur-PK" : "en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
 
     // Per-chart measure state (e.g. Top Products: amount vs dozens), plus the
     // last payload so flipping measure re-renders locally with no refetch.
@@ -670,17 +635,18 @@
       return nf.format(v);
     };
     const fmtBucket = (k) => {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(k)) { const p = k.split("-"); return `${+p[2]} ${MONTHS[+p[1] - 1]}`; }
-      if (/^\d{4}-\d{2}$/.test(k)) { const p = k.split("-"); return `${MONTHS[+p[1] - 1]} ${p[0].slice(2)}`; }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(k)) return dayFormat.format(new Date(`${k}T00:00:00Z`));
+      if (/^\d{4}-\d{2}$/.test(k)) return monthFormat.format(new Date(`${k}-01T00:00:00Z`));
       return k;
     };
 
     const charts = {};
     let loaded = false;
-    let currentPeriod = "month";
     let chartLib = null;
-    // Below lg the cards are ~270px wide; a side legend would eat half the plot.
-    const isNarrow = () => window.matchMedia("(max-width: 1023px)").matches;
+    const retry = root.querySelector("[data-analytics-retry]");
+    let refreshing = false;
+    let requestController = null;
+    let suppressDrillUntil = 0;
 
     const gridColor = "rgba(148, 163, 184, 0.18)";
     const tickColor = "#64748b";
@@ -692,9 +658,18 @@
         const s = document.createElement("script");
         s.src = "/vendor/chart.umd.min.js";
         s.async = true;
-        s.onload = () => (window.Chart ? resolve(window.Chart) : reject(new Error("Chart.js missing")));
-        s.onerror = () => reject(new Error("Failed to load Chart.js"));
+        const finish = (err) => {
+          window.clearTimeout(timer);
+          s.onload = s.onerror = null;
+          if (err) { s.remove(); reject(err); } else resolve(window.Chart);
+        };
+        const timer = window.setTimeout(() => finish(new Error("Chart.js timed out")), 15000);
+        s.onload = () => finish(window.Chart ? null : new Error("Chart.js missing"));
+        s.onerror = () => finish(new Error("Failed to load Chart.js"));
         document.head.appendChild(s);
+      }).catch((err) => {
+        window.__erpChartJsPromise = null;
+        throw err;
       });
       return window.__erpChartJsPromise;
     };
@@ -705,17 +680,28 @@
       if (!el) return;
       if (msg) { el.textContent = msg; el.classList.remove("hidden"); }
       else { el.classList.add("hidden"); }
+      const canvas = canvasFor(id);
+      if (canvas) {
+        canvas.style.visibility = msg ? "hidden" : "visible";
+        canvas.setAttribute("aria-hidden", msg ? "true" : "false");
+      }
     };
     const drill = (id) => {
       const cv = canvasFor(id);
-      if (cv && cv.dataset.href) window.location.href = cv.dataset.href;
+      if (cv && cv.dataset.href && Date.now() > suppressDrillUntil) window.location.href = cv.dataset.href;
     };
-    const destroy = (id) => { if (charts[id]) { charts[id].destroy(); delete charts[id]; } };
+    const destroy = (id) => {
+      const current = charts[id] || window.Chart?.getChart(canvasFor(id));
+      if (current) current.destroy();
+      delete charts[id];
+    };
 
-    const commonOpts = (id, extra = {}) => Object.assign({
+    const commonOpts = (id, extra = {}) => {
+      const defaults = {
       responsive: true,
       maintainAspectRatio: false,
-      onClick: () => drill(id),
+      font: chartFont,
+      onClick: (_event, elements) => { if (elements.length) drill(id); },
       interaction: { mode: "index", intersect: false },
       plugins: {
         legend: { display: false },
@@ -729,10 +715,25 @@
           },
         },
       },
-    }, extra);
+      };
+      return { ...defaults, ...extra, plugins: {
+        ...defaults.plugins, ...extra.plugins,
+        tooltip: { ...defaults.plugins.tooltip, ...extra.plugins?.tooltip,
+          callbacks: { ...defaults.plugins.tooltip.callbacks, ...extra.plugins?.tooltip?.callbacks } },
+      } };
+    };
 
-    const linearAxis = { grid: { color: gridColor, drawBorder: false }, ticks: { color: tickColor, font: { size: 11 }, callback: (v) => compact(v) } };
-    const catAxis = { grid: { display: false }, ticks: { color: tickColor, font: { size: 11 } } };
+    const linearAxis = { beginAtZero: true, grid: { color: gridColor }, ticks: { color: tickColor, font: chartFont, callback: (v) => compact(v) } };
+    const catAxis = { grid: { display: false }, ticks: { color: tickColor, font: chartFont } };
+    const horizontalCategoryAxis = { ...catAxis, ticks: { ...catAxis.ticks, autoSkip: false, callback: function (value) {
+      const label = String(this.getLabelForValue(value));
+      const limit = window.matchMedia("(max-width: 639px)").matches ? 16 : 30;
+      if (label.length <= limit) return label;
+      const space = label.lastIndexOf(" ", limit);
+      const split = space > limit / 2 ? space : limit;
+      const rest = label.slice(split).trim();
+      return [label.slice(0, split), rest.slice(0, limit) + (rest.length > limit ? "…" : "")];
+    } } };
 
     const RENDER = {
       salesTrend(Chart, id, d) {
@@ -741,7 +742,7 @@
         destroy(id);
         charts[id] = new Chart(canvasFor(id).getContext("2d"), {
           type: "line",
-          data: { labels, datasets: [{ label: I18N.sales, data: d.values || [], borderColor: PALETTE.emerald, backgroundColor: alpha(PALETTE.emerald, 0.12), borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0.3, fill: true }] },
+          data: { labels, datasets: [{ label: I18N.sales, data: d.values || [], borderColor: PALETTE.emerald, backgroundColor: alpha(PALETTE.emerald, 0.12), borderWidth: 2, pointRadius: 2, pointHoverRadius: 5, tension: 0.3, fill: true }] },
           options: commonOpts(id, { scales: { x: catAxis, y: linearAxis } }),
         });
         setState(id, null);
@@ -752,13 +753,13 @@
         const sales = d.sales || [], purchase = d.purchase || [];
         if (!sales.length && !purchase.length) return setState(id, I18N.noData);
         const datasets = [];
-        if (sales.length) datasets.push({ label: I18N.salesLabel, data: sales, borderColor: PALETTE.emerald, backgroundColor: alpha(PALETTE.emerald, 0.10), borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0.3, fill: true });
-        if (purchase.length) datasets.push({ label: I18N.purchaseLabel, data: purchase, borderColor: PALETTE.amber, backgroundColor: alpha(PALETTE.amber, 0.10), borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0.3, fill: true });
+        if (sales.length) datasets.push({ label: I18N.salesLabel, data: sales, borderColor: PALETTE.emerald, backgroundColor: alpha(PALETTE.emerald, 0.10), borderWidth: 2, pointRadius: 2, pointHoverRadius: 5, tension: 0.3, fill: true });
+        if (purchase.length) datasets.push({ label: I18N.purchaseLabel, data: purchase, borderColor: PALETTE.amber, backgroundColor: alpha(PALETTE.amber, 0.10), borderWidth: 2, pointRadius: 2, pointHoverRadius: 5, tension: 0.3, fill: true });
         destroy(id);
         charts[id] = new Chart(canvasFor(id).getContext("2d"), {
           type: "line",
           data: { labels, datasets },
-          options: commonOpts(id, { plugins: { legend: { display: true, position: "bottom", labels: { boxWidth: 12, font: { size: 11 }, color: tickColor } } }, scales: { x: catAxis, y: linearAxis } }),
+          options: commonOpts(id, { plugins: { legend: { display: true, position: "bottom", labels: { boxWidth: 12, font: chartFont, color: tickColor } } }, scales: { x: catAxis, y: linearAxis } }),
         });
         setState(id, null);
       },
@@ -769,10 +770,10 @@
         charts[id] = new Chart(canvasFor(id).getContext("2d"), {
           type: "line",
           data: { labels, datasets: [
-            { label: I18N.revenue, data: d.revenue || [], borderColor: PALETTE.emerald, backgroundColor: "transparent", borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0.3 },
-            { label: I18N.expense, data: d.expense || [], borderColor: PALETTE.rose, backgroundColor: "transparent", borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0.3 },
-          ] },
-          options: commonOpts(id, { plugins: { legend: { display: true, position: "bottom", labels: { boxWidth: 12, font: { size: 11 }, color: tickColor } } }, scales: { x: catAxis, y: linearAxis } }),
+            { label: I18N.revenue, data: d.revenue || [], borderColor: PALETTE.emerald, backgroundColor: "transparent", borderWidth: 2, pointRadius: 2, pointHoverRadius: 5, tension: 0.3 },
+            { label: I18N.expense, data: d.expense || [], borderColor: PALETTE.rose, backgroundColor: "transparent", borderWidth: 2, pointRadius: 2, pointHoverRadius: 5, tension: 0.3 },
+          ].filter((series) => series.data.length) },
+          options: commonOpts(id, { plugins: { legend: { display: true, position: "bottom", labels: { boxWidth: 12, font: chartFont, color: tickColor } } }, scales: { x: catAxis, y: linearAxis } }),
         });
         setState(id, null);
       },
@@ -794,7 +795,7 @@
               x: byDozens
                 ? Object.assign({}, linearAxis, { ticks: Object.assign({}, linearAxis.ticks, { callback: (v) => nf1.format(Number(v) || 0) }) })
                 : linearAxis,
-              y: catAxis,
+              y: horizontalCategoryAxis,
             },
             plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${(byDozens ? nf1 : nf).format(Number(c.raw) || 0)}` } } },
           }),
@@ -804,25 +805,25 @@
       productionByStage(Chart, id, d) {
         if (!d) return setState(id, I18N.noAccess);
         if (!d.labels || !d.labels.length) return setState(id, I18N.noData);
-        const labels = (locale && String(locale).startsWith("ur") && d.labels_ur) ? d.labels_ur : d.labels;
+        const labels = d.labels.map((name, index) => (locale.startsWith("ur") ? d.labels_ur?.[index] || name : name) || I18N.unassigned);
         destroy(id);
         charts[id] = new Chart(canvasFor(id).getContext("2d"), {
           type: "bar",
           data: { labels, datasets: [{ label: I18N.production, data: d.values || [], backgroundColor: alpha(PALETTE.indigo, 0.85), borderColor: PALETTE.indigo, borderWidth: 0, borderRadius: 4, barPercentage: 0.7, categoryPercentage: 0.8 }] },
-          options: commonOpts(id, { indexAxis: "y", scales: { x: linearAxis, y: catAxis } }),
+          options: commonOpts(id, { indexAxis: "y", scales: { x: linearAxis, y: horizontalCategoryAxis } }),
         });
         setState(id, null);
       },
       inventoryStatus(Chart, id, d) {
         if (!d) return setState(id, I18N.noAccess);
-        const vals = [d.available || 0, d.reserved || 0, d.lowStock || 0, d.outOfStock || 0];
+        const vals = [d.available || 0, d.outOfStock || 0, d.lowStock || 0];
         if (vals.reduce((a, b) => a + b, 0) === 0) return setState(id, I18N.noData);
         destroy(id);
         charts[id] = new Chart(canvasFor(id).getContext("2d"), {
-          type: "doughnut",
-          data: { labels: [I18N.available, I18N.reserved, I18N.lowStock, I18N.outOfStock],
-            datasets: [{ data: vals, backgroundColor: [PALETTE.emerald, PALETTE.slate, PALETTE.amber, PALETTE.rose], borderColor: "#ffffff", borderWidth: 2 }] },
-          options: commonOpts(id, { cutout: "62%", plugins: { legend: { display: true, position: isNarrow() ? "bottom" : "right", labels: { boxWidth: 12, font: { size: 11 }, color: tickColor } }, tooltip: { callbacks: { label: (c) => `${c.label}: ${nf.format(c.parsed)}` } } } }),
+          type: "bar",
+          data: { labels: [I18N.available, I18N.outOfStock, I18N.lowStock],
+            datasets: [{ data: vals, backgroundColor: [PALETTE.emerald, PALETTE.rose, PALETTE.amber], borderWidth: 0, borderRadius: 4 }] },
+          options: commonOpts(id, { indexAxis: "y", scales: { x: { ...linearAxis, ticks: { ...linearAxis.ticks, precision: 0 } }, y: horizontalCategoryAxis } }),
         });
         setState(id, null);
       },
@@ -842,41 +843,76 @@
       },
     };
 
-    let inFlight = null;
-    async function refresh(period, from, to) {
-      currentPeriod = period;
-      root.querySelectorAll("[data-chart]").forEach((cv) => setState(cv.dataset.chart, I18N.loading));
-      let Chart;
-      try { Chart = await loadChartJs(); } catch (_e) {
-        root.querySelectorAll("[data-chart]").forEach((cv) => setState(cv.dataset.chart, I18N.noData));
-        return;
-      }
-      const params = new URLSearchParams({ period });
-      if (period === "custom" && from && to) { params.set("from", from); params.set("to", to); }
-      const token = Symbol("req");
-      inFlight = token;
-      let payload;
+    const showRetry = (visible) => {
+      if (!retry) return;
+      retry.hidden = !visible;
+      retry.classList.toggle("hidden", !visible);
+    };
+    const render = (id) => {
+      destroy(id);
+      const data = lastData[id];
+      if (data?.error) { showRetry(true); return setState(id, I18N.error); }
+      if (data?.hasData === false) return setState(id, I18N.noData);
       try {
-        const resp = await fetch(`${endpoint}?${params.toString()}`, { headers: { Accept: "application/json" }, credentials: "same-origin" });
-        payload = await resp.json();
-      } catch (_e) {
-        root.querySelectorAll("[data-chart]").forEach((cv) => setState(cv.dataset.chart, I18N.noData));
-        return;
+        if (["topProducts", "productionByStage"].includes(id) && data) {
+          const series = id === "topProducts" && measureFor(id) === "dozens" ? data.byDozens : data;
+          const count = Array.isArray(series?.labels) ? series.labels.length : 0;
+          const minimum = window.matchMedia("(min-width: 640px)").matches ? 260 : 240;
+          canvasFor(id).parentElement.style.height = `${Math.max(minimum, count * (locale.startsWith("ur") ? 62 : 42) + 32)}px`;
+        }
+        RENDER[id](chartLib, id, data);
+      } catch (err) {
+        console.error("Error in DashboardCharts renderer:", id, err);
+        showRetry(true);
+        setState(id, I18N.error);
       }
-      if (inFlight !== token) return; // a newer request superseded this one
-      const data = (payload && payload.charts) || {};
-      chartLib = Chart;
-      root.querySelectorAll("[data-chart]").forEach((cv) => {
-        const id = cv.dataset.chart;
-        lastData[id] = data[id];
-        if (RENDER[id]) { try { RENDER[id](Chart, id, data[id]); } catch (e) { setState(id, I18N.noData); } }
+    };
+    async function refresh() {
+      if (refreshing) return;
+      refreshing = true;
+      showRetry(false);
+      root.querySelectorAll("[data-chart]").forEach((cv) => setState(cv.dataset.chart, I18N.loading));
+      const params = new URLSearchParams({
+        period: "custom", from: root.dataset.rangeFrom, to: root.dataset.rangeTo,
       });
+      requestController = new AbortController();
+      const timeout = window.setTimeout(() => requestController?.abort(), 20000);
+      try {
+        const loadData = async () => {
+          const resp = await fetch(`${endpoint}?${params.toString()}`, { headers: { Accept: "application/json" }, credentials: "same-origin", signal: requestController.signal });
+          if (!resp.ok) throw new Error("Analytics request failed");
+          const payload = await resp.json();
+          if (payload.status !== "ok" || !payload.charts || typeof payload.charts !== "object" || Array.isArray(payload.charts)) throw new Error("Invalid analytics response");
+          return payload;
+        };
+        const [Chart, payload] = await Promise.all([loadChartJs(), loadData()]);
+        chartLib = Chart;
+        root.querySelectorAll("[data-chart]").forEach((cv) => {
+          const id = cv.dataset.chart;
+          // A missing dataset is a broken response; explicit null means no access.
+          lastData[id] = Object.prototype.hasOwnProperty.call(payload.charts, id) ? payload.charts[id] : { error: true };
+          render(id);
+        });
+      } catch (err) {
+        requestController?.abort();
+        console.error("Error in DashboardCharts load:", err);
+        root.querySelectorAll("[data-chart]").forEach((cv) => {
+          lastData[cv.dataset.chart] = { error: true };
+          destroy(cv.dataset.chart);
+        });
+        root.querySelectorAll("[data-chart]").forEach((cv) => setState(cv.dataset.chart, I18N.error));
+        showRetry(true);
+      } finally {
+        window.clearTimeout(timeout);
+        requestController = null;
+        refreshing = false;
+      }
     }
 
     // Re-render a single chart from cached data (measure toggle / swipe).
     const rerender = (id) => {
-      if (!chartLib || !RENDER[id]) return;
-      try { RENDER[id](chartLib, id, lastData[id]); } catch (e) { setState(id, I18N.noData); }
+      if (refreshing || !chartLib || !RENDER[id]) return;
+      render(id);
     };
 
     const setMeasure = (id, measure) => {
@@ -885,7 +921,7 @@
       const group = root.querySelector(`[data-measure-group="${id}"]`);
       group?.querySelectorAll("button[data-measure]").forEach((b) => {
         const active = b.dataset.measure === measure;
-        b.toggleAttribute("data-active", active);
+        b.setAttribute("data-active", active ? "true" : "false");
         b.setAttribute("aria-pressed", active ? "true" : "false");
       });
       rerender(id);
@@ -916,37 +952,28 @@
       box.addEventListener("touchend", (ev) => {
         if (x0 === null) return;
         const t = ev.changedTouches[0];
+        if (!t) { x0 = null; return; }
         const dx = t.clientX - x0;
         const dy = t.clientY - y0;
         x0 = null;
         // Ignore mostly-vertical drags so page scrolling still works.
         if (Math.abs(dx) < 40 || Math.abs(dx) <= Math.abs(dy)) return;
+        suppressDrillUntil = Date.now() + 500;
         const i = keys.indexOf(measureFor(id));
         setMeasure(id, keys[(i + (dx < 0 ? 1 : keys.length - 1)) % keys.length]);
       }, { passive: true });
+      box.addEventListener("touchcancel", () => { x0 = null; }, { passive: true });
     });
 
-    // Preset buttons
-    const group = root.querySelector("[data-period-group]");
-    const customRange = root.querySelector("[data-custom-range]");
-    group?.addEventListener("click", (ev) => {
-      const btn = ev.target.closest("button[data-period]");
-      if (!btn) return;
-      group.querySelectorAll("button[data-period]").forEach((b) => b.removeAttribute("data-active"));
-      btn.setAttribute("data-active", "true");
-      const period = btn.dataset.period;
-      if (period === "custom") { customRange.classList.remove("hidden"); customRange.classList.add("flex"); return; }
-      customRange.classList.add("hidden"); customRange.classList.remove("flex");
-      refresh(period);
-    });
-    root.querySelector("[data-apply]")?.addEventListener("click", () => {
-      const from = root.querySelector("[data-from]")?.value;
-      const to = root.querySelector("[data-to]")?.value;
-      if (from && to) refresh("custom", from, to);
+    retry?.addEventListener("click", () => refresh());
+    window.addEventListener("pagehide", (event) => {
+      requestController?.abort();
+      // A cached page is restored with the same canvases and JS state.
+      if (!event.persisted) Object.keys(charts).forEach(destroy);
     });
 
     // Lazy-load when the section scrolls into view.
-    const start = () => { if (loaded) return; loaded = true; refresh("month"); };
+    const start = () => { if (loaded) return; loaded = true; refresh(); };
     if ("IntersectionObserver" in window) {
       const io = new IntersectionObserver((entries) => {
         entries.forEach((e) => { if (e.isIntersecting) { start(); io.disconnect(); } });
@@ -1012,12 +1039,18 @@
       stateEl.hidden = false;
       stateEl.textContent = I18N.loading || "Loading…";
       let payload;
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 20000);
       try {
         // perUser=1 → the most recent action for each user, newest first.
-        const resp = await fetch(`${endpoint}?perUser=1&pageSize=25`, { headers: { Accept: "application/json" }, credentials: "same-origin" });
+        const resp = await fetch(`${endpoint}?perUser=1&pageSize=25`, { headers: { Accept: "application/json" }, credentials: "same-origin", signal: controller.signal });
+        if (!resp.ok) throw new Error("Activity request failed");
         payload = await resp.json();
+        if (payload.status !== "ok" || !Array.isArray(payload.items)) throw new Error("Invalid activity response");
       } catch (_e) {
-        stateEl.hidden = false; stateEl.textContent = I18N.noData || "No data"; return;
+        stateEl.hidden = false; stateEl.textContent = I18N.error; return;
+      } finally {
+        window.clearTimeout(timeout);
       }
 
       const items = (payload && payload.items) || [];

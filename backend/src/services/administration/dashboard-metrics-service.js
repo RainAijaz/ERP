@@ -2,7 +2,7 @@
 //
 // Design notes:
 //   - Every metric is wrapped in safeValue/safeCount/safeRows so a failing query
-//     degrades to 0 / null / [] instead of breaking the homepage.
+//     returns null (unavailable), while genuine empty aggregates remain zero.
 //   - Money figures are sourced from erp.gl_entry (the accounting source of
 //     truth already trusted by the financial report service), restricted to
 //     APPROVED vouchers (manual GL batches with no source voucher are included).
@@ -20,6 +20,14 @@ const {
   BASIC_INFO_ENTITY_TYPES,
   SCREEN_ENTITY_TYPES,
 } = require("../../utils/approval-entity-map");
+const { createTaskQueue } = require("../../utils/task-queue");
+const { resolveDashboardPeriod } = require("./dashboard-period-service");
+const { buildLowStockMaterialsQuery } = require("./dashboard-inventory-service");
+
+// Shared across dashboard requests so concurrent visitors cannot each flood
+// the connection pool with all 29 KPI queries. SQL and permission gates stay
+// unchanged; every requested metric still runs against current database data.
+const runMetricQuery = createTaskQueue(6);
 
 const toNumber = (value) => {
   const parsed = Number(value || 0);
@@ -105,59 +113,44 @@ const applyBranchScope = (_req, qb) => qb;
 
 const safeValue = async (label, factory) => {
   try {
-    const row = await factory();
+    const row = await runMetricQuery(factory);
     return toNumber(row?.value);
   } catch (err) {
     console.error("DashboardMetrics value error:", { label, error: err?.message || err });
-    return 0;
+    return null;
   }
 };
 
 const safeCount = async (label, factory) => {
   try {
-    const row = await factory();
+    const row = await runMetricQuery(factory);
     return toNumber(row?.count);
   } catch (err) {
     console.error("DashboardMetrics count error:", { label, error: err?.message || err });
-    return 0;
+    return null;
   }
 };
 
 const safeRows = async (label, factory) => {
   try {
-    const rows = await factory();
+    const rows = await runMetricQuery(factory);
     return Array.isArray(rows) ? rows : [];
   } catch (err) {
     console.error("DashboardMetrics rows error:", { label, error: err?.message || err });
-    return [];
+    return null;
   }
 };
 
-const toDateKey = (date) => {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-};
-
-const loadDashboardMetrics = async ({ knex, req, can }) => {
-  const now = new Date();
-  const todayKey = toDateKey(now);
-  const yesterdayKey = toDateKey(
-    new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1),
-  );
-  const startOfMonthKey = toDateKey(new Date(now.getFullYear(), now.getMonth(), 1));
-  // Week starts Monday.
-  const weekOffset = (now.getDay() + 6) % 7;
-  const startOfWeekKey = toDateKey(
-    new Date(now.getFullYear(), now.getMonth(), now.getDate() - weekOffset),
-  );
+const loadDashboardMetrics = async ({ knex, req, can, period = resolveDashboardPeriod() }) => {
+  const todayKey = period.today;
+  const yesterdayKey = period.yesterday;
+  const startOfMonthKey = period.month.from;
+  const startOfWeekKey = period.week.from;
 
   // Permission gates (real runtime scope keys).
   const canSales = getCan(can, "REPORT", "sales_report");
   const canCash = getCan(can, "REPORT", "cash_book");
-  const canCustomerBalances =
-    getCan(can, "REPORT", "customer_balances") || getCan(can, "REPORT", "sales_report");
+  const canCustomerBalances = getCan(can, "REPORT", "customer_balances");
   const canSupplierBalances = getCan(can, "REPORT", "supplier_balances");
   const canInventory =
     getCan(can, "REPORT", "stock_quantity") || getCan(can, "REPORT", "stock_ledger");
@@ -286,6 +279,7 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     const debitExpr = "COALESCE(ge.dr,0) - COALESCE(ge.cr,0)";
     const partySub = knex("erp.gl_entry as ge")
       .join("erp.parties as p", "p.id", "ge.party_id")
+      .modify(approvedVoucherScope)
       .whereNotNull("ge.party_id")
       .whereRaw(
         `upper(coalesce(p.party_type::text,'')) in (${partyTypes
@@ -405,13 +399,7 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
 
   // Consolidated across all branches: an item is "below minimum" when its total
   // on-hand across every branch is under its configured minimum.
-  const rawMaterialsBelowMin = () =>
-    knex("erp.items as i")
-      .leftJoin("erp.stock_balance_rm as sb", "sb.item_id", "i.id")
-      .where("i.min_stock_level", ">=", 0)
-      .groupBy("i.id", "i.min_stock_level")
-      .havingRaw("COALESCE(SUM(sb.qty),0) < i.min_stock_level")
-      .select("i.id");
+  const rawMaterialsBelowMin = () => buildLowStockMaterialsQuery(knex);
 
   // Unresolved WhatsApp payment-notification failures (bad phone / not delivered).
   const failedWhatsappNotifications = () =>
@@ -582,7 +570,7 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     canSales ? safeValue("dozensToday", () => dozensSoldBetween(todayKey, todayKey)) : Promise.resolve(null),
     canSales ? safeValue("dozensWeek", () => dozensSoldBetween(startOfWeekKey, todayKey)) : Promise.resolve(null),
     canSales ? safeValue("dozensMonth", () => dozensSoldBetween(startOfMonthKey, todayKey)) : Promise.resolve(null),
-    // Yesterday comparatives for the day-based KPIs (Today/Yesterday toggle).
+    // Yesterday comparisons shown beneath the day-based KPIs.
     canSales ? safeValue("todaysSalesYesterday", () => revenueBetween(yesterdayKey, yesterdayKey)) : Promise.resolve(null),
     canInventory ? safeCount("dispatchesYesterday", dispatchesOn(yesterdayKey)) : Promise.resolve(null),
     canSales ? safeValue("dozensYesterday", () => dozensSoldBetween(yesterdayKey, yesterdayKey)) : Promise.resolve(null),
@@ -599,7 +587,7 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     canSales ? safeValue("advancesOnOpenOrders", advancesOnOpenOrders) : Promise.resolve(null),
   ]);
 
-  const rawMaterialsBelowMinCount = rawMatBelowMinRows.length;
+  const rawMaterialsBelowMinCount = rawMatBelowMinRows?.length ?? null;
 
   // Bucket pending VOUCHER approvals into the six requested categories by
   // voucher type code. Non-voucher (master-data) approvals still count toward
@@ -622,12 +610,12 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     hr: 0, // employee / labour change approvals
     other: 0, // unmapped entity types (see below)
   };
-  for (const row of voucherApprovalRows) {
+  for (const row of voucherApprovalRows || []) {
     const bucket = CODE_BUCKET[String(row.code || "").toUpperCase()];
     if (bucket) approvalBuckets[bucket] += toNumber(row.count);
   }
   // Fold non-voucher approvals into named buckets by entity_type.
-  for (const row of nonVoucherApprovalRows) {
+  for (const row of nonVoucherApprovalRows || []) {
     const type = String(row.type || "").toUpperCase();
     if (MASTER_DATA_APPROVAL_TYPES.has(type)) {
       approvalBuckets.masterData += toNumber(row.count);
@@ -635,7 +623,8 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
       approvalBuckets.hr += toNumber(row.count);
     }
   }
-  const pendingApprovalsTotal = toNumber(approvalsTotalRow);
+  const pendingApprovalsTotal = approvalsTotalRow === null ? null : toNumber(approvalsTotalRow);
+  const approvalBreakdownUnavailable = voucherApprovalRows === null || nonVoucherApprovalRows === null;
 
   // Whatever the total doesn't attribute to a known bucket (voucher codes
   // outside CODE_BUCKET, or unmapped entity types) lands in "other", so the
@@ -646,7 +635,12 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
   approvalBuckets.other = Math.max(0, pendingApprovalsTotal - bucketedApprovals);
 
   // Critical alerts = sum of actionable open items we can actually count.
-  const criticalAlerts =
+  const criticalAlerts = (
+    (canInventory && rawMaterialsBelowMinCount === null) ||
+    (canCustomerBalances && overdueReceivablesCount === null) ||
+    (canPurchase && poAwaitingReceiptCount === null) ||
+    (canApprovals && pendingApprovalsTotal === null)
+  ) ? null :
     toNumber(rawMaterialsBelowMinCount) +
     toNumber(overdueReceivablesCount) +
     toNumber(poAwaitingReceiptCount) +
@@ -668,7 +662,7 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
       dozensToday: dozensToday === null ? null : Math.round(dozensToday * 10) / 10,
       dozensWeek: dozensWeek === null ? null : Math.round(dozensWeek * 10) / 10,
       dozensMonth: dozensMonth === null ? null : Math.round(dozensMonth * 10) / 10,
-      // Yesterday comparatives for the day-based KPIs (Today/Yesterday toggle).
+      // Yesterday comparisons shown beneath the day-based KPIs.
       todaysSalesYesterday,
       dispatchesYesterday: dispatchesYesterdayCount,
       dozensYesterday: dozensYesterday === null ? null : Math.round(dozensYesterday * 10) / 10,
@@ -691,22 +685,19 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
       poAwaitingReceipt: poAwaitingReceiptCount,
       failedWhatsappNotifications: failedWhatsappNotificationsCount,
       pendingApprovals: canApprovals
-        ? { total: pendingApprovalsTotal, buckets: approvalBuckets }
+        ? { total: pendingApprovalsTotal, buckets: approvalBuckets, unavailable: pendingApprovalsTotal === null || approvalBreakdownUnavailable }
         : null,
     },
-    generatedAt: now.toISOString(),
+    generatedAt: period.generatedAt,
   };
 };
 
 // Per-branch performance breakdown for the admin dashboard. Consolidated totals
 // live in the KPI cards; this table shows how each branch contributes.
-const loadBranchBreakdown = async ({ knex }) => {
-  const now = new Date();
-  const todayKey = toDateKey(now);
-  const yesterdayKey = toDateKey(
-    new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1),
-  );
-  const startOfMonthKey = toDateKey(new Date(now.getFullYear(), now.getMonth(), 1));
+const loadBranchBreakdown = async ({ knex, period = resolveDashboardPeriod() }) => {
+  const todayKey = period.today;
+  const yesterdayKey = period.yesterday;
+  const startOfMonthKey = period.month.from;
   // On the 1st of the month yesterday falls in the prior month, so widen the
   // revenue scan low bound to whichever key is earlier.
   const revenueFromKey = yesterdayKey < startOfMonthKey ? yesterdayKey : startOfMonthKey;
@@ -766,6 +757,7 @@ const loadBranchBreakdown = async ({ knex }) => {
         .andWhere("vl.line_kind", "SKU")
         .whereRaw("COALESCE(vl.meta->>'movement_kind','SALE') = 'SALE'")
         .andWhere("vh.voucher_date", ">=", startOfMonthKey)
+        .andWhere("vh.voucher_date", "<=", todayKey)
         .groupBy("vh.branch_id")
         .select("vh.branch_id")
         .select(
@@ -836,6 +828,7 @@ const loadBranchBreakdown = async ({ knex }) => {
         .from(
           knex("erp.gl_entry as ge")
             .join("erp.parties as p", "p.id", "ge.party_id")
+        .modify(approvedVoucherScope)
             .whereRaw("upper(coalesce(p.party_type::text,'')) in ('CUSTOMER','BOTH')")
             .andWhere("ge.entry_date", "<=", todayKey)
             .groupBy("ge.branch_id", "ge.party_id")
@@ -851,6 +844,7 @@ const loadBranchBreakdown = async ({ knex }) => {
         .from(
           knex("erp.gl_entry as ge")
             .join("erp.parties as p", "p.id", "ge.party_id")
+        .modify(approvedVoucherScope)
             .whereRaw("upper(coalesce(p.party_type::text,'')) in ('SUPPLIER','BOTH')")
             .andWhere("ge.entry_date", "<=", todayKey)
             .groupBy("ge.branch_id", "ge.party_id")
@@ -926,7 +920,7 @@ const loadBranchBreakdown = async ({ knex }) => {
     return { rows, totals };
   } catch (err) {
     console.error("DashboardMetrics branch breakdown error:", err?.message || err);
-    return { rows: [], totals: null };
+    return { rows: [], totals: null, unavailable: true };
   }
 };
 

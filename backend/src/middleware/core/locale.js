@@ -5717,3 +5717,63 @@ Object.assign(translations.ur, require('../../utils/payroll-ledger-translations'
 
 Object.assign(translations.en, require('../../utils/stock-production-report-translations').en);
 Object.assign(translations.ur, require('../../utils/stock-production-report-translations').ur);
+
+// Shared homepage period controls and analytics states.
+Object.assign(translations.en, {
+  dashboard_period: "Dashboard period",
+  dashboard_retry: "Retry charts",
+  dashboard_unavailable: "Unavailable",
+  dashboard_skus_available: "SKUs in stock",
+  dashboard_skus_empty: "SKUs out of stock",
+  dashboard_rm_low: "Raw materials below minimum",
+  dashboard_completed_pairs: "Completed pairs",
+  dashboard_stage_unassigned: "Unassigned stage",
+  dashboard_current_snapshot: "Current balances across all branches; independent of the selected period.",
+  dashboard_stage_note: "Approved department completions, measured in pairs.",
+  dashboard_top_products_note: "Amount is net of returns; dozens count sales.",
+  dashboard_net_sales_note: "Sales amounts include deductions for returns.",
+  dashboard_approved_entries_note: "Approved accounting entries for the selected period.",
+  dashboard_rolling_period: "Last 7/30 days",
+  dashboard_calendar_period: "This week/month",
+  dashboard_last_30_days: "Last 30 days",
+  dashboard_period_rolling_note: "Includes today. Activity charts and branch period totals cover the last 30 days.",
+  dashboard_period_calendar_note: "Week starts Monday. Activity charts and branch period totals cover this month to date.",
+  dashboard_revenue_30_days: "Revenue · Last 30 days",
+  dashboard_revenue_this_month: "Revenue · This month",
+  dashboard_purchases_30_days: "Purchases · Last 30 days",
+  dashboard_purchases_this_month: "Purchases · This month",
+  dashboard_dozens_7_days: "Dozens Sold · Last 7 days",
+  dashboard_dozens_30_days: "Dozens Sold · Last 30 days",
+  dashboard_orders_30_days: "Orders Booked · Last 30 days",
+  dashboard_sales_trend: "Sales Trend",
+});
+
+// Shared homepage period controls and analytics states.
+Object.assign(translations.ur, {
+  dashboard_period: "ڈیش بورڈ کی مدت",
+  dashboard_retry: "چارٹس دوبارہ لوڈ کریں",
+  dashboard_unavailable: "دستیاب نہیں",
+  dashboard_skus_available: "اسٹاک میں موجود SKU",
+  dashboard_skus_empty: "اسٹاک سے خالی SKU",
+  dashboard_rm_low: "کم از کم مقدار سے کم خام مال",
+  dashboard_completed_pairs: "مکمل شدہ جوڑے",
+  dashboard_stage_unassigned: "غیر متعین مرحلہ",
+  dashboard_current_snapshot: "تمام برانچوں کے موجودہ بیلنس؛ منتخب مدت سے آزاد۔",
+  dashboard_stage_note: "منظور شدہ شعبہ وار تکمیل، جوڑوں میں۔",
+  dashboard_top_products_note: "رقم میں واپسی منہا ہے؛ درجن صرف فروخت کے ہیں۔",
+  dashboard_net_sales_note: "فروخت کی رقم میں واپس شدہ مال کی رقم منہا ہے۔",
+  dashboard_approved_entries_note: "منتخب مدت کی منظور شدہ حسابی اندراجات۔",
+  dashboard_rolling_period: "گزشتہ 7/30 دن",
+  dashboard_calendar_period: "اس ہفتے/ماہ",
+  dashboard_last_30_days: "گزشتہ 30 دن",
+  dashboard_period_rolling_note: "آج شامل ہے۔ سرگرمی کے چارٹس اور برانچ کی مدتی رقوم گزشتہ 30 دنوں کی ہیں۔",
+  dashboard_period_calendar_note: "ہفتہ پیر سے شروع ہوتا ہے۔ سرگرمی کے چارٹس اور برانچ کی مدتی رقوم اس ماہ کے آغاز سے آج تک کی ہیں۔",
+  dashboard_revenue_30_days: "آمدنی · گزشتہ 30 دن",
+  dashboard_revenue_this_month: "آمدنی · اس ماہ",
+  dashboard_purchases_30_days: "خریداری · گزشتہ 30 دن",
+  dashboard_purchases_this_month: "خریداری · اس ماہ",
+  dashboard_dozens_7_days: "فروخت شدہ درجن · گزشتہ 7 دن",
+  dashboard_dozens_30_days: "فروخت شدہ درجن · گزشتہ 30 دن",
+  dashboard_orders_30_days: "بک شدہ آرڈرز · گزشتہ 30 دن",
+  dashboard_sales_trend: "فروخت کا رجحان",
+});

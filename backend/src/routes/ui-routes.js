@@ -10,6 +10,7 @@ const hrPayrollRoutes = require("./hr-payroll");
 const {
   loadDashboardData,
 } = require("../services/administration/dashboard-service");
+const { resolveDashboardPeriod } = require("../services/administration/dashboard-period-service");
 const {
   loadDashboardMetrics,
   loadBranchBreakdown,
@@ -207,6 +208,7 @@ router.get("/", async (req, res, next) => {
     // The premium Admin Home dashboard (KPIs, alerts, analytics, activity feed)
     // is admin-only; other users keep the lightweight summary dashboard.
     const isAdmin = Boolean(req.user?.isAdmin);
+    const dashboardPeriod = resolveDashboardPeriod({ mode: req.query.periodMode });
     // The activity feed is hydrated client-side from /dashboard/activity, so the
     // filter-option lists are deliberately not loaded here.
     const [dashboard, metrics, branchBreakdown] = await Promise.all([
@@ -220,10 +222,11 @@ router.get("/", async (req, res, next) => {
             knex,
             req,
             can: res.locals.can,
+            period: dashboardPeriod,
           })
         : Promise.resolve(null),
       isAdmin
-        ? loadBranchBreakdown({ knex })
+        ? loadBranchBreakdown({ knex, period: dashboardPeriod })
         : Promise.resolve(null),
     ]);
 
@@ -240,10 +243,11 @@ router.get("/", async (req, res, next) => {
         metrics,
         isAdmin,
         branchBreakdown,
+        dashboardPeriod,
       });
     }
 
-    res.json({ status: "ok", dashboard, metrics });
+    res.json({ status: "ok", dashboard, metrics, dashboardPeriod });
   } catch (err) {
     next(err);
   }
@@ -259,7 +263,7 @@ router.get("/dashboard/analytics", async (req, res, next) => {
   }
   try {
     const range = resolveRange({
-      period: String(req.query.period || "month"),
+      period: req.query.period || "last30",
       from: req.query.from,
       to: req.query.to,
     });
