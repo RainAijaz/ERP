@@ -320,6 +320,13 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
         .andWhere("s.is_active", true);
     })
     .orderBy("i.name", "asc");
+  const skusPromise = knex("erp.skus as s")
+    .join("erp.variants as v", "v.id", "s.variant_id")
+    .join("erp.items as i", "i.id", "v.item_id")
+    .select("s.id", "s.sku_code", localizedNameSelect("i", "article_name", locale))
+    .where({ "s.is_active": true, "i.is_active": true })
+    .whereIn("i.item_type", ["FG", "SFG"])
+    .orderBy("s.sku_code", "asc");
 
   const { fromDate, toDate } = normalizeDateRange(input);
   const selectedDeptIds = normalizeIdList(
@@ -334,6 +341,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
   const selectedArticleIds = normalizeIdList(
     input?.article_ids || input?.articleIds,
   );
+  const selectedSkuIds = normalizeIdList(input?.sku_ids || input?.skuIds);
   const productionType = normalizeProductionType(
     input?.production_type || input?.productionType,
   );
@@ -357,6 +365,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     productGroups,
     productSubgroups,
     articles,
+    skus,
   ] = await Promise.all([
     branchOptionsPromise,
     departmentsPromise,
@@ -364,6 +373,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     productGroupsPromise,
     productSubgroupsPromise,
     articlesPromise,
+    skusPromise,
   ]);
 
   const filters = {
@@ -378,6 +388,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     productGroupIds: selectedProductGroupIds,
     productSubgroupIds: selectedProductSubgroupIds,
     articleIds: selectedArticleIds,
+    skuIds: selectedSkuIds,
     productionType,
     skuUnit: selectedSkuUnit,
     stageScope,
@@ -392,6 +403,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
     productGroups,
     productSubgroups,
     articles,
+    skus,
     productionTypes: [
       { value: "ALL", labelKey: "all" },
       { value: "FG", labelKey: "finished" },
@@ -764,6 +776,11 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
   }
 
   const rows = mappedRows.filter((row) => {
+    if (
+      selectedSkuIds.length &&
+      !selectedSkuIds.includes(row.effective_sku_id)
+    )
+      return false;
     if (productionType !== "ALL" && row.production_type !== productionType)
       return false;
     if (

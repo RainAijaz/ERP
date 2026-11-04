@@ -18,6 +18,7 @@
   const selectedProductGroupIds = Array.isArray(filters?.productGroupIds) ? filters.productGroupIds : [];
   const selectedProductSubgroupIds = Array.isArray(filters?.productSubgroupIds) ? filters.productSubgroupIds : [];
   const selectedArticleIds = Array.isArray(filters?.articleIds) ? filters.articleIds : [];
+  const selectedSkuIds = Array.isArray(filters?.skuIds) ? filters.skuIds : [];
   const selectedProductionType = String(filters?.productionType || "ALL").toUpperCase();
   const selectedSkuUnit = ["ALL", "PAIR", "DZN"].includes(String(filters?.skuUnit || "").toUpperCase())
     ? String(filters?.skuUnit || "").toUpperCase()
@@ -65,6 +66,7 @@
   const advancedFiltersLabel = (() => { const value = t("advanced_filters"); return value && value !== "advanced_filters" ? value : "Advanced Filters"; })();
   const advancedFilterEntries = [
     selectedArticleIds.length ? articlesLabel : "",
+    selectedSkuIds.length ? t("skus") : "",
     selectedProductionType !== "ALL" ? t("production_type") : "",
     selectedSkuUnit !== "ALL" ? productionUnitLabel : "",
   ].filter(Boolean);
@@ -247,6 +249,16 @@
               </select>
             </div>
           </div>
+
+          <%- include('../base/partials/report-multi-select', {
+            name: 'sku_ids',
+            labelKey: 'skus',
+            selected: selectedSkuIds,
+            entries: (options?.skus || []).map(sku => ({
+              id: sku.id,
+              name: `${sku.sku_code || '-'} - ${sku.article_name || '-'}`,
+            })),
+          }) %>
 
           <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
             <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("production_type") %></label>
