@@ -3329,9 +3329,10 @@ const writeBranchSaleCommissionTx = async ({ trx, voucherId }) => {
       .where({ voucher_header_id: voucherId, line_kind: "SKU" });
     if (!skuLines.length) return;
 
+    const contexts=await require('../hr-payroll/commission-configuration-service').captureCommissionContexts(trx,voucherId);
     const branchEntries = await computeLedgerEntriesForBranch({
       trx,
-      lines: skuLines,
+      lines: skuLines.map(line=>({...line,meta:{...line.meta,commission_context:contexts.get(Number(line.line_no))}})),
       branchId: Number(header.branch_id),
       commissionType: "BRANCH_SALE",
       voucherDate: header.voucher_date || null,

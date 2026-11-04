@@ -105,15 +105,15 @@ const hasPermission = (user, scopeKey, action) => {
   return false;
 };
 
-const requiresApproval = async (scopeKey, action, fallbackScopeKey = null) => {
+const requiresApproval = async (scopeKey, action, fallbackScopeKey = null, db = knex) => {
   try {
-    const row = await knex("erp.approval_policy")
+    const row = await db("erp.approval_policy")
       .select("requires_approval")
       .where({ entity_type: "SCREEN", entity_key: scopeKey, action })
       .first();
     if (row != null) return row.requires_approval === true;
     if (fallbackScopeKey) {
-      const fallbackRow = await knex("erp.approval_policy")
+      const fallbackRow = await db("erp.approval_policy")
         .select("requires_approval")
         .where({ entity_type: "SCREEN", entity_key: fallbackScopeKey, action })
         .first();
@@ -141,6 +141,8 @@ const queueApproval = async ({
   newValue,
   reason,
   t,
+  db = knex,
+  postCommit = null,
 }) => {
   try {
     const enrichedNewValue =
@@ -158,7 +160,7 @@ const queueApproval = async ({
     let requestId = null;
 
     if (entityType === "BOM" && approvalAction) {
-      let duplicateQuery = knex("erp.approval_request as ar")
+      let duplicateQuery = db("erp.approval_request as ar")
         .select("ar.id")
         .where({
           "ar.entity_type": "BOM",
@@ -171,7 +173,7 @@ const queueApproval = async ({
         .orderBy("ar.id", "desc");
 
       if (approvalAction === "approve_draft" && normalizedEntityId !== "NEW") {
-        duplicateQuery = knex("erp.approval_request as ar")
+        duplicateQuery = db("erp.approval_request as ar")
           .select("ar.id")
           .joinRaw(
             "JOIN erp.bom_header bh ON ar.entity_id ~ '^[0-9]+$' AND bh.id = ar.entity_id::bigint",
@@ -196,7 +198,7 @@ const queueApproval = async ({
       }
     }
 
-    const [created] = await knex("erp.approval_request")
+    const [created] = await db("erp.approval_request")
       .insert({
         branch_id: req.branchId,
         request_type: "MASTER_DATA_CHANGE",
@@ -209,7 +211,7 @@ const queueApproval = async ({
       })
       .returning(["id"]);
     requestId = created?.id || null;
-    await insertActivityLog(knex, {
+    await insertActivityLog(db, {
       branch_id: req.branchId,
       user_id: req.user?.id || null,
       entity_type: entityType,
@@ -225,6 +227,7 @@ const queueApproval = async ({
         reason: reason || null,
       },
     });
+    const notify = () => {
     notifyPendingApprovalAdmins({
       knex,
       approvalRequestId: requestId,
@@ -255,6 +258,8 @@ const queueApproval = async ({
         error: err?.message || err,
       });
     });
+    };
+    if (Array.isArray(postCommit)) postCommit.push(notify); else notify();
     return requestId;
   } catch (err) {
     console.error("[screen-approval] enqueue failed", {
@@ -278,6 +283,8 @@ const handleScreenApproval = async ({
   newValue,
   t,
   forceQueue = false,
+  db = knex,
+  postCommit = null,
 }) => {
   try {
     debugApproval("[screen-approval] handleScreenApproval called", {
@@ -308,7 +315,7 @@ const handleScreenApproval = async ({
     if (!approvalRequired) {
       const effectiveApprovalKey = approvalScopeKey || scopeKey;
       const fallbackKey = approvalScopeKey ? scopeKey : null;
-      approvalRequired = await requiresApproval(effectiveApprovalKey, action, fallbackKey);
+      approvalRequired = await requiresApproval(effectiveApprovalKey, action, fallbackKey, db);
     }
     debugApproval("[screen-approval] requiresApproval result", {
       approvalRequired,
@@ -341,6 +348,7 @@ const handleScreenApproval = async ({
         newValue,
         reason: allowed ? "policy_requires_approval" : "permission_reroute",
         t: translator,
+        db, postCommit,
       });
       debugApproval("[screen-approval] approval queued", { requestId });
     } catch (err) {

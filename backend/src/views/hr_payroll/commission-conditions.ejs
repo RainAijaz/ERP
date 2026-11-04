@@ -21,7 +21,9 @@
   ['stage_ids','commission_production_stages','stage',true],
   ['excluded_group_ids','commission_excluded_groups','group',false],
   ['excluded_subgroup_ids','commission_excluded_subgroups','subgroup',false],
-  ['excluded_sku_ids','commission_excluded_articles','sku',false]
+  ['excluded_sku_ids','commission_excluded_skus','sku',false],
+  ['excluded_article_ids','commission_excluded_articles','article',false],
+  ['excluded_category_ids','commission_excluded_categories','category',false]
 ]; %>
 <% conditions.forEach(function(condition) { %>
   <label class="block text-sm font-semibold text-slate-600" data-commission-condition-wrapper="<%= condition[0] %>" <%- condition[3] ? 'hidden data-production-condition' : '' %>>
@@ -54,10 +56,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const ordered = [form.querySelector('[data-field-wrapper="employee_id"]'),source.closest('label'),
     form.querySelector('[data-field-wrapper="commission_type"]'),salesQuantities.closest('label'),form.querySelector('[data-commission-condition-wrapper="branch_ids"]'),
     ...['source_labour_ids','department_ids','stage_ids'].map(key=>form.querySelector(`[data-commission-condition-wrapper="${key}"]`)),
-    ...['apply_on','sku_id','subgroup_id','group_id','rate_type','value','effective_from','effective_to'].map(key=>form.querySelector(`[data-field-wrapper="${key}"]`)),
+    ...['apply_on','sku_id','article_id','category_id','subgroup_id','group_id','rate_type','value','effective_from','effective_to'].map(key=>form.querySelector(`[data-field-wrapper="${key}"]`)),
     form.querySelector('[data-commission-condition-wrapper="excluded_grade_ids"]'),form.querySelector('[data-field-wrapper="reverse_on_returns"]'),form.querySelector('[data-field-wrapper="status"]')];
   ordered.filter(Boolean).forEach(node=>grid.appendChild(node));
-  ['excluded_group_ids','excluded_subgroup_ids','excluded_sku_ids'].forEach(key=>advanced.querySelector('[data-commission-advanced-fields]').appendChild(form.querySelector(`[data-commission-condition-wrapper="${key}"]`)));
+  ['excluded_group_ids','excluded_subgroup_ids','excluded_sku_ids','excluded_article_ids','excluded_category_ids'].forEach(key=>advanced.querySelector('[data-commission-advanced-fields]').appendChild(form.querySelector(`[data-commission-condition-wrapper="${key}"]`)));
   grid.appendChild(advanced);
   const productionKeys = ['source_labour_ids','department_ids','stage_ids'];
   const refresh = () => window.refreshSearchableSelects?.(form);
@@ -111,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!preserve) {
       controls.filter(s => productionKeys.includes(s.dataset.commissionCondition)).forEach(s => s.replaceChildren());
       // Product selections belong to the old source's catalogue.
-      ['sku_id','group_id','subgroup_id'].forEach(name => {
+      ['sku_id','article_id','category_id','group_id','subgroup_id'].forEach(name => {
         const select = form.querySelector(`[data-field="${name}"]`);
         if (select) { select.replaceChildren(); select.dispatchEvent(new Event('searchable:invalidate')); }
       });
@@ -141,7 +143,7 @@ document.addEventListener('DOMContentLoaded', () => {
       select.dispatchEvent(new Event('searchable:invalidate'));
     });
     filterTypes(true);
-    advanced.open=Boolean(data.excluded_group_ids?.length || data.excluded_subgroup_ids?.length || data.excluded_sku_ids?.length);
+    advanced.open=Boolean(data.excluded_group_ids?.length || data.excluded_subgroup_ids?.length || data.excluded_sku_ids?.length || data.excluded_article_ids?.length || data.excluded_category_ids?.length);
     const content=document.getElementById('modal-content');
     if (content) content.scrollTop=0;
     form.scrollTop=0;

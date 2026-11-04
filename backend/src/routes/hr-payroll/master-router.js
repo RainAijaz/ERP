@@ -1202,11 +1202,9 @@ const createHrMasterRouter = (pageConfig) => {
         );
         let createdEntityId = null;
         await knex.transaction(async (trx) => {
-          const [row] = await trx(pageConfig.table)
-            .insert({
-              ...rest,
-            })
-            .returning("id");
+          const row = pageConfig.persistCreate
+            ? {id:await pageConfig.persistCreate({trx,values:rest,req,res})}
+            : (await trx(pageConfig.table).insert({...rest}).returning("id"))[0];
           const entityId = row && row.id ? row.id : row;
           createdEntityId = entityId;
           if (pageConfig.branchScoped && branchIdsInsert.length) {

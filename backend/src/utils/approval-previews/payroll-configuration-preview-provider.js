@@ -37,11 +37,12 @@ registerApprovalPreviewProvider(async ({ req,res,request,side }) => {
     for (const key of ['effective_from','effective_to']) summary.push({label:res.locals.t(key),value:values[key] || ''});
     const lookups = {
       excluded_grade_ids:['erp.grades','commission_excluded_grades'],excluded_group_ids:['erp.product_groups','commission_excluded_groups'],
-      excluded_subgroup_ids:['erp.product_subgroups','commission_excluded_subgroups'],excluded_sku_ids:['erp.skus','commission_excluded_articles'],
+      excluded_subgroup_ids:['erp.product_subgroups','commission_excluded_subgroups'],excluded_sku_ids:['erp.skus','commission_excluded_skus'],
+      excluded_article_ids:['erp.items','commission_excluded_articles'],excluded_category_ids:['erp.product_types','commission_excluded_categories'],
       branch_ids:['erp.branches','commission_eligible_branches'],source_labour_ids:['erp.labours','commission_source_workers'],
       department_ids:['erp.departments','commission_production_departments'],stage_ids:['erp.production_stages','commission_production_stages']
     };
-    const selectors = {group_ids:['erp.product_groups','product_groups'],subgroup_ids:['erp.product_subgroups','product_subgroups'],sku_ids:['erp.skus','skus']};
+    const selectors = {article_ids:['erp.items','apply_on_article'],category_ids:['erp.product_types','apply_on_category'],group_ids:['erp.product_groups','product_groups'],subgroup_ids:['erp.product_subgroups','product_subgroups'],sku_ids:['erp.skus','skus']};
     for (const [key,[table,label]] of Object.entries({...lookups,...selectors})) {
       const ids = conditions[key] || values[key] || (values[key.replace('_ids','_id')] ? [values[key.replace('_ids','_id')]] : []);
       if (!Array.isArray(ids) || !ids.length) continue;

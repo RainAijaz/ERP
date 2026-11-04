@@ -1,4 +1,4 @@
-const PRECEDENCE = ["SKU", "SUBGROUP", "GROUP", "ALL"];
+const PRECEDENCE = ["SKU", "ARTICLE", "SUBGROUP", "GROUP", "CATEGORY", "ALL"];
 const { ruleEligible, excludedByApplicableRule } = require('../hr-payroll/commission-eligibility-service');
 
 // Older bulk saves copied a scope rate onto every SKU. A copy is inheritance,
@@ -46,6 +46,8 @@ const pickRuleByPrecedence = (rules, basis, context) => {
           if (!branchId || branchId !== Number(context.branchId || 0)) return false;
         } else if (branchId) return false;
         if (scope === "SKU") return Number(rule.sku_id) === Number(context.skuId);
+        if (scope === "ARTICLE") return Number(rule.article_id) === Number(context.articleId);
+        if (scope === "CATEGORY") return Number(rule.category_id) === Number(context.categoryId);
         if (scope === "SUBGROUP") return Number(rule.subgroup_id) === Number(context.subgroupId);
         if (scope === "GROUP") return Number(rule.group_id) === Number(context.groupId);
         return true;

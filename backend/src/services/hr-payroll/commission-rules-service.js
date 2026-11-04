@@ -6,6 +6,8 @@ const { normalizeEligibility, eligibilityKey } = require('./commission-eligibili
 
 const APPLY_ON = {
   SKU: "SKU",
+  ARTICLE: "ARTICLE",
+  CATEGORY: "CATEGORY",
   SUBGROUP: "SUBGROUP",
   GROUP: "GROUP",
   ALL: "ALL",
@@ -96,6 +98,13 @@ const addDaysYmd = (ymd, days) => {
 const toBranchKey = (branchId) =>
   Number(branchId) > 0 ? Number(branchId) : null;
 
+const assertCommissionPeriodOpen = async (trx,employeeId,from) => {
+  if(await trx.schema.withSchema('erp').hasTable('employee_payroll_runs') &&
+    await trx('erp.employee_payroll_runs').where('employee_id',employeeId).where('period_to','>=',from || '1900-01-01').first('id')) {
+    throw new Error('salary_period_finalized');
+  }
+};
+
 // Closes whatever rate currently covers this key and inserts the new one, so a
 // rate change never destroys the rate it replaced.
 //
@@ -115,6 +124,8 @@ const supersedeCommissionRule = async ({
   applyOn,
   branchId = null,
   skuId = null,
+  articleId = null,
+  categoryId = null,
   subgroupId = null,
   groupId = null,
   effectiveFrom,
@@ -126,7 +137,9 @@ const supersedeCommissionRule = async ({
   const from = normalizeRuleDate(effectiveFrom) || todayYmd();
   const to = normalizeRuleDate(effectiveTo) || null;
   const branch = toBranchKey(branchId);
-  await trx.raw('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', [JSON.stringify(['commission-rule',employeeId,commissionType,applyOn,branch,skuId,subgroupId,groupId,conditionKey])]);
+  await trx.raw("SELECT pg_advisory_xact_lock(hashtextextended('erp-payroll:' || ?::text,0))",[employeeId]);
+  await assertCommissionPeriodOpen(trx,employeeId,from);
+  await trx.raw('SELECT pg_advisory_xact_lock(hashtextextended(?,0))', [JSON.stringify(['commission-rule',employeeId,commissionType,values.commission_basis,applyOn,branch,skuId,articleId,categoryId,subgroupId,groupId,conditionKey])]);
 
   const scopeQuery = () =>
     trx("erp.employee_commission_rules")
@@ -135,11 +148,14 @@ const supersedeCommissionRule = async ({
         commission_type: commissionType,
         apply_on: applyOn,
         eligibility_key: conditionKey,
+        commission_basis: values.commission_basis || COMMISSION_BASIS_FIXED_PER_UNIT,
       })
       .whereRaw("COALESCE(branch_id, 0) = ?", [branch || 0])
       .whereRaw("COALESCE(sku_id, 0) = ?", [Number(skuId) || 0])
       .whereRaw("COALESCE(subgroup_id, 0) = ?", [Number(subgroupId) || 0])
-      .whereRaw("COALESCE(group_id, 0) = ?", [Number(groupId) || 0]);
+      .whereRaw("COALESCE(group_id, 0) = ?", [Number(groupId) || 0])
+      .whereRaw("COALESCE((to_jsonb(employee_commission_rules)->>'article_id')::bigint, 0) = ?", [Number(articleId) || 0])
+      .whereRaw("COALESCE((to_jsonb(employee_commission_rules)->>'category_id')::bigint, 0) = ?", [Number(categoryId) || 0]);
 
   // Rows that start on or after the new row never had a chance to apply — the
   // new rate supersedes them outright rather than leaving an unreachable island.
@@ -147,7 +163,7 @@ const supersedeCommissionRule = async ({
 
   // The rate currently covering `from` is closed the day before it.
   await scopeQuery()
-    .where("effective_from", "<", from)
+    .where(builder=>builder.whereNull('effective_from').orWhere("effective_from", "<", from))
     .andWhere((builder) =>
       builder.whereNull("effective_to").orWhere("effective_to", ">=", from),
     )
@@ -163,6 +179,8 @@ const supersedeCommissionRule = async ({
       apply_on: applyOn,
       branch_id: branch,
       sku_id: skuId || null,
+      ...(articleId ? { article_id: articleId } : {}),
+      ...(categoryId ? { category_id: categoryId } : {}),
       subgroup_id: subgroupId || null,
       group_id: groupId || null,
       effective_from: from,
@@ -181,9 +199,14 @@ const toMoney = (value) => {
 };
 
 const updateCommissionRule = async ({ trx,id,values }) => {
-  const existing = await trx('erp.employee_commission_rules').where({id}).forUpdate().first();
+  let existing = await trx('erp.employee_commission_rules').where({id}).first();
   if (!existing) throw new Error('error_not_found');
+  const employees=[...new Set([Number(existing.employee_id),Number(values.employee_id || existing.employee_id)])].sort((a,b)=>a-b);
+  for(const employeeId of employees)await trx.raw("SELECT pg_advisory_xact_lock(hashtextextended('erp-payroll:' || ?::text,0))",[employeeId]);
+  existing=await trx('erp.employee_commission_rules').where({id}).forUpdate().first();
+  if(!existing)throw new Error('error_not_found');
   const from = normalizeRuleDate(values.effective_from);
+  for(const employeeId of employees)await assertCommissionPeriodOpen(trx,employeeId,from);
   const oldFrom = normalizeRuleDate(existing.effective_from);
   if (from <= oldFrom) {
     await trx('erp.employee_commission_rules').where({id}).update(values);
@@ -195,7 +218,7 @@ const updateCommissionRule = async ({ trx,id,values }) => {
     await trx('erp.employee_commission_rules').where({id}).update({effective_to:addDaysYmd(from,-1)});
   }
   return supersedeCommissionRule({trx,employeeId:values.employee_id,commissionType:values.commission_type,
-    applyOn:values.apply_on,branchId:values.branch_id,skuId:values.sku_id,subgroupId:values.subgroup_id,groupId:values.group_id,
+    applyOn:values.apply_on,branchId:values.branch_id,skuId:values.sku_id,articleId:values.article_id,categoryId:values.category_id,subgroupId:values.subgroup_id,groupId:values.group_id,
     effectiveFrom:from,effectiveTo:values.effective_to,values});
 };
 
@@ -475,6 +498,8 @@ const fetchExistingRules = async ({
       "id",
       "apply_on",
       "sku_id",
+      db.raw("(to_jsonb(ecr)->>'article_id')::bigint as article_id"),
+      db.raw("(to_jsonb(ecr)->>'category_id')::bigint as category_id"),
       "subgroup_id",
       "group_id",
       "value",
@@ -518,7 +543,7 @@ const fetchExistingRules = async ({
 };
 
 const indexExistingRules = (existingRules) => {
-  const makeLayer = () => ({ bySkuId: new Map(), bySubgroupId: new Map(), byGroupId: new Map(), allRule: null });
+  const makeLayer = () => ({ bySkuId: new Map(), byArticleId: new Map(), byCategoryId: new Map(), bySubgroupId: new Map(), byGroupId: new Map(), allRule: null });
   const index = { branch: makeLayer(), any: makeLayer() };
   for (const rule of existingRules) {
     if (rule.inherited_sku_copy) continue;
@@ -527,6 +552,10 @@ const indexExistingRules = (existingRules) => {
     if (scope === APPLY_ON.SKU) {
       const key = Number(rule.sku_id);
       if (!layer.bySkuId.has(key)) layer.bySkuId.set(key, rule);
+    } else if (scope === APPLY_ON.ARTICLE) {
+      const key=Number(rule.article_id);if(!layer.byArticleId.has(key))layer.byArticleId.set(key,rule);
+    } else if (scope === APPLY_ON.CATEGORY) {
+      const key=Number(rule.category_id);if(!layer.byCategoryId.has(key))layer.byCategoryId.set(key,rule);
     } else if (scope === APPLY_ON.SUBGROUP) {
       const key = Number(rule.subgroup_id);
       if (!layer.bySubgroupId.has(key)) layer.bySubgroupId.set(key, rule);
@@ -543,8 +572,10 @@ const indexExistingRules = (existingRules) => {
 const findEffectiveRuleIndexed = ({ index, sku, branchId }) => {
   const inLayer = (layer) =>
     layer.bySkuId.get(Number(sku.sku_id)) ||
+    layer.byArticleId.get(Number(sku.article_id || sku.item_id || 0)) ||
     layer.bySubgroupId.get(Number(sku.subgroup_id || 0)) ||
     layer.byGroupId.get(Number(sku.group_id || 0)) ||
+    layer.byCategoryId.get(Number(sku.category_id || 0)) ||
     layer.allRule;
   return (branchId ? inLayer(index.branch) : null) || inLayer(index.any);
 };

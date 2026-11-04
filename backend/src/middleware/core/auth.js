@@ -86,8 +86,8 @@ const setCachedRolePermissions = (roleId, rows) => {
   if (firstKey) rolePermissionsCache.delete(firstKey);
 };
 
-const loadRolePermissionRowsCached = async (roleId) => {
-  const cached = getCachedRolePermissions(roleId);
+const loadRolePermissionRowsCached = async (roleId, {fresh = false} = {}) => {
+  const cached = fresh ? null : getCachedRolePermissions(roleId);
   if (cached) return cached;
 
   const rows = await knex("erp.role_permissions")
@@ -322,7 +322,7 @@ const loadUserContextCached = async (userId) => {
   return cloneUserContext(context);
 };
 
-const loadUserContext = async (userId) => {
+const loadUserContext = async (userId, {freshPermissions = false} = {}) => {
   const hasAdminFlag = await roleTemplatesHaveAdminFlag();
   const roleColumns = hasAdminFlag ? ["id", "name", "is_admin"] : ["id", "name"];
 
@@ -346,7 +346,7 @@ const loadUserContext = async (userId) => {
         .where({ id: user.primary_role_id })
         .first(),
       knex("erp.user_branch").select("branch_id").where({ user_id: userId }),
-      loadRolePermissionRowsCached(user.primary_role_id),
+      loadRolePermissionRowsCached(user.primary_role_id,{fresh:freshPermissions}),
       knex("erp.user_permissions_override")
         .select(
           "scope_id",

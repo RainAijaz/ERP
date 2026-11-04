@@ -19,4 +19,5 @@ BEGIN;
 \ir 096_remove_bom_advanced_rules.sql
 \ir 097_production_stages_and_bom_routing.sql
 \ir 098_allow_negative_stock_balance_sku.sql
+\ir 106_commission_batches.sql
 COMMIT;

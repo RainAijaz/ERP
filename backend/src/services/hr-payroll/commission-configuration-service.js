@@ -13,14 +13,19 @@ const searchCommissionOptions = async ({ db, input, req, locale = 'en' }) => {
   if (ids.length > 500 || ids.some((id) => !Number.isSafeInteger(id) || id <= 0)) throw new Error('commission_invalid_conditions');
   const allowed = req.user?.isAdmin ? null : (req.branchScope || []).map(Number);
   let query;
-  if (kind === 'sku') {
+  if (kind === 'article') {
+    query = db('erp.items as o').select('o.id as value',db.raw(`o.code || ' - ' || ${locale==='ur'?"COALESCE(NULLIF(o.name_ur,''),o.name)":'o.name'} as label`))
+      .whereIn('o.item_type',itemTypesForCommission(type));
+    if(!ids.length)query.where('o.is_active',true);
+    if (term) query.where(q=>q.whereILike('o.code',`%${term}%`).orWhereILike('o.name',`%${term}%`));
+  } else if (kind === 'sku') {
     query = db('erp.skus as o').join('erp.variants as v','v.id','o.variant_id').join('erp.items as i','i.id','v.item_id')
       .select('o.id as value',db.raw(`o.sku_code || ' - ' || ${locale==='ur'?"COALESCE(NULLIF(i.name_ur,''),i.name)":'i.name'} as label`))
       .whereIn('i.item_type',itemTypesForCommission(type));
     if (term) query.where((q) => q.whereILike('o.sku_code',`%${term}%`).orWhereILike('i.name',`%${term}%`));
   } else {
     const tables = { worker: 'erp.labours', department: 'erp.departments', stage: 'erp.production_stages',
-      grade: 'erp.grades', group: 'erp.product_groups', subgroup: 'erp.product_subgroups', branch: 'erp.branches' };
+      grade: 'erp.grades', category: 'erp.product_types', group: 'erp.product_groups', subgroup: 'erp.product_subgroups', branch: 'erp.branches' };
     if (!tables[kind]) throw new Error('commission_invalid_conditions');
     const label = locale === 'ur' ? "COALESCE(NULLIF(o.name_ur,''),o.name)" : 'o.name';
     query = db(`${tables[kind]} as o`).select('o.id as value',db.raw(`${label} as label`));
@@ -34,8 +39,8 @@ const searchCommissionOptions = async ({ db, input, req, locale = 'en' }) => {
       const departments = normalizeEligibility({ department_ids: String(input.department_ids).split(',') }).department_ids;
       query.whereIn('o.dept_id', departments);
     }
-    if (kind === 'group' || kind === 'subgroup') query.whereExists(function () {
-      this.select(1).from('erp.items as i').whereRaw(`i.${kind === 'group' ? 'group_id' : 'subgroup_id'}=o.id`).whereIn('i.item_type',itemTypesForCommission(type));
+    if (['category','group','subgroup'].includes(kind)) query.whereExists(function () {
+      this.select(1).from('erp.items as i').whereRaw(`i.${kind === 'category' ? 'product_type_id' : kind === 'group' ? 'group_id' : 'subgroup_id'}=o.id`).whereIn('i.item_type',itemTypesForCommission(type));
     });
   }
   if (ids.length) query.whereIn('o.id',ids);
@@ -46,6 +51,16 @@ const searchCommissionOptions = async ({ db, input, req, locale = 'en' }) => {
 const validateConfiguration = async ({ db, eligibility, commissionType, employeeIds, req }) =>
   validateEligibilityReferences({ db, eligibility, commissionType, employeeIds,
     allowedBranchIds: req.user?.isAdmin ? null : (req.branchScope || []).map(Number) });
+
+const validateRuleProductScope = async ({db,applyOn,articleId,categoryId,commissionType}) => {
+  try {
+    if(!['ARTICLE','CATEGORY'].includes(applyOn))return true;
+    const id=Number(applyOn==='ARTICLE'?articleId:categoryId);
+    if(!Number.isSafeInteger(id)||id<=0)return false;
+    const row=await db(applyOn==='ARTICLE'?'erp.items':'erp.product_types').where('id',id).first();
+    return Boolean(row && row.is_active!==false && (applyOn!=='ARTICLE' || itemTypesForCommission(commissionType).includes(row.item_type)));
+  } catch(err) {console.error('Error in CommissionConfigurationService:',err);throw err;}
+};
 
 // DCV lines are the authoritative record for worker and department attribution.
 // Both live posting and historical recalculation use this exact loader.
@@ -59,7 +74,7 @@ const loadStageCommissionLines = async (db, voucherId) => {
 
 const captureProductionCommissionContexts = async (db,voucherId) => {
   await db.raw(`UPDATE erp.voucher_line vl SET meta=COALESCE(vl.meta,'{}'::jsonb) ||
-    jsonb_build_object('commission_context',jsonb_build_object('sku_id',s.id,'grade_id',v.grade_id,'group_id',i.group_id,'subgroup_id',i.subgroup_id))
+    jsonb_build_object('commission_context',jsonb_build_object('sku_id',s.id,'article_id',i.id,'category_id',i.product_type_id,'grade_id',v.grade_id,'group_id',i.group_id,'subgroup_id',i.subgroup_id))
     FROM erp.skus s JOIN erp.variants v ON v.id=s.variant_id JOIN erp.items i ON i.id=v.item_id
     WHERE vl.voucher_header_id=? AND vl.sku_id=s.id AND
       COALESCE((vl.meta->'commission_context'->>'sku_id')::bigint,0)<>s.id`,[voucherId]);
@@ -67,4 +82,4 @@ const captureProductionCommissionContexts = async (db,voucherId) => {
   return new Map(rows.map(row=>[Number(row.line_no),row.meta?.commission_context]));
 };
 
-module.exports = { TYPES, itemTypesForCommission, searchCommissionOptions, validateConfiguration, loadStageCommissionLines, captureProductionCommissionContexts };
+module.exports = { TYPES, itemTypesForCommission, searchCommissionOptions, validateConfiguration, validateRuleProductScope, loadStageCommissionLines, captureProductionCommissionContexts, captureCommissionContexts:captureProductionCommissionContexts };

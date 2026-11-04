@@ -2,7 +2,7 @@
   const safeFieldErrors = typeof fieldErrors !== "undefined" && fieldErrors ? fieldErrors : {};
 %>
 <% if (page.scopeKey === "hr_payroll.commissions") { %>
-  <div class="grid gap-4 md:grid-cols-2" data-commission-fields>
+  <fieldset class="grid min-w-0 gap-4 md:grid-cols-2" data-commission-fields>
   <%- include("commission-conditions", { t, basePath }) %>
 <% } %>
 <% page.fields.forEach(function(field) { %>
@@ -135,7 +135,9 @@
     </label>
   <% } %>
 <% }) %>
-<% if (page.scopeKey === "hr_payroll.commissions") { %></div><% } %>
+<% if (page.scopeKey === "hr_payroll.commissions") { %></fieldset>
+  <% if (typeof commissionExpansionReady !== 'undefined' && commissionExpansionReady) { %><%- include('commission-batch', { t, page, basePath, csrfToken }) %><% } %>
+<% } %>
 
 <% if (page.scopeKey === "hr_payroll.commissions") { %>
   <div class="hidden rounded-xl border border-slate-200 bg-slate-50/60 p-4" data-commission-bulk-panel>

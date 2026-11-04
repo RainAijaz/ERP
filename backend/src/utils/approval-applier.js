@@ -1422,6 +1422,7 @@ const inferHrTarget = ({ entityType, request, newValue, oldValue }) => {
   // _scope_key, so hr_payroll.commissions would otherwise capture this and try to
   // write a single rule row out of a recalculation payload.
   if (mode === "PAYROLL_FINALIZE") return "payroll_finalize";
+  if (mode === "COMMISSION_BATCH_V1") return "commission_batch";
   if (mode === RECALC_APPROVAL_MODE) return "commission_recalc";
   if (mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT")
     return "bulk_commission";
@@ -1769,6 +1770,8 @@ const applyEmployeeCommissionApproval = async (trx, request, decidedBy = null) =
     eligibility_key: eligibilityKey(payload.eligibility, commissionType),
     apply_on: applyOn,
     sku_id: toNullableInt(payload.sku_id),
+    article_id: toNullableInt(payload.article_id),
+    category_id: toNullableInt(payload.category_id),
     subgroup_id: toNullableInt(payload.subgroup_id),
     group_id: toNullableInt(payload.group_id),
     branch_id: branchId,
@@ -1787,6 +1790,7 @@ const applyEmployeeCommissionApproval = async (trx, request, decidedBy = null) =
   };
 
   await validateEligibilityReferences({ db: trx, eligibility: row.eligibility, commissionType, employeeIds: [row.employee_id] });
+  if(!await require('../services/hr-payroll/commission-configuration-service').validateRuleProductScope({db:trx,applyOn,articleId:row.article_id,categoryId:row.category_id,commissionType})) throw new Error('commission_invalid_conditions');
   const supersedeValues = {
     eligibility: row.eligibility,
     commission_basis: row.commission_basis,
@@ -1814,6 +1818,8 @@ const applyEmployeeCommissionApproval = async (trx, request, decidedBy = null) =
       applyOn,
       branchId,
       skuId: row.sku_id,
+      articleId: row.article_id,
+      categoryId: row.category_id,
       subgroupId: row.subgroup_id,
       groupId: row.group_id,
       effectiveFrom,
@@ -2206,6 +2212,10 @@ const applyHrApprovalChange = async (trx, request, decidedBy = null) => {
       ? request.old_value
       : null;
   const target = inferHrTarget({ entityType, request, newValue, oldValue });
+
+  if (target === 'commission_batch') {
+    return require('../services/hr-payroll/commission-batch-service').applyBatchApproval({trx,request,decidedBy});
+  }
 
   if (target === "payroll_finalize") {
     const { finalizePayroll, normalizePayrollInput } = require("../services/hr-payroll/payroll-run-service");

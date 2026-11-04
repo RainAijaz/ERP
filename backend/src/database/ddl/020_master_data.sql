@@ -631,6 +631,118 @@ CREATE TABLE IF NOT EXISTS erp.labour_branch (
 );
 
 -- =============================================================================
+-- HR PAYROLL RULES
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS erp.employee_commission_rules (
+  id                 bigserial PRIMARY KEY,
+  employee_id        bigint NOT NULL REFERENCES erp.employees(id) ON DELETE RESTRICT,
+  apply_on           text NOT NULL DEFAULT 'SKU',
+  sku_id             bigint REFERENCES erp.skus(id) ON DELETE RESTRICT,
+  article_id         bigint REFERENCES erp.items(id) ON DELETE RESTRICT,
+  category_id        bigint REFERENCES erp.product_types(id) ON DELETE RESTRICT,
+  subgroup_id        bigint REFERENCES erp.product_subgroups(id) ON DELETE RESTRICT,
+  group_id           bigint REFERENCES erp.product_groups(id) ON DELETE RESTRICT,
+  commission_basis   text NOT NULL DEFAULT 'NET_SALES_PERCENT',
+  commission_type    text NOT NULL DEFAULT 'SALESMAN_SALE',
+  value_type         text NOT NULL DEFAULT 'PERCENT',
+  value              numeric(18,2) NOT NULL DEFAULT 0,
+  rate_type          text NOT NULL DEFAULT 'PER_PAIR',
+  reverse_on_returns boolean NOT NULL DEFAULT true,
+  source_rule_id     bigint REFERENCES erp.employee_commission_rules(id) ON DELETE SET NULL,
+  inherited_sku_copy boolean,
+  branch_id          bigint REFERENCES erp.branches(id) ON DELETE RESTRICT,
+  effective_from     date,
+  effective_to       date,
+  status             text NOT NULL DEFAULT 'active',
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  CHECK (apply_on IN ('SKU','ARTICLE','SUBGROUP','GROUP','CATEGORY','ALL')),
+  CHECK (commission_basis IN ('NET_SALES_PERCENT','GROSS_MARGIN_PERCENT','FIXED_PER_UNIT','FIXED_PER_INVOICE')),
+  CHECK (commission_type IN ('SALESMAN_SALE','BRANCH_SALE','TRANSFER','PARTY','PRODUCTION_FG','PRODUCTION_SFG')),
+  CHECK (value_type IN ('PERCENT','FIXED')),
+  CHECK (rate_type IN ('PER_DOZEN','PER_PAIR')),
+  CHECK (effective_to IS NULL OR effective_from IS NULL OR effective_to >= effective_from),
+  CHECK (lower(trim(status)) IN ('active','inactive'))
+);
+
+CREATE TABLE IF NOT EXISTS erp.employee_allowance_rules (
+  id              bigserial PRIMARY KEY,
+  employee_id     bigint NOT NULL REFERENCES erp.employees(id) ON DELETE RESTRICT,
+  allowance_type  text NOT NULL,
+  amount_type     text NOT NULL DEFAULT 'FIXED',
+  amount          numeric(18,2) NOT NULL DEFAULT 0,
+  frequency       text NOT NULL DEFAULT 'MONTHLY',
+  taxable         boolean NOT NULL DEFAULT false,
+  effective_from  date,
+  effective_to    date,
+  status          text NOT NULL DEFAULT 'active',
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  CHECK (amount_type IN ('FIXED','PERCENT_BASIC')),
+  CHECK (frequency IN ('MONTHLY','DAILY')),
+  CHECK (lower(trim(status)) IN ('active','inactive'))
+);
+
+CREATE TABLE IF NOT EXISTS erp.labour_rate_rules (
+  id                     bigserial PRIMARY KEY,
+  applies_to_all_labours boolean NOT NULL DEFAULT false,
+  labour_id              bigint REFERENCES erp.labours(id) ON DELETE RESTRICT,
+  dept_id                bigint NOT NULL REFERENCES erp.departments(id) ON DELETE RESTRICT,
+  apply_on               text NOT NULL DEFAULT 'SKU',
+  sku_id                 bigint REFERENCES erp.skus(id) ON DELETE RESTRICT,
+  subgroup_id            bigint REFERENCES erp.product_subgroups(id) ON DELETE RESTRICT,
+  group_id               bigint REFERENCES erp.product_groups(id) ON DELETE RESTRICT,
+  rate_type              text NOT NULL DEFAULT 'PER_PAIR',
+  rate_value             numeric(18,2) NOT NULL DEFAULT 0,
+  effective_from         date,
+  effective_to           date,
+  notes                  text,
+  article_type           text NOT NULL DEFAULT 'BOTH',
+  status                 text NOT NULL DEFAULT 'active',
+  created_at             timestamptz NOT NULL DEFAULT now(),
+  CHECK (apply_on IN ('SKU','SUBGROUP','GROUP','FLAT')),
+  CHECK (rate_type IN ('PER_DOZEN','PER_PAIR')),
+  CHECK (article_type IN ('FG','SFG','BOTH')),
+  CHECK (lower(trim(status)) IN ('active','inactive'))
+);
+
+CREATE TABLE IF NOT EXISTS erp.labour_rate_rule_exclusions (
+  id         bigserial PRIMARY KEY,
+  rule_id    bigint NOT NULL REFERENCES erp.labour_rate_rules(id) ON DELETE CASCADE,
+  sku_id     bigint NOT NULL REFERENCES erp.skus(id) ON DELETE RESTRICT,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (rule_id, sku_id)
+);
+
+CREATE TABLE IF NOT EXISTS erp.labour_allowance_rules (
+  id              bigserial PRIMARY KEY,
+  labour_id       bigint NOT NULL REFERENCES erp.labours(id) ON DELETE RESTRICT,
+  allowance_type  text NOT NULL,
+  amount_type     text NOT NULL DEFAULT 'FIXED',
+  amount          numeric(18,2) NOT NULL DEFAULT 0,
+  frequency       text NOT NULL DEFAULT 'MONTHLY',
+  taxable         boolean NOT NULL DEFAULT false,
+  effective_from  date,
+  effective_to    date,
+  status          text NOT NULL DEFAULT 'active',
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  CHECK (amount_type IN ('FIXED')),
+  CHECK (frequency IN ('MONTHLY','DAILY')),
+  CHECK (lower(trim(status)) IN ('active','inactive'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_emp_comm_employee ON erp.employee_commission_rules(employee_id);
+CREATE INDEX IF NOT EXISTS idx_emp_allow_employee ON erp.employee_allowance_rules(employee_id);
+CREATE INDEX IF NOT EXISTS idx_labour_rate_labour ON erp.labour_rate_rules(labour_id);
+CREATE INDEX IF NOT EXISTS idx_labour_rate_dept ON erp.labour_rate_rules(dept_id);
+CREATE INDEX IF NOT EXISTS idx_labour_rate_rules_sku_id ON erp.labour_rate_rules(sku_id) WHERE sku_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_labour_rate_rules_apply_on_subgroup ON erp.labour_rate_rules(apply_on, subgroup_id) WHERE subgroup_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_labour_rate_rules_apply_on_group ON erp.labour_rate_rules(apply_on, group_id) WHERE group_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_labour_rate_rules_labour_dept_sku
+ON erp.labour_rate_rules (labour_id, dept_id, sku_id)
+WHERE applies_to_all_labours = false AND labour_id IS NOT NULL AND sku_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_labour_allow_labour ON erp.labour_allowance_rules(labour_id);
+
+-- =============================================================================
 -- SAFE EARLY INDEXES (PERFORMANCE / JOIN HELPERS)
 -- =============================================================================
 

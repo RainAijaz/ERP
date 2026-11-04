@@ -1,7 +1,7 @@
 const crypto = require('node:crypto');
 
 const PRODUCTION_TYPES = new Set(['PRODUCTION_FG', 'PRODUCTION_SFG', 'PRODUCTION_STAGE']);
-const CONDITION_FIELDS = ['excluded_grade_ids', 'excluded_group_ids', 'excluded_subgroup_ids', 'excluded_sku_ids', 'branch_ids', 'source_labour_ids', 'department_ids', 'stage_ids'];
+const CONDITION_FIELDS = ['excluded_grade_ids', 'excluded_group_ids', 'excluded_subgroup_ids', 'excluded_sku_ids', 'excluded_category_ids', 'excluded_article_ids', 'branch_ids', 'source_labour_ids', 'department_ids', 'stage_ids'];
 
 // Canonical conditions are also the rate-history identity. Array ordering must
 // never change which rule a subsequent save supersedes.
@@ -51,6 +51,8 @@ const eligibilityKey = (raw, type = null) => {
 const matchesProduct = (rule, context) => {
   switch (rule.apply_on) {
     case 'SKU': return Number(rule.sku_id) === Number(context.skuId);
+    case 'ARTICLE': return Number(rule.article_id) === Number(context.articleId);
+    case 'CATEGORY': return Number(rule.category_id) === Number(context.categoryId);
     case 'SUBGROUP': return Number(rule.subgroup_id) === Number(context.subgroupId);
     case 'GROUP': return Number(rule.group_id) === Number(context.groupId);
     case 'ALL': return true;
@@ -66,6 +68,8 @@ const matchesSource = (conditions, context) =>
 
 const excludesProduct = (conditions, context) =>
   Boolean(conditions.excluded_grade_ids?.includes(Number(context.gradeId)) ||
+    conditions.excluded_category_ids?.includes(Number(context.categoryId)) ||
+    conditions.excluded_article_ids?.includes(Number(context.articleId)) ||
     conditions.excluded_group_ids?.includes(Number(context.groupId)) ||
     conditions.excluded_subgroup_ids?.includes(Number(context.subgroupId)) ||
     conditions.excluded_sku_ids?.includes(Number(context.skuId)));
@@ -85,7 +89,7 @@ const excludedByApplicableRule = (rules, context) => rules.some((rule) =>
 
 const validateEligibilityReferences = async ({ db, eligibility, commissionType, employeeIds = [], allowedBranchIds = null }) => {
   const conditions = normalizeEligibility(eligibility, commissionType);
-  const tables = { excluded_grade_ids: 'erp.grades', excluded_group_ids: 'erp.product_groups',
+  const tables = { excluded_category_ids: 'erp.product_types', excluded_article_ids: 'erp.items', excluded_grade_ids: 'erp.grades', excluded_group_ids: 'erp.product_groups',
     excluded_subgroup_ids: 'erp.product_subgroups', excluded_sku_ids: 'erp.skus', branch_ids: 'erp.branches',
     source_labour_ids: 'erp.labours', department_ids: 'erp.departments', stage_ids: 'erp.production_stages' };
   for (const [key, ids] of Object.entries(conditions)) {

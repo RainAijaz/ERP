@@ -950,6 +950,27 @@
 <% } %>
 
 <%- include("../base/partials/confirm-modal", { t, csrfToken }) %>
+<% if (page.scopeKey === "hr_payroll.commissions") { %>
+<button
+  type="button"
+  data-edit
+  data-commission-proxy-edit
+  style="position:absolute;width:0;height:0;overflow:hidden;pointer-events:none"
+  tabindex="-1"
+  aria-hidden="true"
+  data-id=""
+  data-employee_id=""
+  data-commission_type=""
+  data-apply_on=""
+  data-sku_id=""
+  data-subgroup_id=""
+  data-group_id=""
+  data-rate_type=""
+  data-value=""
+  data-status=""
+  data-reverse_on_returns=""
+></button>
+<% } %>
 <%- include("../base/partials/basic-info-utils", { t, page, basePath, modalOpen, modalMode }) %>
 <script>
   (function () {
@@ -967,6 +988,7 @@
     let _refreshScheduled = false;
 
     const refreshConditionalFields = () => {
+      if (form.dataset.commissionBatchActive === "true") return;
       if (_isRefreshing) return;
       _isRefreshing = true;
       _refreshScheduled = false;
@@ -1704,6 +1726,7 @@ const currentSeq = ++state.requestSeq;
     form.addEventListener(
       "submit",
       async (event) => {
+        if (form.dataset.commissionBatchActive === "true") return;
         if (modal.dataset.mode !== "create") return;
         if (!isBulkMode()) {
           restoreMultiSelectFromSearchableText(fields.employeeId);
@@ -3080,25 +3103,7 @@ const currentSeq = ++state.requestSeq;
 </script>
 <% } %>
 <% if (page.scopeKey === "hr_payroll.commissions") { %>
-<button
-  type="button"
-  data-edit
-  data-commission-proxy-edit
-  style="position:absolute;width:0;height:0;overflow:hidden;pointer-events:none"
-  tabindex="-1"
-  aria-hidden="true"
-  data-id=""
-  data-employee_id=""
-  data-commission_type=""
-  data-apply_on=""
-  data-sku_id=""
-  data-subgroup_id=""
-  data-group_id=""
-  data-rate_type=""
-  data-value=""
-  data-status=""
-  data-reverse_on_returns=""
-></button>
+
 <script>
   (function () {
     const basePath = "<%= basePath %>";
@@ -3159,8 +3164,11 @@ const currentSeq = ++state.requestSeq;
         `data-effective_to="${esc(row.effective_to)}"`,
         `data-employee_id="${esc(row.employee_id)}"`,
         `data-commission_type="${esc(row.commission_type)}"`,
+        `data-commission_basis="${esc(row.commission_basis)}"`,
         `data-apply_on="${esc(row.apply_on)}"`,
         `data-sku_id="${esc(row.sku_id)}"`,
+        `data-article_id="${esc(row.article_id)}"`,
+        `data-category_id="${esc(row.category_id)}"`,
         `data-subgroup_id="${esc(row.subgroup_id)}"`,
         `data-group_id="${esc(row.group_id)}"`,
         `data-rate_type="${esc(row.rate_type)}"`,
@@ -3564,6 +3572,7 @@ const currentSeq = ++state.requestSeq;
       dateRequired: t("error_recalc_date_range_required"),
       overLimit: t("error_recalc_over_limit"),
       genericError: t("generic_error"),
+      classificationFallback:t('commission_batch_fallback'),
     }) %>;
 
     const el = (sel) => modal.querySelector(sel);
@@ -3584,7 +3593,7 @@ const currentSeq = ++state.requestSeq;
 
     let lastRows = [];
     let lastFilters = null;
-    let lastFilterKey = "";
+    let lastReviewHash=null, previewSeq=0, previewController=null;
 
     const typeValues = () =>
       Array.from(modal.querySelectorAll("[data-recalc-type]"))
@@ -3605,39 +3614,6 @@ const currentSeq = ++state.requestSeq;
     const setSuccess = (message) => {
       successBox.textContent = message || "";
       show(successBox, Boolean(message));
-    };
-
-    const currentFilterKey = () => JSON.stringify({
-      employee_id: employeeSel.value || "",
-      from_date: fromInput.value || "",
-      to_date: toInput.value || "",
-      commission_types: typeValues().sort(),
-      clear_orphans: Boolean(clearOrphansBox.checked),
-    });
-
-    const currentRecalcPayload = () => ({
-      _csrf: "<%= csrfToken %>",
-      from_date: fromInput.value,
-      to_date: toInput.value,
-      commission_types: typeValues(),
-      employee_id: employeeSel.value || "",
-      clear_orphans: clearOrphansBox.checked ? "1" : "",
-    });
-
-    const filtersReady = () =>
-      Boolean(fromInput.value && toInput.value && typeValues().length);
-
-    const updateApplyState = () => {
-      applyBtn.disabled = !filtersReady();
-    };
-
-    const markPreviewDirty = () => {
-      lastFilters = null;
-      lastRows = [];
-      lastFilterKey = "";
-      show(resultsBox, false);
-      setSuccess("");
-      updateApplyState();
     };
 
     const statusTint = {
@@ -3679,31 +3655,6 @@ const currentSeq = ++state.requestSeq;
       });
     };
 
-    const renderPlan = (data) => {
-      lastRows = data.rows || [];
-      lastFilters = data.filters || null;
-      lastFilterKey = currentFilterKey();
-      const counts = data.counts || {};
-      const totals = data.totals || {};
-
-      summaryBox.textContent =
-        T.scanned + ": " + (counts.scanned_vouchers || 0) +
-        " - " + T.rows + ": " + (counts.writes || 0) + "/" + (counts.rows || 0) +
-        " - " + T.totalChange + ": " +
-        (Number(totals.delta || 0) > 0 ? "+" : "") + money(totals.delta);
-
-      show(orphanBand, Boolean(counts.cleared));
-      if (counts.cleared) {
-        orphanText.textContent = T.unmatchedHint + " (" + counts.cleared + ")";
-      }
-
-      show(resultsBox, true);
-      renderRows();
-      applyBtn.disabled = !filtersReady() || Boolean(data.over_limit);
-      if (data.over_limit) setError(T.overLimit);
-      return counts;
-    };
-
     const loadRules = async () => {
       const params = new URLSearchParams();
       if (employeeSel.value) params.set("employee_id", employeeSel.value);
@@ -3736,14 +3687,14 @@ const currentSeq = ++state.requestSeq;
     };
 
     const runPreview = async () => {
+      const current=++previewSeq;previewController?.abort();previewController=new AbortController();lastReviewHash=null;lastFilters=null;
       setError("");
       setSuccess("");
       applyBtn.disabled = true;
       const types = typeValues();
       if (!fromInput.value || !toInput.value || !types.length) {
         setError(T.dateRequired);
-        updateApplyState();
-        return false;
+        return;
       }
       const params = new URLSearchParams();
       params.set("from_date", fromInput.value);
@@ -3754,39 +3705,43 @@ const currentSeq = ++state.requestSeq;
 
       try {
         const res = await fetch(BASE + "/recalc-preview?" + params.toString(), {
+          signal:previewController.signal,
           headers: { Accept: "application/json" },
         });
         const data = await res.json();
+        if(current!==previewSeq)return;
         if (!res.ok) {
           setError((data && data.message) || T.genericError);
-          updateApplyState();
-          return false;
+          return;
         }
-        const counts = renderPlan(data);
-        return counts.writes > 0 && !data.over_limit;
+        lastRows = data.rows || [];
+        lastFilters = data.filters || null;lastReviewHash=data.review_hash;
+        const counts = data.counts || {};
+        const totals = data.totals || {};
+
+        summaryBox.textContent =
+          T.scanned + ": " + (counts.scanned_vouchers || 0) +
+          " · " + T.rows + ": " + (counts.writes || 0) + "/" + (counts.rows || 0) +
+          " · " + T.totalChange + ": " +
+          (Number(totals.delta || 0) > 0 ? "+" : "") + money(totals.delta);
+        if(lastRows.some(row=>row.classification_fallback))summaryBox.textContent+=' · '+T.classificationFallback;
+
+        show(orphanBand, Boolean(counts.cleared));
+        if (counts.cleared) {
+          orphanText.textContent = T.unmatchedHint + " (" + counts.cleared + ")";
+        }
+
+        show(resultsBox, true);
+        renderRows();
+        applyBtn.disabled = !(counts.writes > 0) || Boolean(data.over_limit);
+        if (data.over_limit) setError(T.overLimit);
       } catch (err) {
-        setError(String((err && err.message) || err));
-        updateApplyState();
-        return false;
+        if(current===previewSeq && err.name!=="AbortError")setError(String((err && err.message) || err));
       }
     };
 
     const apply = async () => {
-      const payload = lastFilters && lastFilterKey === currentFilterKey()
-        ? {
-            _csrf: "<%= csrfToken %>",
-            from_date: lastFilters.from_date,
-            to_date: lastFilters.to_date,
-            commission_types: lastFilters.commission_types,
-            employee_id: lastFilters.employee_id || "",
-            clear_orphans: clearOrphansBox.checked ? "1" : "",
-          }
-        : currentRecalcPayload();
-      if (!payload.from_date || !payload.to_date || !payload.commission_types.length) {
-        setError(T.dateRequired);
-        updateApplyState();
-        return;
-      }
+      if (!lastFilters) return;
       if (clearOrphansBox.checked) {
         // Zeroing unmatched commission removes pay that may already have been
         // issued, so it always needs an explicit acknowledgement.
@@ -3814,19 +3769,17 @@ const currentSeq = ++state.requestSeq;
             "x-csrf-token": "<%= csrfToken %>",
           },
           body: JSON.stringify({
-            _csrf: payload._csrf,
-            from_date: payload.from_date,
-            to_date: payload.to_date,
-            commission_types: payload.commission_types,
-            employee_id: payload.employee_id,
-            clear_orphans: payload.clear_orphans,
+            _csrf: "<%= csrfToken %>",
+            review_version:1,review_hash:lastReviewHash,
+            from_date: lastFilters.from_date,
+            to_date: lastFilters.to_date,
+            commission_types: lastFilters.commission_types,
+            employee_id: lastFilters.employee_id || "",
+            clear_orphans: clearOrphansBox.checked ? "1" : "",
           }),
         });
         const data = await res.json();
         if (!res.ok && res.status !== 202) {
-          if (data && data.requires_clear_orphans) {
-            renderPlan(data);
-          }
           setError((data && data.message) || T.genericError);
           applyBtn.disabled = false;
           return;
@@ -3845,7 +3798,7 @@ const currentSeq = ++state.requestSeq;
       setError("");
       setSuccess("");
       show(resultsBox, false);
-      updateApplyState();
+      applyBtn.disabled = true;
       loadRules();
     };
     const closeModal = () => {
@@ -3928,17 +3881,11 @@ const currentSeq = ++state.requestSeq;
     applyBtn.addEventListener("click", apply);
     changedOnlyBox.addEventListener("change", renderRows);
     clearOrphansBox.addEventListener("change", runPreview);
-    employeeSel.addEventListener("change", () => {
-      markPreviewDirty();
-      loadRules();
-    });
-    fromInput.addEventListener("change", markPreviewDirty);
-    toInput.addEventListener("change", markPreviewDirty);
+    const invalidateRecalc=()=>{++previewSeq;previewController?.abort();lastFilters=null;lastReviewHash=null;applyBtn.disabled=true;};
+    [employeeSel,fromInput,toInput,...modal.querySelectorAll("[data-recalc-type]")].forEach(control=>control.addEventListener("change",invalidateRecalc));
+    employeeSel.addEventListener("change", loadRules);
     modal.querySelectorAll("[data-recalc-type]").forEach((box) =>
-      box.addEventListener("change", () => {
-        markPreviewDirty();
-        loadRules();
-      }),
+      box.addEventListener("change", loadRules),
     );
   })();
 </script>

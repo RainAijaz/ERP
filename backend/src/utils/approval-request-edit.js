@@ -33,7 +33,7 @@ const getEditableKeys = (request) => {
   const current = safeJson(request?.new_value);
   if (!current || typeof current !== "object" || Array.isArray(current)) return [];
   if (current.wip_count === true) return [];
-  if (current.mode === 'PAYROLL_FINALIZE') return [];
+  if (current.mode === 'PAYROLL_FINALIZE' || current.mode === 'COMMISSION_BATCH_V1') return [];
   if (current.mode === 'SALARY_REVIEW') return [];
   const keys = Object.keys(current).filter((key) => !key.startsWith("_") && !SYSTEM_KEYS.has(key));
   // Use the same schema as the form: optional and newly added fields may be

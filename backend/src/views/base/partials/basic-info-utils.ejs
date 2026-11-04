@@ -458,6 +458,11 @@
               ? input.dataset.defaultValue ||
                 (name === "status" ? "active" : "")
               : "";
+          if(input.tagName==='SELECT' && input.dataset.searchableUrl && hasPayloadValue && payload[name]!=null && String(payload[name])!=='') {
+            const value=String(payload[name]);
+            if(!Array.from(input.options).some(option=>option.value===value))input.add(new Option(value,value));
+            input.dispatchEvent(new CustomEvent('searchable:resolve',{detail:{ids:[value]}}));
+          }
           input.value = hasPayloadValue ? (payload[name] && typeof payload[name] === "object" ? JSON.stringify(payload[name]) : payload[name] ?? "") : defaultValue;
           if (input.tagName === "SELECT") {
             input.dispatchEvent(new Event("change", { bubbles: true }));
@@ -860,6 +865,8 @@
           BRANCH_SALE: "<%- t('commission_type_branch_sale') || 'Branch Sale' %>",
           TRANSFER: "<%- t('commission_type_transfer') || 'FG Transfer Commission' %>",
           PARTY: "<%- t('commission_type_party') || 'Party' %>",
+          PRODUCTION_FG: "<%- t('commission_type_production_fg') || 'Production (FG)' %>",
+          PRODUCTION_SFG: "<%- t('commission_type_production_sfg') || 'Production (SFG)' %>",
         };
         const ctBadge = document.createElement("span");
         ctBadge.className =

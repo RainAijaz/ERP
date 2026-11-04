@@ -1,0 +1,185 @@
+<section class="hidden space-y-4" data-commission-batch>
+  <p class="text-sm text-slate-600"><%= t('commission_batch_help') %></p>
+  <div class="grid gap-4 md:grid-cols-2">
+    <label class="block text-sm font-semibold text-slate-600"><span><%= t('employees') %></span>
+      <select data-batch-employee data-searchable-select="true" data-searchable-variant="unified" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+        <option value=""><%= t('select') %></option>
+        <% (page.fields.find(field=>field.name==='employee_id')?.options || []).forEach(function(option) { %><option value="<%= option.value %>"><%= t(option.label) %></option><% }) %>
+      </select>
+    </label>
+    <div class="grid grid-cols-2 gap-3">
+      <label class="block text-sm font-semibold text-slate-600"><span><%= t('effective_from') %></span><input type="date" data-batch-from class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700" value="<%= page.defaults.effective_from %>"></label>
+      <label class="block text-sm font-semibold text-slate-600"><span><%= t('effective_to') %></span><input type="date" data-batch-to class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"></label>
+    </div>
+  </div>
+  <div class="space-y-3" data-commission-cards></div>
+  <div class="flex flex-wrap items-center gap-3">
+    <button type="button" data-commission-add-card class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600"><%= t('commission_batch_add') %></button>
+    <button type="button" data-commission-legacy class="text-xs font-semibold text-slate-500 underline"><%= t('commission_batch_legacy') %></button>
+  </div>
+  <div class="hidden rounded-xl border border-slate-200 bg-slate-50 p-4" data-batch-preview role="status" aria-live="polite"></div>
+  <label class="hidden flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800" data-batch-clear-wrapper><input type="checkbox" data-batch-clear class="mt-1"><span><%= t('commission_batch_clear_confirm') %></span></label>
+</section>
+<template data-commission-card-template>
+  <article class="rounded-xl border border-slate-200 bg-white p-4" data-commission-card data-expanded="true">
+    <div class="flex items-center justify-between gap-3">
+      <button type="button" class="min-w-0 flex-1 text-left text-sm font-semibold text-slate-700" data-card-toggle aria-expanded="true"><span data-card-summary><%= t('commission_batch_new') %></span></button>
+      <button type="button" data-commission-duplicate-card class="text-xs font-semibold text-slate-500 underline"><%= t('commission_batch_duplicate') %></button>
+      <button type="button" data-commission-remove-card class="text-xs font-semibold text-rose-600"><%= t('remove') %></button>
+    </div>
+    <p class="hidden mt-2 text-sm text-rose-700" data-card-error role="alert"></p>
+    <div class="mt-4 grid gap-4 md:grid-cols-2" data-card-body>
+      <label class="block text-sm font-semibold text-slate-600"><span><%= t('commission_earned_on') %></span><select data-card-field="source" data-searchable-select="true" data-searchable-variant="unified" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"><option value="SALE"><%= t('commission_source_sale') %></option><option value="PRODUCTION"><%= t('commission_source_production') %></option><option value="OTHER"><%= t('commission_source_other') %></option></select></label>
+      <label class="block text-sm font-semibold text-slate-600"><span><%= t('commission_scope') %></span><select data-card-field="commission_type" data-searchable-select="true" data-searchable-variant="unified" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"></select></label>
+      <label class="block text-sm font-semibold text-slate-600"><span><%= t('apply_on') %></span><select data-card-field="apply_on" data-searchable-select="true" data-searchable-variant="unified" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"><% ['CATEGORY','GROUP','SUBGROUP','ARTICLE','SKU','ALL'].forEach(function(scope) { %><option value="<%= scope %>" <%= scope==='ARTICLE'?'selected':'' %>><%= t('apply_on_'+scope.toLowerCase()) %></option><% }) %></select></label>
+      <label class="block text-sm font-semibold text-slate-600" data-card-products-wrapper><span><%= t('commission_batch_products') %></span><select multiple data-card-field="products" data-card-remote="article" data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-searchable-max-options="100" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"></select></label>
+      <label class="block text-sm font-semibold text-slate-600"><span><%= t('rate_type') %></span><select data-card-field="rate_type" data-searchable-select="true" data-searchable-variant="unified" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"><option value="PER_DOZEN"><%= t('rate_type_per_dozen') %></option><option value="PER_PAIR"><%= t('rate_type_per_pair') %></option></select></label>
+      <label class="block text-sm font-semibold text-slate-600"><span><%= t('rate_value') %></span><input data-field="value" data-card-field="value" type="number" step="0.01" min="0" max="99999999.99" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"></label>
+      <label class="block text-sm font-semibold text-slate-600" data-card-quantities-wrapper><span><%= t('commission_sales_quantities') %></span><select data-card-field="sales_quantity_scope" data-searchable-select="true" data-searchable-variant="unified" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"><option value="PACKED_ONLY"><%= t('commission_packed_only') %></option><option value="ALL"><%= t('commission_packed_and_loose') %></option></select></label>
+      <% const cardConditions=[['branch_ids','branch','commission_eligible_branches'],['source_labour_ids','worker','commission_source_workers'],['department_ids','department','commission_production_departments'],['stage_ids','stage','commission_production_stages']]; %>
+      <% cardConditions.forEach(function(condition) { %><label class="block text-sm font-semibold text-slate-600" <%- condition[0]!=='branch_ids'?'data-card-stage-condition':'' %>><span><%= t(condition[2]) %></span><select multiple data-card-condition="<%= condition[0] %>" data-card-remote="<%= condition[1] %>" data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-searchable-max-options="100" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"></select><span class="mt-1 block text-xs font-normal text-slate-500"><%= t('commission_blank_all') %></span></label><% }) %>
+      <details class="rounded-xl border border-slate-200 bg-slate-50 p-4 md:col-span-2"><summary class="cursor-pointer text-sm font-semibold text-slate-600"><%= t('commission_batch_advanced') %></summary>
+        <div class="mt-3 grid gap-4 md:grid-cols-2">
+          <label class="block text-sm font-semibold text-slate-600"><span><%= t('commission_basis') %></span><select data-card-field="commission_basis" data-searchable-select="true" data-searchable-variant="unified" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"><% ['FIXED_PER_UNIT','NET_SALES_PERCENT','GROSS_MARGIN_PERCENT','FIXED_PER_INVOICE'].forEach(function(basis) { %><option value="<%= basis %>"><%= t('commission_basis_'+basis.toLowerCase()) %></option><% }) %></select></label>
+          <% [['excluded_category_ids','category','commission_excluded_categories'],['excluded_group_ids','group','commission_excluded_groups'],['excluded_subgroup_ids','subgroup','commission_excluded_subgroups'],['excluded_article_ids','article','commission_excluded_articles'],['excluded_grade_ids','grade','commission_excluded_grades'],['excluded_sku_ids','sku','commission_excluded_skus']].forEach(function(condition) { %><label class="block text-sm font-semibold text-slate-600"><span><%= t(condition[2]) %></span><select multiple data-card-condition="<%= condition[0] %>" data-card-remote="<%= condition[1] %>" data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-searchable-max-options="100" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"></select></label><% }) %>
+          <label class="block text-sm font-semibold text-slate-600"><span><%= t('commission_batch_from_override') %></span><input data-card-field="effective_from" type="date" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"></label>
+          <label class="block text-sm font-semibold text-slate-600"><span><%= t('commission_batch_to_override') %></span><input data-card-field="effective_to" type="date" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"></label>
+          <label class="flex items-start gap-3 text-sm font-semibold text-slate-600"><input type="checkbox" data-card-field="open_ended"><span><%= t('commission_batch_open_ended') %></span></label>
+          <label class="flex items-start gap-3 text-sm font-semibold text-slate-600"><input type="checkbox" data-card-field="reverse_on_returns"><span><%= t('reverse_on_returns') %></span></label>
+          <label class="flex items-start gap-3 text-sm font-semibold text-slate-600"><input type="checkbox" data-card-field="replace_existing_sku_rates"><span><%= t('commission_replace_sku_rates') %></span></label>
+        </div>
+        <p class="mt-3 text-xs text-slate-500"><%= t('commission_batch_precedence') %></p>
+      </details>
+    </div>
+  </article>
+</template>
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+  const root=document.querySelector('[data-commission-batch]');if(!root)return;
+  const form=root.closest('form');const modal=form.closest('[data-modal]');const cards=root.querySelector('[data-commission-cards]');
+  const template=document.querySelector('[data-commission-card-template]');const submit=form.querySelector('button[type="submit"]');
+  const error=form.querySelector('[data-modal-error]');const notice=form.querySelector('[data-modal-notice]');
+  const legacy=form.querySelector('[data-commission-fields]');const legacyPanel=form.querySelector('[data-commission-bulk-panel]');
+  const previewBox=root.querySelector('[data-batch-preview]');const clearWrap=root.querySelector('[data-batch-clear-wrapper]');
+  const T=<%- JSON.stringify(Object.fromEntries(['commission_batch_save','commission_batch_confirm','commission_batch_new','commission_batch_limit','commission_batch_before','commission_batch_after','commission_batch_delta','commission_batch_fallback','commission_batch_saved','commission_batch_wait','commission_batch_review','commission_batch_title','network_error','generic_error'].map(key=>[key,t(key)]))).replace(/</g,'\\u003c') %>;
+  const types=<%- JSON.stringify(Object.fromEntries(['SALESMAN_SALE','BRANCH_SALE','PRODUCTION_FG','PRODUCTION_SFG','PRODUCTION_STAGE','TRANSFER','PARTY'].map(key=>[key,t('commission_type_'+key.toLowerCase())]))).replace(/</g,'\\u003c') %>;
+  const base=<%- JSON.stringify(basePath) %>;const token=<%- JSON.stringify(csrfToken) %>;
+  let active=false,busy=false,preview=null,key=null,sequence=0,controller=null,requestSeq=0,locked=false;
+  const field=(card,name)=>card.querySelector(`[data-card-field="${name}"]`);
+  const selected=select=>Array.from(select.selectedOptions).map(option=>Number(option.value)).filter(id=>id>0);
+  const refresh=scope=>{window.initSearchableSelects?.(scope);window.refreshSearchableSelects?.(scope);};
+  const displayError=(message,cardId)=>{
+    error.textContent=message;error.hidden=!message;
+    if(cardId){const card=Array.from(cards.children).find(item=>item.dataset.cardId===cardId);if(card){expand(card);const el=card.querySelector('[data-card-error]');el.textContent=message;el.classList.remove('hidden');}}
+  };
+  const invalidate=()=>{if(locked)return;preview=null;key=null;requestSeq++;controller?.abort();previewBox.classList.add('hidden');submit.textContent=T.commission_batch_save;};
+  const summary=card=>{
+    const product=field(card,'products');const labels=Array.from(product.selectedOptions).map(option=>option.textContent);
+    const scope=field(card,'apply_on');const rate=field(card,field(card,'commission_basis').value==='FIXED_PER_UNIT'?'rate_type':'commission_basis');
+    card.querySelector('[data-card-summary]').textContent=[types[field(card,'commission_type').value],scope.selectedOptions[0]?.textContent,labels.join(', '),field(card,'value').value?`${field(card,'value').value} ${rate.selectedOptions[0]?.textContent}`:''].filter(Boolean).join(' · ') || T.commission_batch_new;
+  };
+  const expand=target=>{
+    Array.from(cards.children).forEach(card=>{const open=card===target;card.dataset.expanded=String(open);card.querySelector('[data-card-body]').classList.toggle('hidden',!open);card.querySelector('[data-card-toggle]').setAttribute('aria-expanded',String(open));summary(card);});refresh(target);
+  };
+  const update=(card,reset=false)=>{
+    const source=field(card,'source').value;const type=field(card,'commission_type');const old=type.value;
+    const choices=Object.keys(types).filter(value=>source==='SALE'?['SALESMAN_SALE','BRANCH_SALE'].includes(value):source==='PRODUCTION'?value.startsWith('PRODUCTION_'):['TRANSFER','PARTY'].includes(value));
+    type.replaceChildren(...choices.map(value=>new Option(types[value],value)));if(choices.includes(old))type.value=old;
+    const scope=field(card,'apply_on').value;const product=field(card,'products');product.dataset.cardRemote=scope.toLowerCase();
+    field(card,'rate_type').closest('label').classList.toggle('hidden',field(card,'commission_basis').value!=='FIXED_PER_UNIT');
+    const sales=['SALESMAN_SALE','BRANCH_SALE'].includes(type.value);card.querySelector('[data-card-quantities-wrapper]').classList.toggle('hidden',!sales);
+    card.querySelectorAll('[data-card-stage-condition]').forEach(label=>{const enabled=type.value==='PRODUCTION_STAGE';label.classList.toggle('hidden',!enabled);const select=label.querySelector('select');select.disabled=!enabled;if(!enabled)select.replaceChildren();});
+    card.querySelector('[data-card-products-wrapper]').classList.toggle('hidden',scope==='ALL');product.disabled=scope==='ALL';
+    const departments=selected(card.querySelector('[data-card-condition="department_ids"]'));
+    card.querySelectorAll('[data-card-remote]').forEach(select=>{
+      if(reset && ['products','excluded_category_ids','excluded_article_ids','excluded_sku_ids','excluded_group_ids','excluded_subgroup_ids'].includes(select.dataset.cardField || select.dataset.cardCondition))select.replaceChildren();
+      const url=new URL(base+'/options',location.href);url.searchParams.set('kind',select.dataset.cardRemote);url.searchParams.set('commission_type',type.value);
+      if(select.dataset.cardRemote==='stage' && departments.length)url.searchParams.set('department_ids',departments.join(','));
+      if(select.dataset.searchableUrl!==url.toString()){select.dataset.searchableUrl=url.toString();select.dispatchEvent(new Event('searchable:invalidate'));}
+    });summary(card);refresh(card);
+  };
+  const add=(copy=null)=>{
+    if(cards.children.length>=20){displayError(T.commission_batch_limit);return;}
+    const card=template.content.firstElementChild.cloneNode(true);card.dataset.cardId='card-'+(++sequence);cards.appendChild(card);update(card);
+    if(copy){
+      field(card,'source').value=field(copy,'source').value;update(card);
+      ['commission_type','apply_on','commission_basis','rate_type','value','effective_from','effective_to','sales_quantity_scope','open_ended','reverse_on_returns','replace_existing_sku_rates'].forEach(name=>{const a=field(card,name),b=field(copy,name);if(a.type==='checkbox')a.checked=b.checked;else a.value=b.value;});update(card);
+      for(const select of copy.querySelectorAll('[data-card-remote]')){
+        const target=select.dataset.cardField?field(card,select.dataset.cardField):card.querySelector(`[data-card-condition="${select.dataset.cardCondition}"]`);
+        target.replaceChildren(...Array.from(select.selectedOptions).map(option=>new Option(option.textContent,option.value,true,true)));
+      }
+    }
+    card.addEventListener('change',event=>{
+      const name=event.target.dataset.cardField;
+      if(name==='source' || name==='commission_type' || name==='apply_on')update(card,true);
+      if(name==='commission_basis')update(card);
+      if(event.target.dataset.cardCondition==='department_ids'){card.querySelector('[data-card-condition="stage_ids"]').replaceChildren();update(card);}
+      summary(card);invalidate();
+    });card.addEventListener('input',()=>{summary(card);invalidate();});
+    card.querySelector('[data-card-toggle]').addEventListener('click',()=>expand(card));
+    card.querySelector('[data-commission-duplicate-card]').addEventListener('click',()=>{add(card);invalidate();});
+    card.querySelector('[data-commission-remove-card]').addEventListener('click',()=>{card.remove();if(!cards.children.length)add();else expand(cards.lastElementChild);invalidate();});
+    expand(card);refresh(card);return card;
+  };
+  const controls=()=>Array.from(legacy.querySelectorAll('input,select,textarea'));
+  const mode=batch=>{
+    active=batch;root.classList.toggle('hidden',!batch);legacy.classList.toggle('hidden',batch);legacy.disabled=batch;
+    if(batch){legacyPanel?.classList.add('hidden');controls().forEach(control=>{control.disabled=true;});}
+    else controls().forEach(control=>{
+      control.disabled=Boolean(control.closest('[data-hide-on-create]') && modal.dataset.mode==='create' || control.closest('[data-hide-on-edit]') && modal.dataset.mode==='edit');
+    });
+    form.querySelectorAll('[data-commission-bulk-panel] input').forEach(input=>input.disabled=batch);
+    root.querySelectorAll('input,select,button').forEach(control=>control.disabled=!batch);
+    form.dataset.commissionBatchActive=String(batch);submit.textContent=batch?T.commission_batch_save:<%- JSON.stringify(t('save_changes')) %>;refresh(form);
+    if(!batch){
+      legacy.querySelector('[data-field="apply_on"]')?.dispatchEvent(new Event('change',{bubbles:true}));
+      legacy.querySelector('[data-field="commission_type"]')?.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+  };
+  const payload=()=>({version:1,employee_id:Number(root.querySelector('[data-batch-employee]').value),defaults:{effective_from:root.querySelector('[data-batch-from]').value,effective_to:root.querySelector('[data-batch-to]').value || null},clear_unmatched:root.querySelector('[data-batch-clear]').checked,
+    cards:Array.from(cards.children).map(card=>{
+      const value={card_id:card.dataset.cardId,commission_type:field(card,'commission_type').value,apply_on:field(card,'apply_on').value,commission_basis:field(card,'commission_basis').value,rate_type:field(card,'rate_type').value,value:field(card,'value').value,reverse_on_returns:field(card,'reverse_on_returns').checked,replace_existing_sku_rates:field(card,'replace_existing_sku_rates').checked,eligibility:{}};
+      const names={CATEGORY:'category_ids',GROUP:'group_ids',SUBGROUP:'subgroup_ids',ARTICLE:'article_ids',SKU:'sku_ids'};
+      if(names[value.apply_on])value[names[value.apply_on]]=selected(field(card,'products'));
+      ['effective_from','effective_to'].forEach(name=>{if(field(card,name).value)value[name]=field(card,name).value;});
+      if(field(card,'open_ended').checked)value.effective_to=null;
+      card.querySelectorAll('[data-card-condition]').forEach(select=>{const values=selected(select);if(!select.disabled&&values.length)value.eligibility[select.dataset.cardCondition]=values;});
+      if(['SALESMAN_SALE','BRANCH_SALE'].includes(value.commission_type))value.eligibility.sales_quantity_scope=field(card,'sales_quantity_scope').value;
+      return value;
+    })});
+  const call=async(path,body)=>{
+    controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),15000);
+    try {const response=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':token},body:JSON.stringify({...body,_csrf:token}),signal:controller.signal});
+      const data=await response.json().catch(()=>({message:T.generic_error}));if(!response.ok || !data.preview_hash && !data.ok && !data.queued && !data.applied && !data.closed){const err=new Error(data.message || T.generic_error);err.cardId=data.card_id;err.status=response.status;throw err;}return data;
+    } finally {clearTimeout(timeout);}
+  };
+  form.addEventListener('submit',async event=>{
+    if(!active)return;event.preventDefault();event.stopImmediatePropagation();if(busy)return;
+    busy=true;submit.disabled=true;displayError('');const current=++requestSeq;
+    try {
+      const body=payload();
+      if(!preview){
+        const data=await call('/batch-preview',body);if(current!==requestSeq)return;preview=data;key=crypto.randomUUID();
+        previewBox.replaceChildren();const text=document.createElement('p');text.className='text-sm font-semibold text-slate-700';
+        text.textContent=`${T.commission_batch_before}: ${data.totals.old_total.toFixed(2)} · ${T.commission_batch_after}: ${data.totals.new_total.toFixed(2)} · ${T.commission_batch_delta}: ${data.totals.delta.toFixed(2)}`;previewBox.appendChild(text);
+        const explanation=document.createElement('p');explanation.className='mt-2 text-xs text-slate-500';explanation.textContent=T.commission_batch_review;previewBox.appendChild(explanation);
+        if(data.classification_fallback){const warning=document.createElement('p');warning.textContent=T.commission_batch_fallback;warning.className='mt-2 text-xs text-amber-700';previewBox.appendChild(warning);}
+        clearWrap.classList.toggle('hidden',!data.requires_clear_confirmation);previewBox.classList.remove('hidden');submit.textContent=T.commission_batch_confirm;
+      } else {
+        locked=true;root.querySelectorAll('input,select,button').forEach(control=>control.disabled=true);refresh(root);
+        const result=await call('/batch-save',{...body,preview_hash:preview.preview_hash,idempotency_key:key});
+        notice.textContent=result.message || T.commission_batch_saved;notice.hidden=false;setTimeout(()=>location.reload(),1400);
+      }
+    } catch(err){if(current!==requestSeq)return;displayError(err.name==='AbortError'?T.network_error:err.message,err.cardId);if(err.status===409){preview=null;key=null;submit.textContent=T.commission_batch_save;}}
+    finally {busy=false;locked=false;submit.disabled=false;if(active){root.querySelectorAll('input,select,button').forEach(control=>control.disabled=false);Array.from(cards.children).forEach(card=>update(card));}refresh(root);}
+  },true);
+  root.querySelector('[data-commission-add-card]').addEventListener('click',()=>{add();invalidate();});
+  root.querySelector('[data-commission-legacy]').addEventListener('click',()=>{mode(false);document.dispatchEvent(new CustomEvent('modal:opened',{detail:{mode:'edit'}}));});
+  root.querySelectorAll('[data-batch-employee],[data-batch-from],[data-batch-to],[data-batch-clear]').forEach(control=>control.addEventListener('change',invalidate));
+  document.addEventListener('modal:opened',event=>{
+    const create=event.detail?.mode==='create';mode(create);if(create){modal.querySelector('[data-modal-title]').textContent=T.commission_batch_title;controller?.abort();cards.replaceChildren();sequence=0;preview=null;key=null;previewBox.classList.add('hidden');clearWrap.classList.add('hidden');root.querySelector('[data-batch-clear]').checked=false;root.querySelector('[data-batch-employee]').value='';add();refresh(root);}
+  });
+  // Legacy listeners keep their established single-rule behavior.
+  mode(false);
+});
+</script>

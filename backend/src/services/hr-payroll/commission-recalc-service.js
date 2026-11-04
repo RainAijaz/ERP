@@ -19,6 +19,7 @@
 //   SALES_VOUCHER_LINE -> SKU meta.commission + the auto EMPLOYEE voucher_line
 //                         (SALESMAN_SALE, which never touches commission_ledger)
 const knex = require("../../db/knex");
+const { canonicalJson } = require('../../utils/canonical-json');
 const { loadStageCommissionLines } = require("./commission-configuration-service");
 const {
   computeLedgerEntriesForBranch,
@@ -348,7 +349,7 @@ const loadEligibleVouchers = ({ db, voucherTypeCodes, input }) => {
 const loadSkuLines = (db, voucherId) =>
   db("erp.voucher_line")
     .select("id", "line_kind", "sku_id", "qty", "uom_id", "rate", "amount", "meta", "line_no")
-    .where({ voucher_header_id: voucherId, line_kind: "SKU" });
+    .where({ voucher_header_id: voucherId, line_kind: "SKU" }).then(rows=>rows.map(line=>({...line,_commission_historical:true})));
 
 const loadProductionOutputs = (db, voucherId, category) =>
   db("erp.stock_ledger as sl")
@@ -382,7 +383,7 @@ const resolveStatus = ({ previous, next, producedByRule = false }) => {
   return "changed";
 };
 
-const buildLedgerPlanRows = async ({ db, input, commissionType }) => {
+const buildLedgerPlanRows = async ({ db, input, commissionType, ruleOverrides }) => {
   const voucherTypeCodes = VOUCHER_TYPES_BY_COMMISSION_TYPE[commissionType] || [];
   if (!voucherTypeCodes.length) return { rows: [], scanned: 0 };
 
@@ -391,7 +392,7 @@ const buildLedgerPlanRows = async ({ db, input, commissionType }) => {
 
   const voucherIds = vouchers.map((voucher) => Number(voucher.id));
   const existingRows = await db("erp.commission_ledger")
-    .select("voucher_id", "employee_id", "total_amount")
+    .select("voucher_id", "employee_id", "total_amount", "lines_detail")
     .where("commission_type", commissionType)
     .whereIn("voucher_id", voucherIds);
   const existingByKey = new Map(
@@ -404,6 +405,7 @@ const buildLedgerPlanRows = async ({ db, input, commissionType }) => {
   const productionCategory = PRODUCTION_CATEGORY_BY_COMMISSION_TYPE[commissionType] || null;
   const rows = [];
   const seenKeys = new Set();
+  const fallbackVoucherIds=new Set();
 
   for (const voucher of vouchers) {
     let lines;
@@ -433,11 +435,15 @@ const buildLedgerPlanRows = async ({ db, input, commissionType }) => {
           : rawLines;
     }
 
+    lines=lines.map(line=>({...line,_commission_historical:true}));
+    if(lines.some(line=>{const context=line.meta?.commission_context || line.meta?.commission?.context;return !context || context.classification_fallback || !Object.hasOwn(context,'article_id') || !Object.hasOwn(context,'category_id');}))fallbackVoucherIds.add(Number(voucher.id));
     const entries = await computeLedgerEntriesForBranch({
       trx: db,
       lines,
       branchId: Number(voucher.branch_id),
       commissionType,
+      ruleOverrides,
+      employeeId: input.employeeId,
       // Each voucher resolves against its OWN date, so a range that spans a rate
       // change recomputes each half at the rate that was in force then.
       voucherDate: voucher.voucher_date,
@@ -453,6 +459,8 @@ const buildLedgerPlanRows = async ({ db, input, commissionType }) => {
       const next = roundMoney(entry.total_amount);
       rows.push({
         storage: "LEDGER",
+        details_changed:canonicalJson((existingRows.find(row=>Number(row.voucher_id)===Number(voucher.id) && Number(row.employee_id)===employeeId)?.lines_detail || []).filter(line=>!line.commission_recalc))!==canonicalJson(entry.lines_detail || []),
+        classification_fallback:fallbackVoucherIds.has(Number(voucher.id)),
         voucher_id: Number(voucher.id),
         voucher_no: Number(voucher.voucher_no),
         voucher_type_code: voucher.voucher_type_code,
@@ -498,6 +506,7 @@ const buildLedgerPlanRows = async ({ db, input, commissionType }) => {
       previous_rate: previous,
       new_rate: 0,
       status: "cleared",
+      classification_fallback:fallbackVoucherIds.has(Number(voucher.id)),
       write: {
         storage: "LEDGER",
         voucher_id: Number(voucher.id),
@@ -512,7 +521,7 @@ const buildLedgerPlanRows = async ({ db, input, commissionType }) => {
   return { rows, scanned: vouchers.length };
 };
 
-const buildSalesmanPlanRows = async ({ db, input, t }) => {
+const buildSalesmanPlanRows = async ({ db, input, t, ruleOverrides }) => {
   const vouchers = await loadEligibleVouchers({
     db,
     voucherTypeCodes: VOUCHER_TYPES_BY_COMMISSION_TYPE.SALESMAN_SALE,
@@ -525,6 +534,7 @@ const buildSalesmanPlanRows = async ({ db, input, t }) => {
     const planned = await planSalesmanCommissionRecomputeTx({
       db,
       voucherId: Number(voucher.id),
+      ruleOverrides,
       employeeId: input.employeeId,
       t,
     });
@@ -533,15 +543,13 @@ const buildSalesmanPlanRows = async ({ db, input, t }) => {
 
     const previous = planned.previous_amount;
     const next = roundMoney(planned.new_amount);
-    const status = resolveStatus({
-      previous,
-      next,
-      producedByRule: Number(planned.matched_rule_count || 0) > 0,
-    });
+    const status = resolveStatus({ previous, next, producedByRule: Number(planned.matched_rule_count || 0) > 0 });
     if (status === "unchanged" && previous === null) continue;
 
     rows.push({
       storage: "SALES_VOUCHER_LINE",
+      details_changed:planned.details_changed,
+      classification_fallback:planned.classification_fallback,
       voucher_id: Number(voucher.id),
       voucher_no: Number(voucher.voucher_no),
       voucher_type_code: voucher.voucher_type_code,
@@ -558,7 +566,7 @@ const buildSalesmanPlanRows = async ({ db, input, t }) => {
   return { rows, scanned: vouchers.length };
 };
 
-const buildRecalcPlan = async ({ db = knex, input, locale = "en", t = (key) => key }) => {
+const buildRecalcPlan = async ({ db = knex, input, locale = "en", t = (key) => key, ruleOverrides = null }) => {
   if (!input?.fromDate || !input?.toDate) {
     return {
       filters: input,
@@ -588,8 +596,8 @@ const buildRecalcPlan = async ({ db = knex, input, locale = "en", t = (key) => k
   let scannedTotal = 0;
   for (const commissionType of input.commissionTypes) {
     const next = LEDGER_TYPES.has(commissionType)
-      ? await buildLedgerPlanRows({ db, input, commissionType })
-      : await buildSalesmanPlanRows({ db, input, t });
+      ? await buildLedgerPlanRows({ db, input, commissionType, ruleOverrides })
+      : await buildSalesmanPlanRows({ db, input, t, ruleOverrides });
     rows = rows.concat(next.rows);
     scannedTotal += next.scanned;
     next.rows.forEach((row) => scannedVoucherIds.add(row.voucher_id));
@@ -606,7 +614,7 @@ const buildRecalcPlan = async ({ db = knex, input, locale = "en", t = (key) => k
     row.will_write =
       row.status === "cleared"
         ? Boolean(input.clearOrphans)
-        : row.status === "new" || row.status === "changed";
+        : row.status === "new" || row.status === "changed" || Boolean(row.details_changed);
   });
 
   rows.sort(
@@ -706,6 +714,8 @@ const fetchActiveRulesForScope = async ({
       "ecr.commission_basis",
       "ecr.apply_on",
       "ecr.sku_id",
+      db.raw("(to_jsonb(ecr)->>'article_id')::bigint as article_id"),
+      db.raw("(to_jsonb(ecr)->>'category_id')::bigint as category_id"),
       "ecr.subgroup_id",
       "ecr.group_id",
       "ecr.value",

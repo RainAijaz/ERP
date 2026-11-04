@@ -40,8 +40,9 @@ const {
   RECALC_APPROVAL_MODE,
 } = require("../../utils/commission-recalc-approval");
 const { normalizeEligibility, eligibilityKey } = require("../../services/hr-payroll/commission-eligibility-service");
-const { searchCommissionOptions, validateConfiguration } = require("../../services/hr-payroll/commission-configuration-service");
+const { searchCommissionOptions, validateConfiguration, validateRuleProductScope } = require("../../services/hr-payroll/commission-configuration-service");
 const COMMISSION_BASIS_FIXED_PER_UNIT = "FIXED_PER_UNIT";
+const { recalcReviewHash } = require('../../services/hr-payroll/commission-review-service');
 const COMMISSION_RATE_TYPES = new Set(["PER_DOZEN", "PER_PAIR"]);
 const COMMISSION_TYPES = new Set([
   "SALESMAN_SALE",
@@ -142,6 +143,8 @@ const page = {
     { table: { ssg: "erp.product_subgroups" }, on: ["si.subgroup_id", "ssg.id"] },
     { table: { spg: "erp.product_groups" }, on: ["si.group_id", "spg.id"] },
     { table: { br: "erp.branches" }, on: ["t.branch_id", "br.id"] },
+    { table: { ca: "erp.items" }, on: ["t.article_id", "ca.id"] },
+    { table: { pc: "erp.product_types" }, on: ["t.category_id", "pc.id"] },
   ],
   extraSelect: (locale) => [
     locale === "ur"
@@ -157,6 +160,8 @@ const page = {
     knex.raw(
       `CASE
         WHEN t.apply_on='SKU' THEN COALESCE(s.sku_code, '')
+        WHEN t.apply_on='ARTICLE' THEN COALESCE(ca.code || ' - ' || ca.name,'')
+        WHEN t.apply_on='CATEGORY' THEN COALESCE(pc.name,'')
         WHEN t.apply_on='SUBGROUP' THEN COALESCE(sg.name, '')
         WHEN t.apply_on='GROUP' THEN COALESCE(pg.name, '')
         ELSE 'ALL'
@@ -247,6 +252,7 @@ const page = {
     { key: "reverse_on_returns", label: "reverse_on_returns" },
   ],
   fields: [
+    {name:"commission_basis",type:"hidden"},
     { name: "eligibility", label: "commission_conditions", type: "hidden" },
     {
       name: "employee_id",
@@ -294,6 +300,8 @@ const page = {
       type: "select",
       required: true,
       options: [
+        { value: "ARTICLE", label: "apply_on_article" },
+        { value: "CATEGORY", label: "apply_on_category" },
         { value: "SKU", label: "apply_on_sku" },
         { value: "SUBGROUP", label: "apply_on_subgroup" },
         { value: "GROUP", label: "apply_on_group" },
@@ -320,6 +328,14 @@ const page = {
       },
       labelFormat: (row) =>
         `${row.sku_code}${row.item_name ? ` - ${row.item_name}` : ""}`,
+    },
+    {
+      name: 'article_id', label: 'apply_on_article', type: 'select', remoteOptionsKind: 'article',
+      showWhen: {field:'apply_on',values:['ARTICLE']},options:[]
+    },
+    {
+      name: 'category_id', label: 'apply_on_category', type: 'select', remoteOptionsKind: 'category',
+      showWhen: {field:'apply_on',values:['CATEGORY']},options:[]
     },
     {
       name: "subgroup_id",
@@ -430,8 +446,8 @@ const page = {
         .toLowerCase() === "inactive"
         ? "inactive"
         : "active",
-    commission_basis: COMMISSION_BASIS_FIXED_PER_UNIT,
-    value_type: deriveValueTypeFromBasis(COMMISSION_BASIS_FIXED_PER_UNIT),
+    commission_basis: String(values.commission_basis || COMMISSION_BASIS_FIXED_PER_UNIT),
+    value_type: deriveValueTypeFromBasis(values.commission_basis || COMMISSION_BASIS_FIXED_PER_UNIT),
     reverse_on_returns: values.reverse_on_returns !== false,
     effective_from: normalizeRuleDate(values.effective_from),
     effective_to: normalizeRuleDate(values.effective_to),
@@ -463,16 +479,14 @@ const page = {
 
     if (!COMMISSION_TYPES.has(String(values.commission_type || "").trim().toUpperCase()))
       return req.res.locals.t("error_invalid_commission_type");
-    const applyOn = new Set(["SKU", "SUBGROUP", "GROUP"]);
+    const applyOn = new Set(["SKU", "ARTICLE", "CATEGORY", "SUBGROUP", "GROUP"]);
     if (!applyOn.has(values.apply_on))
       return req.res.locals.t("error_invalid_apply_on");
     if (!isUpdate && ALLOWED_SCOPE_FOR_BULK.has(values.apply_on)) {
       return req.res.locals.t("error_group_subgroup_only_for_bulk_commission");
     }
-    values.commission_basis = COMMISSION_BASIS_FIXED_PER_UNIT;
-    const derivedValueType = deriveValueTypeFromBasis(
-      COMMISSION_BASIS_FIXED_PER_UNIT,
-    );
+    values.commission_basis = String(values.commission_basis || COMMISSION_BASIS_FIXED_PER_UNIT);
+    const derivedValueType = deriveValueTypeFromBasis(values.commission_basis);
     if (!derivedValueType) return req.res.locals.t("error_invalid_value_type");
     values.value_type = derivedValueType;
     if (
@@ -497,6 +511,8 @@ const page = {
 
     values.employee_id = firstSelection(values.employee_id);
     values.sku_id = firstSelection(values.sku_id);
+    values.article_id = firstSelection(values.article_id);
+    values.category_id = firstSelection(values.category_id);
     values.subgroup_id = firstSelection(values.subgroup_id);
     values.group_id = firstSelection(values.group_id);
     values.branch_id = firstSelection(values.branch_id);
@@ -557,6 +573,11 @@ const page = {
       return req.res.locals.t("error_select_subgroup");
     if (values.apply_on === "GROUP" && !values.group_id)
       return req.res.locals.t("error_select_group");
+    if (['ARTICLE','CATEGORY'].includes(values.apply_on)) {
+      if(!await validateRuleProductScope({db:knex,applyOn:values.apply_on,articleId:values.article_id,categoryId:values.category_id,commissionType:values.commission_type})) return req.res.locals.t('commission_invalid_conditions');
+    }
+    if (values.apply_on !== 'ARTICLE') values.article_id=null;
+    if (values.apply_on !== 'CATEGORY') values.category_id=null;
     if (values.apply_on !== "SKU") values.sku_id = null;
     if (values.apply_on !== "SUBGROUP") values.subgroup_id = null;
     if (values.apply_on !== "GROUP") values.group_id = null;
@@ -575,6 +596,8 @@ const page = {
       })
       .whereRaw("COALESCE(branch_id,0)=COALESCE(?,0)", [values.branch_id || 0])
       .whereRaw("COALESCE(sku_id,0)=COALESCE(?,0)", [values.sku_id || 0])
+      .whereRaw("COALESCE(article_id,0)=COALESCE(?,0)", [values.article_id || 0])
+      .whereRaw("COALESCE(category_id,0)=COALESCE(?,0)", [values.category_id || 0])
       .whereRaw("COALESCE(subgroup_id,0)=COALESCE(?,0)", [
         values.subgroup_id || 0,
       ])
@@ -588,6 +611,9 @@ const page = {
     values.value = toMoney(values.value);
     return null;
   },
+  persistCreate: ({trx,values}) => supersedeCommissionRule({trx,employeeId:values.employee_id,commissionType:values.commission_type,applyOn:values.apply_on,
+    branchId:values.branch_id,skuId:values.sku_id,articleId:values.article_id,categoryId:values.category_id,subgroupId:values.subgroup_id,groupId:values.group_id,
+    effectiveFrom:values.effective_from,effectiveTo:values.effective_to,values}),
   persistUpdate: async ({ trx,values,id }) => updateCommissionRule({trx,id,values}),
   afterCommit: async ({ values, existing, req }) => {
     const row = {
@@ -1460,6 +1486,7 @@ router.get(
           date_range_corrected: input.dateRangeCorrected,
         },
         rows: plan.rows.map(({ write, ...row }) => row),
+        review_hash:await recalcReviewHash({db:knex,input,plan}),
         counts: plan.counts,
         totals: plan.totals,
         over_limit: plan.over_limit,
@@ -1497,6 +1524,10 @@ router.post(
         t: res.locals.t,
       });
       const writes = plan.rows.filter((row) => row.will_write);
+
+      if(req.body.review_version===1 && (!/^[a-f0-9]{64}$/.test(String(req.body.review_hash || '')) || req.body.review_hash!==await recalcReviewHash({db:knex,input,plan}))) {
+        return res.status(409).json({message:res.locals.t('commission_batch_stale')});
+      }
 
       if (plan.over_limit) {
         return res.status(400).json({
@@ -1559,6 +1590,7 @@ router.post(
         oldValue: null,
         newValue: {
           mode: RECALC_APPROVAL_MODE,
+          ...(req.body.review_version===1?{review_hash:req.body.review_hash,allowed_branch_ids:input.allowedBranchIds}:{}),
           from_date: input.fromDate,
           to_date: input.toDate,
           commission_types: input.commissionTypes,
@@ -1657,6 +1689,16 @@ router.use((req, res, next) => {
   return next();
 });
 
+const commissionBatchController = require('../../controllers/hr-payroll/commission-batch-controller');
+router.post('/batch-preview',requirePermission('SCREEN',page.scopeKey,'view'),commissionBatchController.preview);
+router.post('/batch-save',requirePermission('SCREEN',page.scopeKey,'view'),commissionBatchController.save);
+require('../../utils/approval-previews/commission-batch-preview-provider');
+router.use(async (req,res,next)=>{
+  try {
+    res.locals.commissionExpansionReady=Boolean((await knex.raw("SELECT to_regclass('erp.commission_batches') AS ready")).rows[0].ready);
+    next();
+  } catch(err) {next(err);}
+});
 router.use("/", createHrMasterRouter(page));
 
 router.preview = {

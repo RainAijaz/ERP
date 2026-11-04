@@ -3385,7 +3385,8 @@ const syncStockTransferOutVoucherTx = async ({
   const skuLines = lines.filter((l) => String(l.line_kind || "").toUpperCase() === "SKU");
   if (skuLines.length) {
     try {
-      const normalizedLines = normalizeTransferLinesForCommission(skuLines);
+        const contexts=await require('../hr-payroll/commission-configuration-service').captureCommissionContexts(trx,voucherId);
+        const normalizedLines = normalizeTransferLinesForCommission(skuLines.map(line=>({...line,meta:{...line.meta,commission_context:contexts.get(Number(line.line_no))}})));
       const transferEntries = await computeLedgerEntriesForBranch({
         trx,
         lines: normalizedLines,

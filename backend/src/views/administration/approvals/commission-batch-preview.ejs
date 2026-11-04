@@ -1,0 +1,21 @@
+<div class="space-y-4">
+  <p class="text-sm font-semibold text-slate-700"><%= t('employees') %>: <%= modalValues.reviewed_employee || '#'+modalValues.employee_id %></p>
+  <% (modalValues.reviewed_cards || modalValues.cards || []).forEach(function(card) { %>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div class="font-semibold text-slate-700"><%= t('commission_type_'+card.commission_type.toLowerCase()) %> · <%= t('apply_on_'+card.apply_on.toLowerCase()) %> · <%= card.value %> <%= t('rate_type_'+card.rate_type.toLowerCase()) %></div>
+      <p class="text-sm text-slate-600"><%= (card.products || []).map(product=>product.label).join(', ') %></p>
+      <p class="text-xs text-slate-500"><%= card.effective_from %> — <%= card.effective_to || t('commission_until_changed') %></p>
+      <% (card.reviewed_conditions || []).forEach(function(condition) { %><p class="text-xs text-slate-600"><%= t('commission_condition_'+condition.key) %>: <%= condition.labels.join(', ') %></p><% }) %>
+      <% Object.entries(card.eligibility || {}).filter(entry=>!Array.isArray(entry[1]) || !card.reviewed_conditions).forEach(function(entry) { %>
+        <p class="text-xs text-slate-600"><%= t('commission_condition_'+entry[0]) %>: <%= Array.isArray(entry[1]) ? entry[1].map(id=>'#'+id).join(', ') : t(entry[1]==='ALL'?'commission_packed_and_loose':'commission_packed_only') %></p>
+      <% }) %>
+      <p class="text-xs text-slate-600"><%= t('reverse_on_returns') %>: <%= t(card.reverse_on_returns?'yes':'no') %> · <%= t('commission_replace_sku_rates') %>: <%= t(card.replace_existing_sku_rates?'yes':'no') %></p>
+    </div>
+  <% }) %>
+  <div class="overflow-x-auto">
+    <table class="w-full text-left text-sm"><thead><tr><th class="px-3 py-2"><%= t('voucher') %></th><th class="px-3 py-2"><%= t('commission_type') %></th><th class="px-3 py-2"><%= t('commission_batch_before') %></th><th class="px-3 py-2"><%= t('commission_batch_after') %></th></tr></thead><tbody>
+    <% (modalValues.reviewed_rows || []).forEach(function(row) { %><tr><td class="px-3 py-2">#<%= row.voucher_no %> · <%= row.voucher_date %></td><td class="px-3 py-2"><%= t('commission_type_'+row.commission_type.toLowerCase()) %></td><td class="px-3 py-2"><%= row.previous_rate || 0 %></td><td class="px-3 py-2"><%= row.new_rate %></td></tr><% }) %>
+    </tbody></table>
+  </div>
+  <% if(modalValues.clear_unmatched) { %><p class="text-sm text-amber-700"><%= t('commission_batch_clear_confirm') %></p><% } %>
+</div>

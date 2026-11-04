@@ -1,5 +1,6 @@
 const { HttpError } = require("../../middleware/errors/http-error");
 const { attachInheritance, pickRuleByPrecedence } = require("./commission-rule-resolver");
+const { canonicalJson } = require('../../utils/canonical-json');
 
 const SALES_VOUCHER_CODE = "SALES_VOUCHER";
 const PAIRS_PER_DOZEN = 12;
@@ -88,7 +89,7 @@ const buildItemContext = async (trx, skuIds) => {
   const rows = await trx("erp.skus as s")
     .join("erp.variants as v", "s.variant_id", "v.id")
     .join("erp.items as i", "v.item_id", "i.id")
-    .select("s.id as sku_id", "i.id as item_id", "i.item_type", "i.subgroup_id", "i.group_id", "i.base_uom_id", "v.grade_id")
+    .select("s.id as sku_id", "i.id as item_id", "i.product_type_id as category_id", "i.item_type", "i.subgroup_id", "i.group_id", "i.base_uom_id", "v.grade_id")
     .whereIn("s.id", skuIds);
   return new Map(rows.map((row) => [Number(row.sku_id), row]));
 };
@@ -129,17 +130,29 @@ const buildRuleMatchIndex = async (
   trx,
   salesmanEmployeeId,
   commissionType,
-  { branchId = null, onDate = null } = {},
+  { branchId = null, onDate = null, ruleOverrides = null } = {},
 ) => {
   if (!salesmanEmployeeId) return [];
   const effectiveDate = toDateOnly(onDate) || todayYmd();
   const normalizedBranchId = Number(branchId) > 0 ? Number(branchId) : null;
+
+  // A read-only batch preview supplies complete, versioned candidate rules.
+  // Both preview and posting still use the same resolver and calculator.
+  if (Array.isArray(ruleOverrides)) {
+    return attachInheritance(trx, ruleOverrides.filter(row => Number(row.employee_id) === Number(salesmanEmployeeId) &&
+      row.commission_type === commissionType && row.status === 'active' &&
+      (!row.branch_id || Number(row.branch_id) === normalizedBranchId) &&
+      (!row.effective_from || String(row.effective_from) <= effectiveDate) &&
+      (!row.effective_to || String(row.effective_to) >= effectiveDate)));
+  }
 
   const query = trx("erp.employee_commission_rules as ecr")
     .select(
       "id",
       "apply_on",
       "sku_id",
+      trx.raw("(to_jsonb(ecr)->>'article_id')::bigint as article_id"),
+      trx.raw("(to_jsonb(ecr)->>'category_id')::bigint as category_id"),
       "subgroup_id",
       "group_id",
       trx.raw("COALESCE(to_jsonb(ecr)->'eligibility', '{}'::jsonb) as eligibility"),
@@ -356,6 +369,8 @@ const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, branchId = 
 
     const ruleContext = {
           skuId: Number(line.sku_id),
+          articleId: Number(context.article_id ?? context.item_id) || null,
+          categoryId: Number(context.category_id) || null,
           subgroupId: Number(context.subgroup_id || 0),
           groupId: Number(context.group_id || 0),
           branchId: Number(branchId) > 0 ? Number(branchId) : null,
@@ -379,7 +394,8 @@ const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, branchId = 
       matchedRules,
       qtyInPair: qtyInBaseUnit,
     });
-    lineBreakdowns[idx].context = {sku_id:Number(line.sku_id),grade_id:context.grade_id,group_id:context.group_id,subgroup_id:context.subgroup_id};
+    lineBreakdowns[idx].context = {sku_id:Number(line.sku_id),article_id:ruleContext.articleId,category_id:ruleContext.categoryId,grade_id:context.grade_id,group_id:context.group_id,subgroup_id:context.subgroup_id,
+      classification_fallback: Boolean(snapshot?.classification_fallback || (line._commission_historical && (!snapshot || !Object.hasOwn(snapshot,'article_id') || !Object.hasOwn(snapshot,'category_id'))))};
   }
 
   applyInvoiceLevelCommissions({
@@ -406,6 +422,7 @@ const enrichSalesVoucherLines = async ({
   salesmanEmployeeId,
   branchId = null,
   voucherDate = null,
+  ruleOverrides = null,
   t,
 }) => {
   const skuLines = lines
@@ -419,12 +436,18 @@ const enrichSalesVoucherLines = async ({
   const rules = await buildRuleMatchIndex(trx, salesmanEmployeeId, "SALESMAN_SALE", {
     branchId,
     onDate: voucherDate,
+    ruleOverrides,
   });
   const { totalCommission, lineBreakdowns, matchedRuleCount } = await computeEmployeeCommissionOnLines({ trx, rules, lines, branchId, t });
 
   const enriched = lines.map((line, idx) => {
     const breakdown = lineBreakdowns[idx];
-    if (!breakdown) return line;
+    if (!breakdown) {
+      // A recomputation must not mistake the old posted breakdown for a fresh
+      // match after rules/exclusions change. Preserve every unrelated meta key.
+      const { commission: _previous, ...meta } = line.meta || {};
+      return { ...line, meta };
+    }
     const currentMeta = line.meta && typeof line.meta === "object" ? line.meta : {};
     return {
       ...line,
@@ -505,12 +528,15 @@ const computeLedgerEntriesForBranch = async ({
   branchId,
   commissionType,
   voucherDate = null,
+  ruleOverrides = null,
+  employeeId = null,
   t,
 }) => {
   if (!branchId || !lines.length) return [];
 
   const branchEmployees = await trx("erp.employee_branch")
     .where({ branch_id: branchId })
+    .modify(query => { if (employeeId) query.where('employee_id',employeeId); })
     .select("employee_id");
 
   if (!branchEmployees.length) return [];
@@ -521,6 +547,7 @@ const computeLedgerEntriesForBranch = async ({
     const rules = await buildRuleMatchIndex(trx, employee_id, commissionType, {
       branchId,
       onDate: voucherDate,
+      ruleOverrides,
     });
     if (!rules.length) continue;
 
@@ -636,7 +663,7 @@ const isAutoSalesCommissionLine = (line) => {
 // Self-loading — everything enrichSalesVoucherLines needs is already persisted in
 // voucher_line.meta, and the salesman is on erp.sales_header. That is what makes a
 // retroactive recompute possible without the original request payload.
-const planSalesmanCommissionRecomputeTx = async ({ db, voucherId, employeeId = null, t }) => {
+const planSalesmanCommissionRecomputeTx = async ({ db, voucherId, employeeId = null, t, ruleOverrides = null }) => {
   const normalizedVoucherId = Number(voucherId);
   if (!Number.isInteger(normalizedVoucherId) || normalizedVoucherId <= 0) return null;
   const requestedEmployeeId = Number(employeeId || 0);
@@ -671,6 +698,7 @@ const planSalesmanCommissionRecomputeTx = async ({ db, voucherId, employeeId = n
   );
   if (!skuLines.length) return null;
 
+  skuLines.forEach(line=>{line._commission_historical=true;});
   const autoEmployeeLines = allLines.filter(isAutoSalesCommissionLine);
   const employeeLine = requestedEmployeeId > 0
     ? autoEmployeeLines.find((line) => Number(line.employee_id || 0) === requestedEmployeeId) || null
@@ -700,6 +728,7 @@ const planSalesmanCommissionRecomputeTx = async ({ db, voucherId, employeeId = n
     salesmanEmployeeId,
     branchId: Number(header.branch_id) || null,
     voucherDate: header.voucher_date || null,
+    ruleOverrides,
     t,
   });
 
@@ -715,6 +744,7 @@ const planSalesmanCommissionRecomputeTx = async ({ db, voucherId, employeeId = n
     const nextCommission = enriched?.meta?.commission || null;
     const hadCommission = originalMeta.commission != null;
     if (!nextCommission && !hadCommission) return;
+    if(canonicalJson(nextCommission)===canonicalJson(originalMeta.commission || null))return;
     skuLineUpdates.push({
       voucher_line_id: Number(original.id),
       meta_commission: nextCommission,
@@ -739,6 +769,11 @@ const planSalesmanCommissionRecomputeTx = async ({ db, voucherId, employeeId = n
     previous_amount: previousAmount,
     new_amount: roundMoney(toNumber(totalCommission, 0)),
     matched_rule_count: Number(matchedRuleCount || 0),
+    details_changed:skuLineUpdates.length>0,
+    classification_fallback:skuLines.some(line=>{
+      const snapshot=line.meta?.commission_context || line.meta?.commission?.context;
+      return !snapshot || snapshot.classification_fallback || !Object.hasOwn(snapshot,'article_id') || !Object.hasOwn(snapshot,'category_id');
+    }),
     write: {
       voucher_id: normalizedVoucherId,
       salesman_employee_id: salesmanEmployeeId,

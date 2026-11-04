@@ -26,13 +26,15 @@ const buildCommissionCoverageRows = async ({ db, rawRows, branchId = null, local
     const groups = [...new Set(rules.filter((r) => r.apply_on === "GROUP").map((r) => Number(r.group_id)).filter(Boolean))];
     const subgroups = [...new Set(rules.filter((r) => r.apply_on === "SUBGROUP").map((r) => Number(r.subgroup_id)).filter(Boolean))];
     const skuIds = [...new Set(rules.filter((r) => r.apply_on === "SKU" && !r.inherited_sku_copy).map((r) => Number(r.sku_id)).filter(Boolean))];
-    if (!rules.some((r) => r.apply_on === "ALL") && !groups.length && !subgroups.length && !skuIds.length) continue;
+    const articleIds=[...new Set(rules.filter(r=>r.apply_on==='ARTICLE').map(r=>Number(r.article_id)))];
+    const categoryIds=[...new Set(rules.filter(r=>r.apply_on==='CATEGORY').map(r=>Number(r.category_id)))];
+    if (!rules.some(r=>r.apply_on==='ALL') && !groups.length && !subgroups.length && !skuIds.length && !articleIds.length && !categoryIds.length) continue;
     let skuQuery = db("erp.skus as s")
       .join("erp.variants as v", "v.id", "s.variant_id")
       .join("erp.items as i", "i.id", "v.item_id")
       .leftJoin("erp.product_groups as pg", "pg.id", "i.group_id")
       .leftJoin("erp.product_subgroups as sg", "sg.id", "i.subgroup_id")
-      .select("s.id as sku_id", "s.sku_code", "i.group_id", "i.subgroup_id", "v.grade_id",
+      .select("s.id as sku_id", "s.sku_code", "i.id as article_id", "i.product_type_id as category_id", "i.group_id", "i.subgroup_id", "v.grade_id",
         locale === "ur" ? db.raw("COALESCE(pg.name_ur, pg.name) as group_name") : "pg.name as group_name",
         locale === "ur" ? db.raw("COALESCE(sg.name_ur, sg.name) as subgroup_name") : "sg.name as subgroup_name")
       .whereIn("i.item_type", itemTypesForCommission(commissionType));
@@ -41,12 +43,14 @@ const buildCommissionCoverageRows = async ({ db, rawRows, branchId = null, local
         if (groups.length) q.orWhereIn("i.group_id", groups);
         if (subgroups.length) q.orWhereIn("i.subgroup_id", subgroups);
         if (skuIds.length) q.orWhereIn("s.id", skuIds);
+        if (articleIds.length) q.orWhereIn('i.id',articleIds);
+        if (categoryIds.length) q.orWhereIn('i.product_type_id',categoryIds);
       });
     }
     const skus = await skuQuery.orderBy("s.sku_code", "asc");
     for (const sku of skus) {
       const rule = findEffectiveRuleIndexed({ index, sku, branchId });
-      const context={skuId:sku.sku_id,groupId:sku.group_id,subgroupId:sku.subgroup_id,gradeId:sku.grade_id};
+      const context={skuId:sku.sku_id,articleId:sku.article_id,categoryId:sku.category_id,groupId:sku.group_id,subgroupId:sku.subgroup_id,gradeId:sku.grade_id};
       if(rules.some(candidate=>matchesProduct(candidate,context) && excludesProduct(candidate.eligibility || {},context))) continue;
       if (!rule || (rule.eligibility?.excluded_grade_ids || []).includes(Number(sku.grade_id)) ||
         (rule.eligibility?.excluded_sku_ids || []).includes(Number(sku.sku_id)) ||

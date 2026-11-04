@@ -179,11 +179,16 @@ const normalizeCommissionRuleRows = async ({ ruleIds, locale, db = knex }) => {
     .leftJoin("erp.product_subgroups as sg", "sg.id", "ecr.subgroup_id")
     .leftJoin("erp.product_groups as pg", "pg.id", "ecr.group_id")
     .leftJoin("erp.branches as b", "b.id", "ecr.branch_id")
+    .leftJoin("erp.items as article", "article.id", "ecr.article_id")
+    .leftJoin("erp.product_types as category", "category.id", "ecr.category_id")
     .whereIn("ecr.id", ids)
     .select(
       "ecr.id",
       "ecr.apply_on",
       "ecr.sku_id",
+      "ecr.article_id", "ecr.category_id",
+      knex.raw(`${localizedName("article")} as article_name`),
+      knex.raw(`${localizedName("category")} as category_name`),
       "ecr.subgroup_id",
       "ecr.group_id",
       "ecr.source_rule_id",
@@ -318,6 +323,9 @@ const formatCommissionScopeName = ({ rule, sku, locale }) => {
   const t = (key) => resolveTranslation(locale, key);
   const applyOn = String(rule?.apply_on || "").trim().toUpperCase();
 
+  if (applyOn === 'ARTICLE' || applyOn === 'CATEGORY') {
+    return `${t('apply_on_'+applyOn.toLowerCase())}: ${applyOn==='ARTICLE' ? rule?.article_name || rule?.article_id : rule?.category_name || rule?.category_id}`;
+  }
   if (applyOn === "GROUP") {
     return `${t("apply_on_group")}: ${rule?.group_name || sku?.group_name || "-"}`;
   }
@@ -343,6 +351,11 @@ const resolveCommissionScope = ({ fact, rule, sku, locale }) => {
     locale,
   });
 
+  if (applyOn === 'ARTICLE' || applyOn === 'CATEGORY') {
+    const id=applyOn==='ARTICLE'?rule?.article_id:rule?.category_id;
+    const label=applyOn==='ARTICLE'?rule?.article_name:rule?.category_name;
+    return {key:`${applyOn}:${id}:${rule?.rate_type || ''}:${fact.rate}`,labelText:[`${t('apply_on_'+applyOn.toLowerCase())}: ${label || id}`,rateSuffix].filter(Boolean).join(' - ')};
+  }
   if (applyOn === "GROUP") {
     const id = Number(rule?.group_id || sku?.group_id || 0) || "unknown";
     const label = `${t("apply_on_group")}: ${rule?.group_name || sku?.group_name || "-"}`;

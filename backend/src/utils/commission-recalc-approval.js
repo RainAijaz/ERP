@@ -30,6 +30,7 @@ const applyCommissionRecalcApproval = async (trx, request, decidedBy = null) => 
     to_date: values.to_date,
     employee_id: values.employee_id,
     clear_orphans: values.clear_orphans,
+    allowedBranchIds:values.review_hash ? values.allowed_branch_ids : [],
   });
   if (!input.fromDate || !input.toDate) return false;
 
@@ -40,6 +41,12 @@ const applyCommissionRecalcApproval = async (trx, request, decidedBy = null) => 
   );
 
   const plan = await buildRecalcPlan({ db: trx, input });
+  if(values.review_hash) {
+    const maker=await require('../middleware/core/auth').loadUserContext(request.requested_by,{freshPermissions:true});
+    if(!maker.isAdmin && plan.rows.some(row=>!maker.branchIds.map(Number).includes(Number(row.branch_id)))) return false;
+    const current=await require('../services/hr-payroll/commission-review-service').recalcReviewHash({db:trx,input,plan});
+    if(current!==values.review_hash)return false;
+  }
 
   const rowsToWrite = [];
   let skipped = 0;
