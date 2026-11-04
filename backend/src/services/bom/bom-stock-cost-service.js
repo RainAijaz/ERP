@@ -13,7 +13,7 @@ const invalidCost = () => new HttpError(409, "sfg_bom_cost_incomplete");
 // An approved BOM is a documented STANDARD cost for new movements whose stock
 // has never been valued. It is not a retroactive replacement for receipt costs.
 // Keep the calculation and its inputs on the voucher for approval and audit.
-const resolveBomStockCostTx = async ({ trx, branchId, skuId, path = [] }) => {
+const resolveBomStockCostTx = async ({ trx, branchId, skuId, path = [], allowIncomplete = false }) => {
   try {
     skuId = Number(skuId);
     if (!Number.isSafeInteger(skuId) || skuId <= 0 || path.includes(skuId) || path.length >= 15) {
@@ -83,6 +83,9 @@ const resolveBomStockCostTx = async ({ trx, branchId, skuId, path = [] }) => {
         materials, labour: labourLines.map(line => ({ labour_id: line.labour_id, dept_id: line.dept_id, rate: line.rate, amount: line.amount })), components },
     };
   } catch (err) {
+    // Transfers may move unvalued goods. Only an unavailable recipe cost may
+    // become pending; database and other unexpected failures must still abort.
+    if (allowIncomplete && err instanceof HttpError && err.message === "sfg_bom_cost_incomplete") return null;
     console.error("Error in BomStockCostService:", err);
     throw err;
   }

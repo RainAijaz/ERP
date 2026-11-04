@@ -72,7 +72,6 @@ const RM_BALANCE_CONFLICT_TARGET_SQL =
   "(branch_id, stock_state, item_id, COALESCE(color_id, 0), COALESCE(size_id, 0))";
 const { FG_PACKED_FLAG_SQL } = require("../../utils/stock-packing");
 const { resolveStockUnitCost } = require("../../utils/stock-cost");
-const { resolveTranslation } = require("../../middleware/core/locale");
 
 const toDateOnly = toLocalDateOnly;
 const roundQty3 = (value) => Number(Number(value || 0).toFixed(3));
@@ -1280,11 +1279,10 @@ const moveSkuStockPairsTx = async ({
     normalizedUnitCostBase = resolveStockUnitCost({ qty: availableQtyPairs, value: availableValue,
       lastUnitCost: lastReceipt?.unit_cost || 0 });
     if (!(normalizedUnitCostBase > 0) && availableQtyPairs <= 0) {
-      const bomCost = await resolveBomStockCostTx({ trx, branchId: fromBranchId, skuId });
+      const bomCost = await resolveBomStockCostTx({ trx, branchId: fromBranchId, skuId, allowIncomplete: true });
       normalizedUnitCostBase = bomCost?.unitCost || 0;
       costSnapshot = bomCost?.snapshot || null;
     }
-    if (!(normalizedUnitCostBase > 0)) throw new HttpError(409, resolveTranslation("en", "sfg_transfer_cost_missing"));
     value = roundCost2(normalizedQtyPairs * normalizedUnitCostBase);
   }
   if (!allowNegativeSource && availableQtyPairs < normalizedQtyPairs) {
@@ -1580,8 +1578,8 @@ const loadSourceStockMapsTx = async ({ trx, sourceBranchId }) => {
         branch_id: sourceBranchId,
         stock_state: "ON_HAND",
       }),
-    // Negative-stock approvals still need a documented cost. Use the latest
-    // approved receipt when no positive on-hand weighted average is available.
+    // Prefer the latest approved receipt when no positive on-hand weighted
+    // average is available. Missing cost may remain zero pending valuation.
     trx("erp.stock_ledger as sl")
       .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
       .distinctOn("sl.sku_id")
@@ -2020,6 +2018,7 @@ const loadTransferOutLinesTx = async ({ trx, voucherId }) => {
       unit_cost_base: Number(meta.unit_cost_base || 0),
       is_wip: meta.is_wip === true,
       cost_source: meta.cost_source || null,
+      cost_pending: stockType === "SFG" && meta.is_wip !== true && !(Number(meta.unit_cost_base || line.rate || 0) > 0),
       bom_cost: meta.bom_cost || null,
       stage_id: toPositiveInt(meta.stage_id),
       stage_name: String(meta.stage_name || ""),
@@ -2479,7 +2478,7 @@ const validateTransferOutPayloadTx = async ({
     for (const skuId of skuIds) {
       const stock = sourceStock.skuMap[`SFG:${skuId}`];
       if (!(Number(stock?.transfer_unit_cost || 0) > 0) && Number(stock?.qty_pairs || 0) <= 0) {
-        const bomCost = await resolveBomStockCostTx({ trx, branchId: req.branchId, skuId });
+        const bomCost = await resolveBomStockCostTx({ trx, branchId: req.branchId, skuId, allowIncomplete: true });
         if (bomCost) bomCosts.set(skuId, bomCost);
       }
     }
@@ -2539,9 +2538,6 @@ const validateTransferOutPayloadTx = async ({
         ? Number(stock?.transfer_unit_cost || bomCosts.get(skuId)?.unitCost || 0)
         : Number(sku?.sale_rate || 0),
     );
-    if (stockType === "SFG" && !(unitCostBase > 0)) {
-      throw new HttpError(409, req?.res?.locals?.t?.("sfg_transfer_cost_missing") || resolveTranslation(req?.locale || "en", "sfg_transfer_cost_missing"));
-    }
     const unitCost = roundUnitCost6(unitCostBase * Number(factorToBase));
     const amount = roundCost2(Number(transferQty) * Number(unitCost));
     const availableQty =
@@ -2569,7 +2565,11 @@ const validateTransferOutPayloadTx = async ({
         negative_stock_risk: hasNegativeStockRisk,
         transfer_qty_pairs: Number(transferQtyPairs),
         unit_cost_base: Number(unitCostBase),
-        ...(bomCosts.has(skuId) ? { cost_source: "APPROVED_BOM", bom_cost: bomCosts.get(skuId).snapshot } : {}),
+        ...(stockType === "SFG" ? {
+          cost_source: unitCostBase > 0 ? (bomCosts.has(skuId) ? "APPROVED_BOM" : "STOCK") : "COST_PENDING",
+          cost_pending: unitCostBase === 0,
+          bom_cost: bomCosts.get(skuId)?.snapshot || null,
+        } : {}),
       },
     };
   });
@@ -2887,8 +2887,8 @@ const validateTransferInPayloadTx = async ({
     }
 
     const unitCostBase = roundUnitCost6(Number(stnLine?.unit_cost_base || 0));
-    if (stnLine.is_wip !== true && stnLine.stock_type === "SFG" && !(unitCostBase > 0))
-      throw new HttpError(409, req?.res?.locals?.t?.("sfg_transfer_cost_missing") || resolveTranslation(req?.locale || "en", "sfg_transfer_cost_missing"));
+    if (stnLine.is_wip !== true && stnLine.stock_type === "SFG" && (!Number.isFinite(unitCostBase) || unitCostBase < 0))
+      throw new HttpError(409, "sfg_transfer_cost_invalid");
     const unitCost = roundUnitCost6(Number(stnLine?.rate || 0));
     const amount = roundCost2(Number(receivedQty) * Number(unitCost));
 
@@ -2927,7 +2927,11 @@ const validateTransferInPayloadTx = async ({
             dept_id: Number(stnLine.dept_id) || null,
           }
         : {}),
-      ...(stockType === "SFG" ? { cost_source: stnLine.cost_source || "STOCK", bom_cost: stnLine.bom_cost || null } : {}),
+      ...(stockType === "SFG" && stnLine.is_wip !== true ? {
+        cost_source: unitCostBase > 0 ? (stnLine.cost_source || "STOCK") : "COST_PENDING",
+        cost_pending: unitCostBase === 0,
+        bom_cost: stnLine.bom_cost || null,
+      } : {}),
     };
 
     if (stockType === "RM") {
@@ -3373,7 +3377,8 @@ const syncStockTransferOutVoucherTx = async ({
           rate: Number((moved.unitCostBase * factorToBase).toFixed(4)),
           amount: moved.value,
           meta: { ...meta, unit_cost_base: moved.unitCostBase,
-            cost_source: moved.costSnapshot ? "APPROVED_BOM" : "STOCK",
+            cost_source: moved.unitCostBase > 0 ? (moved.costSnapshot ? "APPROVED_BOM" : "STOCK") : "COST_PENDING",
+            cost_pending: moved.unitCostBase === 0,
             bom_cost: moved.costSnapshot },
         });
       }
@@ -3656,6 +3661,7 @@ const loadTransferInLinesTx = async ({ trx, voucherId }) => {
           .trim()
           .toUpperCase() || null,
       unit_cost_base: Number(meta.unit_cost_base || 0),
+      cost_pending: stockType === "SFG" && meta.is_wip !== true && !(Number(meta.unit_cost_base || line.rate || 0) > 0),
     };
   });
 };
@@ -3761,8 +3767,8 @@ const syncStockTransferInVoucherTx = async ({
             Number(line.rate || 0) / Math.max(Number(factorToBase || 1), 1),
           );
 
-    if (meta.is_wip !== true && String(meta.stock_type).toUpperCase() === "SFG" && !(unitCostBase > 0))
-      throw new HttpError(409, resolveTranslation("en", "sfg_transfer_cost_missing"));
+    if (meta.is_wip !== true && String(meta.stock_type).toUpperCase() === "SFG" && (!Number.isFinite(unitCostBase) || unitCostBase < 0))
+      throw new HttpError(409, "sfg_transfer_cost_invalid");
 
     if (meta.is_wip === true) {
       // expected_qty/received_qty are in the unit the dispatch was entered in (dozens, say);

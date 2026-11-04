@@ -584,6 +584,7 @@
       transfer_qty_base: qty3(line?.transfer_qty_base),
       available_qty: qty3(line?.available_qty),
       transfer_qty: qty3(line?.transfer_qty ?? line?.qty),
+      cost_pending: line?.cost_pending === true,
       unit_cost: cost1(line?.unit_cost ?? line?.rate),
       amount: amount2(line?.amount),
     });
@@ -733,6 +734,7 @@
       rejected_qty: qty3(line?.rejected_qty),
       variance_qty: qty3(line?.variance_qty),
       variance_reason: String(line?.variance_reason || ''),
+      cost_pending: line?.cost_pending === true,
       unit_cost: cost1(line?.unit_cost ?? line?.rate),
       amount: amount2(line?.amount ?? (Number(line?.received_qty ?? line?.qty ?? 0) * Number(line?.unit_cost ?? line?.rate ?? 0))),
     });
@@ -1262,7 +1264,7 @@
           const uomCell = `<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-out-change="uom_id" data-row-index="${rowIndex}" data-row-field="uom" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? '' : 'disabled'}><option value=""></option>${unitOptions.map((entry) => `<option value="${Number(entry.id)}" ${Number(row.uom_id || 0) === Number(entry.id) ? 'selected' : ''}>${escapeHtml(entry.name || entry.code || entry.id)}</option>`).join('')}</select>`;
 
           const cols = [
-            `<td class="border-t border-slate-200 px-2 py-1">${itemCell}</td>`,
+            `<td class="border-t border-slate-200 px-2 py-1">${itemCell}${stockType === 'SFG' && row.cost_pending === true ? `<span class="inline-flex rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800" data-cost-pending>${escapeHtml(<%- JSON.stringify(t('sfg_cost_pending')) %>)}</span>` : ''}</td>`,
             ...(stockType === 'RM' ? [`<td class="border-t border-slate-200 px-2 py-1">${colorCell}</td>`, `<td class="border-t border-slate-200 px-2 py-1">${sizeCell}</td>`] : []),
             `<td class="border-t border-slate-200 px-2 py-1">${uomCell}</td>`,
             `<td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${qty3(row.available_qty).toFixed(3)}" readonly></td>`,
@@ -1300,7 +1302,7 @@
             ? (sizeMap.get(Number(row.size_id || 0))?.name || '')
             : '';
           return `<tr data-row-index="${rowIndex}">
-            <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-xs" value="${escapeHtml(itemName)}" readonly></td>
+            <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-xs" value="${escapeHtml(itemName)}" readonly>${stockType === 'SFG' && row.cost_pending === true ? `<span class="inline-flex rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800" data-cost-pending>${escapeHtml(<%- JSON.stringify(t('sfg_cost_pending')) %>)}</span>` : ''}</td>
             ${stockType === 'RM'
               ? `<td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-xs" value="${escapeHtml(colorName)}" readonly></td>
             <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-xs" value="${escapeHtml(sizeName)}" readonly></td>`
@@ -1372,6 +1374,7 @@
       }
       if (key === 'sku_id') {
         next.uom_id = null;
+        next.cost_pending = false;
       }
       if (key === 'uom_id') {
         next.uom_id = toInt(value);

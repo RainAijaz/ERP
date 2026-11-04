@@ -201,7 +201,10 @@ const buildSfgValuationPlan = (data, { skuIds = [] } = {}) => {
     const unitCost = lineCosts.get(id(before.id));
     const factor = Number(before.meta?.uom_factor_to_base || 1);
     const next = { rate: Number((unitCost * factor).toFixed(4)), amount: money(Number(before.qty) * factor * unitCost),
-      meta: { ...before.meta, unit_cost_base: unitCost } };
+      meta: { ...before.meta, unit_cost_base: unitCost,
+        ...(before.meta?.cost_pending === true || before.meta?.cost_source === "COST_PENDING"
+          ? { cost_pending: !(unitCost > 0), cost_source: unitCost > 0 ? "STOCK" : "COST_PENDING", bom_cost: null }
+          : {}) } };
     if (!same(before.amount, next.amount) || Math.abs(Number(before.rate) - next.rate) > 0.00005 || Number(before.meta?.unit_cost_base || 0) !== unitCost)
       lineChanges.push({ id:id(before.id), voucherId:id(before.voucher_header_id), before:{rate:Number(before.rate),amount:Number(before.amount),meta:before.meta}, after:next });
   }
