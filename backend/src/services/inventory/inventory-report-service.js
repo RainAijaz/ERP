@@ -4828,6 +4828,11 @@ const parseLedgerFilters = ({ req, input = {} }) => {
     stockType === STOCK_TYPES.finished
       ? normalizeStockStatus(input.stock_status || input.stockStatus)
       : null;
+  const stockItemMode =
+    stockType === STOCK_TYPES.finished &&
+    String(input.stock_item_mode || input.stockItemMode || "SKU").trim().toUpperCase() === "ARTICLE"
+      ? "ARTICLE"
+      : "SKU";
 
   let from = parsedFrom.value;
   let to = parsedTo.value;
@@ -4861,6 +4866,7 @@ const parseLedgerFilters = ({ req, input = {} }) => {
     to,
     stockType,
     stockStatus,
+    stockItemMode,
     unitId: toPositiveInt(input.unit_id || input.unitId),
     stockItemId,
     branchIds: normalizeBranchFilter({ req, input, canAllBranches }),
@@ -4934,6 +4940,14 @@ const loadLedgerStockItemsByType = async (locale = "en") => {
   };
 };
 
+const loadLedgerFinishedArticles = async (locale = "en") => {
+  const rows = await knex("erp.items as i")
+    .select("i.id", localizedNameSelect("i", "name", locale))
+    .where({ "i.is_active": true, "i.item_type": "FG" })
+    .orderBy("i.name", "asc");
+  return rows.map((row) => ({ id: Number(row.id), label: String(row.name || "").trim() }));
+};
+
 const applyStockLedgerBaseFilters = ({
   query,
   filters,
@@ -4951,6 +4965,14 @@ const applyStockLedgerBaseFilters = ({
 
   if (filters.stockType === STOCK_TYPES.rawMaterial) {
     query.where("sl.item_id", stockItemId);
+  } else if (filters.stockType === STOCK_TYPES.finished && filters.stockItemMode === "ARTICLE") {
+    query.whereIn(
+      "sl.sku_id",
+      knex("erp.skus as s")
+        .join("erp.variants as v", "v.id", "s.variant_id")
+        .select("s.id")
+        .where("v.item_id", stockItemId),
+    );
   } else {
     query.where("sl.sku_id", stockItemId);
   }
@@ -5576,7 +5598,7 @@ const loadStockLedgerRows = async ({
   };
 };
 
-const loadLedgerSelectedBaseUomId = async ({ stockType, stockItemId }) => {
+const loadLedgerSelectedBaseUomId = async ({ stockType, stockItemId, stockItemMode = "SKU" }) => {
   if (!toPositiveInt(stockItemId)) return null;
 
   if (stockType === STOCK_TYPES.rawMaterial) {
@@ -5585,6 +5607,14 @@ const loadLedgerSelectedBaseUomId = async ({ stockType, stockItemId }) => {
       .where({ "i.id": stockItemId })
       .first();
     return toPositiveInt(row?.base_uom_id);
+  }
+
+  if (stockType === STOCK_TYPES.finished && stockItemMode === "ARTICLE") {
+    const article = await knex("erp.items as i")
+      .select("i.base_uom_id")
+      .where({ "i.id": stockItemId })
+      .first();
+    return toPositiveInt(article?.base_uom_id);
   }
 
   const row = await knex("erp.skus as s")
@@ -5600,9 +5630,10 @@ const getInventoryStockLedgerReportPageData = async ({ req, input = {} }) => {
   const canAllBranches = userCanFilterAllBranches(req, "stock_ledger");
   const filters = parseLedgerFilters({ req, input });
 
-  const [branches, stockItemsByType, unitOptions] = await Promise.all([
+  const [branches, stockItemsByType, finishedArticles, unitOptions] = await Promise.all([
     loadBranchOptions(req, canAllBranches),
     loadLedgerStockItemsByType(filters.locale),
+    loadLedgerFinishedArticles(filters.locale),
     loadUnitOptions(filters.stockType),
   ]);
   const conversionUnits = resolvePackedConversionUnits({
@@ -5623,9 +5654,12 @@ const getInventoryStockLedgerReportPageData = async ({ req, input = {} }) => {
   filters.unitId = selectedUnit.unitId;
   filters.unitLabel = selectedUnit.unitLabel;
 
-  const stockItems = Array.isArray(stockItemsByType[filters.stockType])
+  const stockItemsForType = Array.isArray(stockItemsByType[filters.stockType])
     ? stockItemsByType[filters.stockType]
     : [];
+  const stockItems = filters.stockType === STOCK_TYPES.finished && filters.stockItemMode === "ARTICLE"
+    ? finishedArticles
+    : stockItemsForType;
   const stockItemMap = new Map(
     stockItems.map((item) => [
       Number(item.id),
@@ -5649,6 +5683,7 @@ const getInventoryStockLedgerReportPageData = async ({ req, input = {} }) => {
     branches,
     stockItems,
     stockItemsByType,
+    finishedArticles,
     unitOptions,
     conversionUnits,
     stockTypes: [
@@ -5688,6 +5723,7 @@ const getInventoryStockLedgerReportPageData = async ({ req, input = {} }) => {
   const selectedBaseUomId = await loadLedgerSelectedBaseUomId({
     stockType: filters.stockType,
     stockItemId: selectedStockItemId,
+    stockItemMode: filters.stockItemMode,
   });
   const uomContext =
     conversionUnits.length || selectedUnit.unitId

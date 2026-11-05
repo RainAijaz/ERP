@@ -15,6 +15,7 @@
   const fromDate = String(filters?.from || "");
   const toDate = String(filters?.to || "");
   const selectedStockItemId = Number(filters?.stockItemId || 0) || null;
+  const selectedStockItemMode = String(filters?.stockItemMode || "SKU").toUpperCase() === "ARTICLE" ? "ARTICLE" : "SKU";
   const selectedBranchIds = Array.isArray(filters?.branchIds) ? filters.branchIds : [];
   const allMultiOptionValue = "__ALL__";
   const branchAllSelected = !selectedBranchIds.length;
@@ -92,11 +93,15 @@
   const itemLabel =
     stockType === "RM"
       ? tt("raw_material", "Raw Material")
-      : tt("sku", "SKU");
+      : stockType === "FG" && selectedStockItemMode === "ARTICLE"
+        ? tt("article", "Article")
+        : tt("sku", "SKU");
   const itemPlaceholder =
     stockType === "RM"
       ? tt("select_raw_material", "Select Raw Material")
-      : tt("select_sku", "Select SKU");
+      : stockType === "FG" && selectedStockItemMode === "ARTICLE"
+        ? tt("select_article", "Select Article")
+        : tt("select_sku", "Select SKU");
 
   const reportPurposeTooltip = (() => {
     const key = "stock_ledger_report_purpose_tooltip";
@@ -182,6 +187,16 @@
               <% (options?.stockTypes || []).forEach((option) => { %>
                 <option value="<%= option.value %>" <%= String(option.value || "").toUpperCase() === stockType ? "selected" : "" %>><%= t(option.labelKey) %></option>
               <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12 <%= stockType === 'FG' ? '' : 'hidden' %>" data-stock-item-mode-row>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("stock_item_level", "Select By") %></label>
+          <div class="sm:col-span-9">
+            <select name="stock_item_mode" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-stock-item-mode-select>
+              <option value="SKU" <%= selectedStockItemMode === "SKU" ? "selected" : "" %>><%= tt("sku", "SKU") %></option>
+              <option value="ARTICLE" <%= selectedStockItemMode === "ARTICLE" ? "selected" : "" %>><%= tt("article", "Article") %></option>
             </select>
           </div>
         </div>
@@ -455,6 +470,8 @@
     });
 
     const stockTypeSelect = form.querySelector('select[name="stock_type"]');
+    const stockItemModeSelect = form.querySelector('[data-stock-item-mode-select]');
+    const stockItemModeRow = form.querySelector('[data-stock-item-mode-row]');
     const stockItemSelect = form.querySelector('[data-stock-item-select]');
     const stockItemLabel = form.querySelector("[data-stock-item-label]");
     const statusFilterRow = form.querySelector("[data-finished-status-filter-row]");
@@ -462,6 +479,7 @@
     const sfgUnitFilterRow = form.querySelector("[data-sfg-unit-filter-row]");
     const sfgUnitSelect = form.querySelector('select[name="unit_id"]');
     const stockItemsByType = <%- JSON.stringify(stockItemsByType) %>;
+    const finishedArticles = <%- JSON.stringify(options?.finishedArticles || []) %>;
 
     const pickSfgDefaultUnitValue = () => {
       if (!sfgUnitSelect) return "";
@@ -486,16 +504,21 @@
     };
 
     const labelSku = <%- JSON.stringify(tt("sku", "SKU")) %>;
+    const labelArticle = <%- JSON.stringify(tt("article", "Article")) %>;
     const labelRawMaterial = <%- JSON.stringify(tt("raw_material", "Raw Material")) %>;
     const placeholderSku = <%- JSON.stringify(tt("select_sku", "Select SKU")) %>;
+    const placeholderArticle = <%- JSON.stringify(tt("select_article", "Select Article")) %>;
     const placeholderRawMaterial = <%- JSON.stringify(tt("select_raw_material", "Select Raw Material")) %>;
     const selectedStockItemId = <%- JSON.stringify(String(selectedStockItemId || "")) %>;
 
     const populateStockItems = (preserveSelection) => {
       if (!stockTypeSelect || !stockItemSelect) return;
       const currentStockType = String(stockTypeSelect.value || "").toUpperCase();
-      const options = Array.isArray(stockItemsByType[currentStockType])
-        ? stockItemsByType[currentStockType]
+      const itemMode = String(stockItemModeSelect?.value || "SKU").toUpperCase();
+      const isArticleMode = currentStockType === "FG" && itemMode === "ARTICLE";
+      const sourceOptions = isArticleMode ? finishedArticles : stockItemsByType[currentStockType];
+      const options = Array.isArray(sourceOptions)
+        ? sourceOptions
         : [];
 
       const currentValue = preserveSelection ? String(stockItemSelect.value || selectedStockItemId || "") : "";
@@ -503,7 +526,7 @@
 
       const placeholder = document.createElement("option");
       placeholder.value = "";
-      placeholder.textContent = currentStockType === "RM" ? placeholderRawMaterial : placeholderSku;
+      placeholder.textContent = currentStockType === "RM" ? placeholderRawMaterial : isArticleMode ? placeholderArticle : placeholderSku;
       stockItemSelect.appendChild(placeholder);
 
       options.forEach((entry) => {
@@ -515,7 +538,7 @@
       });
 
       if (stockItemLabel) {
-        stockItemLabel.textContent = currentStockType === "RM" ? labelRawMaterial : labelSku;
+        stockItemLabel.textContent = currentStockType === "RM" ? labelRawMaterial : isArticleMode ? labelArticle : labelSku;
       }
 
       if (!preserveSelection) {
@@ -529,6 +552,12 @@
       const currentStockType = String(stockTypeSelect.value || "").toUpperCase();
       const isFg = currentStockType === "FG";
       const isSfg = currentStockType === "SFG";
+
+      if (stockItemModeRow) stockItemModeRow.classList.toggle("hidden", !isFg);
+      if (stockItemModeSelect) {
+        stockItemModeSelect.disabled = !isFg;
+        if (!isFg) stockItemModeSelect.value = "SKU";
+      }
 
       if (statusFilterRow) {
         statusFilterRow.classList.toggle("hidden", !isFg);
@@ -557,6 +586,7 @@
     };
 
     stockTypeSelect?.addEventListener("change", () => syncStockTypeDependentState(false));
+    stockItemModeSelect?.addEventListener("change", () => populateStockItems(false));
     syncStockTypeDependentState(true);
 
     form.addEventListener("submit", () => {

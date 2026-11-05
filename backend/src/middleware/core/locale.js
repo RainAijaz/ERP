@@ -1766,7 +1766,8 @@ const translations = {
     stock_ledger_error_select_date_range:
       "Please select a valid date range to load Stock Ledger report.",
     stock_ledger_error_select_stock_item:
-      "Please select a SKU/Raw Material to load Stock Ledger report.",
+      "Please select a SKU, Article, or Raw Material to load Stock Ledger report.",
+    stock_item_level: "Select By",
     sale_rate_basis: "Sale Basis",
     cost_rate_basis: "Cost Basis",
     returnables: "Returnables",
@@ -3390,7 +3391,8 @@ translations.ur = {
   stock_ledger_error_select_date_range:
     "اسٹاک لیجر رپورٹ لوڈ کرنے کے لئے درست تاریخ کی حد منتخب کریں۔",
   stock_ledger_error_select_stock_item:
-    "اسٹاک لیجر رپورٹ لوڈ کرنے کے لئے SKU یا خام مال منتخب کریں۔",
+    "اسٹاک لیجر رپورٹ لوڈ کرنے کے لئے SKU، آرٹیکل یا خام مال منتخب کریں۔",
+  stock_item_level: "انتخاب کی بنیاد",
   sale_rate_basis: "سیل بنیاد",
   cost_rate_basis: "کاسٹ بنیاد",
   inventory_voucher: "انوینٹری واؤچر",
