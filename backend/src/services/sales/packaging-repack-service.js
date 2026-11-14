@@ -19,6 +19,48 @@ const repackError = (code, detail = {}) => {
 const dimensionWhere = (query, column, value) =>
   value == null ? query.whereNull(column) : query.where(column, Number(value));
 
+// A rule applies to every active target SKU for its article. Do not allow an
+// active rule whose source packing cannot supply a unique, dimension-identical
+// SKU: otherwise the first sale with a shortage fails partway through posting.
+const hasExactlyMatchingSourceForEachTargetSku = (rows, sourcePackingId, targetPackingId) => {
+  const key = (row) => [row.size_id, row.grade_id, row.color_id]
+    .map((value) => value == null ? "" : String(value)).join("|");
+  const sourceCounts = new Map();
+  const targets = [];
+  for (const row of rows) {
+    if (Number(row.packing_type_id) === Number(sourcePackingId)) {
+      const dimensionKey = key(row);
+      sourceCounts.set(dimensionKey, (sourceCounts.get(dimensionKey) || 0) + 1);
+    }
+    if (Number(row.packing_type_id) === Number(targetPackingId)) targets.push(row);
+  }
+  return targets.length > 0 && targets.every((row) => sourceCounts.get(key(row)) === 1);
+};
+
+const validateRuleSkuPairsTx = async (trx, rule) => {
+  const skuRows = await trx("erp.skus as s")
+    .join("erp.variants as v", "v.id", "s.variant_id")
+    .select("v.size_id", "v.grade_id", "v.color_id", "v.packing_type_id")
+    .where({ "v.item_id": rule.item_id, "v.is_active": true, "s.is_active": true })
+    .whereIn("v.packing_type_id", [
+      rule.source_packing_type_id, rule.target_packing_type_id,
+    ]);
+  if (!hasExactlyMatchingSourceForEachTargetSku(
+    skuRows, rule.source_packing_type_id, rule.target_packing_type_id,
+  )) {
+    throw repackError("repack_source_missing");
+  }
+};
+
+const normalizeRuleItemIds = (input) => {
+  const raw = input?.item_ids ?? input?.item_id;
+  const values = Array.isArray(raw) ? raw : [raw];
+  if (!values.length || values.length > 50 || values.some((value) => !positiveId(value))) {
+    throw repackError("repack_rule_invalid");
+  }
+  return [...new Set(values.map(positiveId))];
+};
+
 const validateRuleTx = async (trx, input) => {
   const recoverItemId = positiveId(input.recover_rm_item_id);
   const rule = {
@@ -72,6 +114,7 @@ const validateRuleTx = async (trx, input) => {
       .first();
     if (conflict) throw repackError("repack_ambiguous_rule");
   }
+  if (rule.is_active) await validateRuleSkuPairsTx(trx, rule);
   return rule;
 };
 
@@ -96,43 +139,61 @@ const saveRuleTx = async ({ trx, input, userId }) => {
 };
 
 const submitRule = async ({ req, input }) => {
-  const outcome = await knex.transaction(async (trx) => {
-    const rule = await validateRuleTx(trx, input || {});
-    const existing = await trx("erp.packaging_conversion_rule")
-      .where({ item_id: rule.item_id,
-        source_packing_type_id: rule.source_packing_type_id,
-        target_packing_type_id: rule.target_packing_type_id }).first();
-    const action = existing ? "edit" : "create";
-    const canApply = hasPermission(req.user, "master_data.products.skus", action);
-    const policyRequiresApproval = await requiresApproval("master_data.products.skus", action);
-    if (!canApply || (policyRequiresApproval && !req.user?.isAdmin)) {
-      const [item, sourcePacking, targetPacking] = await Promise.all([
-        trx("erp.items").select("name").where({ id: rule.item_id }).first(),
-        trx("erp.packing_types").select("name").where({ id: rule.source_packing_type_id }).first(),
-        trx("erp.packing_types").select("name").where({ id: rule.target_packing_type_id }).first(),
-      ]);
-      const [request] = await trx("erp.approval_request").insert({
-        branch_id: req.branchId, request_type: "MASTER_DATA_CHANGE",
-        entity_type: "PACKAGING_CONVERSION_RULE",
-        entity_id: existing ? String(existing.id) : "NEW",
-        summary: String(req?.res?.locals?.t?.("repack_approval_summary") ||
-          "Packaging conversion: {item} / {source} → {target}")
-          .replace("{item}", item.name)
-          .replace("{source}", sourcePacking.name)
-          .replace("{target}", targetPacking.name),
-        old_value: existing || null, new_value: rule,
-        status: "PENDING", requested_by: req.user.id,
-        requested_at: trx.fn.now(),
-      }).returning("id");
-      return { queued: true, id: Number(request.id) };
+  const itemIds = normalizeRuleItemIds(input);
+  const outcomes = await knex.transaction(async (trx) => {
+    // Validate *all* selected articles before writing any rule or approval.
+    // The transaction keeps multi-article submissions atomic.
+    const entries = [];
+    for (const itemId of itemIds) {
+      const rule = await validateRuleTx(trx, { ...input, item_id: itemId });
+      const existing = await trx("erp.packaging_conversion_rule")
+        .where({ item_id: rule.item_id,
+          source_packing_type_id: rule.source_packing_type_id,
+          target_packing_type_id: rule.target_packing_type_id }).first();
+      const action = existing ? "edit" : "create";
+      const canApply = hasPermission(req.user, "master_data.products.skus", action);
+      const policyRequiresApproval = await requiresApproval("master_data.products.skus", action);
+      entries.push({ rule, existing, action,
+        needsApproval: !canApply || (policyRequiresApproval && !req.user?.isAdmin) });
     }
-    return saveRuleTx({ trx, input: rule, userId: req.user.id });
+    const results = [];
+    for (const entry of entries) {
+      const { rule, existing, action, needsApproval } = entry;
+      if (needsApproval) {
+        const [item, sourcePacking, targetPacking] = await Promise.all([
+          trx("erp.items").select("name").where({ id: rule.item_id }).first(),
+          trx("erp.packing_types").select("name").where({ id: rule.source_packing_type_id }).first(),
+          trx("erp.packing_types").select("name").where({ id: rule.target_packing_type_id }).first(),
+        ]);
+        const [request] = await trx("erp.approval_request").insert({
+          branch_id: req.branchId, request_type: "MASTER_DATA_CHANGE",
+          entity_type: "PACKAGING_CONVERSION_RULE",
+          entity_id: existing ? String(existing.id) : "NEW",
+          summary: String(req?.res?.locals?.t?.("repack_approval_summary") ||
+            "Packaging conversion: {item} / {source} → {target}")
+            .replace("{item}", item.name)
+            .replace("{source}", sourcePacking.name)
+            .replace("{target}", targetPacking.name),
+          old_value: existing || null, new_value: rule,
+          status: "PENDING", requested_by: req.user.id,
+          requested_at: trx.fn.now(),
+        }).returning("id");
+        results.push({ queued: true, id: Number(request.id) });
+      } else {
+        results.push({ queued: false,
+          ...(await saveRuleTx({ trx, input: rule, userId: req.user.id })) });
+      }
+    }
+    return results;
   });
-  if (!outcome.queued) {
-    queueAuditLog(req, { entityType: "PACKAGING_CONVERSION_RULE",
-      entityId: outcome.id, action: outcome.action });
+  for (const result of outcomes) {
+    if (!result.queued) {
+      queueAuditLog(req, { entityType: "PACKAGING_CONVERSION_RULE",
+        entityId: result.id, action: result.action });
+    }
   }
-  return outcome;
+  return { queued: outcomes.some((result) => result.queued),
+    count: outcomes.length, outcomes };
 };
 
 const loadRulePageTx = async (db, selectedId = null) => {
@@ -386,4 +447,5 @@ const rollbackRepackMaterialsTx = async ({ trx, voucherId }) => {
 };
 
 module.exports = { validateRuleTx, saveRuleTx, submitRule, loadRulePageTx,
-  canCoverRepackShortfallTx, maybeRepackSaleLineTx, rollbackRepackMaterialsTx };
+  canCoverRepackShortfallTx, maybeRepackSaleLineTx, rollbackRepackMaterialsTx,
+  __test: { hasExactlyMatchingSourceForEachTargetSku, normalizeRuleItemIds } };
