@@ -151,6 +151,12 @@
           const nextBranchId = String(packet.branchId || "").trim();
           if (!nextBranchId || nextBranchId === currentBranchId) return;
 
+          // Stock-transfer reports are explicitly filtered by source/destination
+          // branches. An unrelated branch change in another tab must not silently
+          // discard the report the user is reviewing; the next explicit navigation
+          // or report submission will use the latest server-side branch context.
+          if (window.location.pathname === "/reports/inventory/stock-transfer") return;
+
           if (hasUnsavedChanges) {
             let shouldReload = false;
             if (typeof window.showUiConfirmModal === "function") {
