@@ -21,10 +21,11 @@
       <% } %>
       <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
         <label class="text-sm font-medium text-slate-700"><%= t('article') %>
-          <select name="item_id" required <%= selected ? 'disabled' : '' %> data-searchable-select="true" data-searchable-variant="unified" class="mt-1 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
-            <option value=""><%= t('select_item') %></option>
+          <select name="<%= selected ? 'item_id' : 'item_ids' %>" <%= selected ? '' : 'multiple' %> required <%= selected ? 'disabled' : '' %> data-searchable-select="true" data-searchable-variant="unified" <%= selected ? '' : 'data-searchable-multi-search="inline"' %> class="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+            <% if (selected) { %><option value=""><%= t('select_item') %></option><% } %>
             <% page.items.forEach((item) => { %><option value="<%= item.id %>" <%= Number(selected?.item_id) === Number(item.id) ? 'selected' : '' %>><%= item.code %> — <%= item.name %></option><% }) %>
           </select>
+          <% if (!selected) { %><span class="mt-1 block text-xs text-slate-500">Select one or more finished articles. Each must have active source and target SKUs with matching size, grade and color.</span><% } %>
         </label>
         <label class="text-sm font-medium text-slate-700"><%= t('repack_from') %>
           <select name="source_packing_type_id" required <%= selected ? 'disabled' : '' %> data-searchable-select="true" data-searchable-variant="unified" class="mt-1 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">

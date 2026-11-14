@@ -101,14 +101,15 @@ const sendSkuRateNotification = async ({
       header = approved ? "🔔 *ریٹ اپ ڈیٹ* _(منظور شدہ)_" : "🔔 *ریٹ اپ ڈیٹ*";
     }
     const message = `${header}\n📅 ${timeStr}\n\n${lines.join("\n\n")}`;
-    const result = await sendWhatsAppMessage(chatId, message);
+    // Require server acknowledgement; local WhatsApp acceptance alone is not delivery.
+    const result = await sendWhatsAppMessage(chatId, message, { confirmDelivery: true });
     if (result && result.ok) {
       console.log(
-        `[WhatsApp] SKU rate notification delivered to ${chatId} (${normalizedUpdates.length} item(s), isNew=${isNew})`,
+        `[WhatsApp] SKU rate notification confirmed by WhatsApp server for ${chatId} (${normalizedUpdates.length} item(s), isNew=${isNew})`,
       );
     } else {
       console.warn(
-        `[WhatsApp] SKU rate notification NOT delivered to ${chatId}: reason=${result?.reason || "unknown"} queued=${result?.queued === true}`,
+        `[WhatsApp] SKU rate notification not confirmed for ${chatId}: reason=${result?.reason || "unknown"} queued=${result?.queued === true}`,
       );
     }
   } catch (err) {
