@@ -101,7 +101,7 @@ const sendSkuRateNotification = async ({
       header = approved ? "🔔 *ریٹ اپ ڈیٹ* _(منظور شدہ)_" : "🔔 *ریٹ اپ ڈیٹ*";
     }
     const message = `${header}\n📅 ${timeStr}\n\n${lines.join("\n\n")}`;
-    const result = await sendWhatsAppMessage(chatId, message);
+    const result = await sendWhatsAppMessage(chatId, message, { confirmDelivery: true });
     if (result && result.ok) {
       console.log(
         `[WhatsApp] SKU rate notification delivered to ${chatId} (${normalizedUpdates.length} item(s), isNew=${isNew})`,

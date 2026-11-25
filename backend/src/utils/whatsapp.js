@@ -1,3 +1,4 @@
+require("./whatsapp-compatibility");
 const { Client, LocalAuth } = require("whatsapp-web.js");
 const qrcode = require("qrcode-terminal");
 const qrcodeImage = require("qrcode");
@@ -25,6 +26,8 @@ let lastDisconnectReason = null;
 const pendingQueue = [];
 const MAX_QUEUE = 200;
 let pendingSeq = 0;
+let pendingFlushTimer = null;
+let flushingPending = false;
 // Overflow past MAX_QUEUE is lost silently, and a long outage is exactly when
 // someone is on this page wondering what became of the missing broadcasts.
 let droppedCount = 0;
@@ -41,13 +44,13 @@ const isPendingCancelled = (entry) =>
 
 // Returns false when the queue is full, so callers keep their existing
 // "dropping message" branch.
-const enqueuePending = (chatId, text) => {
+const enqueuePending = (chatId, text, confirmDelivery, alternateChatIds) => {
   if (pendingQueue.length >= MAX_QUEUE) {
     droppedCount += 1;
     return false;
   }
   pendingSeq += 1;
-  pendingQueue.push({ id: pendingSeq, chatId, text, queuedAt: new Date() });
+  pendingQueue.push({ id: pendingSeq, chatId, text, confirmDelivery, alternateChatIds, queuedAt: new Date() });
   return true;
 };
 
@@ -205,42 +208,58 @@ const writeQrSnapshot = async (qr) => {
   }
 };
 
+const schedulePendingFlushAfterCooldown = () => {
+  const delay = cooldownRemainingMs();
+  if (!clientReady || !client || !pendingQueue.length || !delay || pendingFlushTimer) return;
+  pendingFlushTimer = setTimeout(() => {
+    pendingFlushTimer = null;
+    flushPendingQueue().catch((err) => {
+      console.error("[WhatsApp] Error flushing pending queue:", err.message);
+    });
+  }, delay);
+  pendingFlushTimer.unref();
+};
+
 const flushPendingQueue = async () => {
-  if (!clientReady || !client || !pendingQueue.length) return;
+  if (!clientReady || !client || !pendingQueue.length || flushingPending) return;
+  if (isCoolingDown()) {
+    schedulePendingFlushAfterCooldown();
+    return;
+  }
+  flushingPending = true;
+  const flushingClient = client;
   console.log(`[WhatsApp] Flushing ${pendingQueue.length} queued message(s)...`);
   const toSend = pendingQueue.splice(0, pendingQueue.length);
-  for (let i = 0; i < toSend.length; i++) {
-    if (!clientReady || !client) {
-      // Disconnected mid-flush — put all remaining messages back
-      const remaining = toSend.slice(i);
-      const canAdd = MAX_QUEUE - pendingQueue.length;
-      if (canAdd > 0) pendingQueue.unshift(...remaining.slice(0, canAdd));
-      if (remaining.length > Math.max(canAdd, 0)) {
-        droppedCount += remaining.length - Math.max(canAdd, 0);
+  const retry = [];
+  try {
+    for (const entry of toSend) {
+      if (isPendingCancelled(entry)) continue;
+      if (!clientReady || client !== flushingClient || isCoolingDown()) {
+        retry.push(entry);
+        continue;
       }
-      break;
+      const result = await sendWhatsAppMessage(entry.chatId, entry.text, {
+        queue: false,
+        confirmDelivery: entry.confirmDelivery,
+        alternateChatIds: entry.alternateChatIds,
+      });
+      if (!result.ok && result.reason !== "ack_error") {
+        console.warn("[WhatsApp] Queued message still pending:", result.reason);
+        retry.push(entry);
+      }
     }
-    // Cancelled after this batch was spliced out — the whole point of the
-    // watermark. Without this check, cancelling during the reconnect blast
-    // would empty the queue while the messages already in hand still went out.
-    if (isPendingCancelled(toSend[i])) {
-      console.log("[WhatsApp] Skipping cancelled queued message to", toSend[i].chatId);
-      continue;
-    }
-    const { chatId, text } = toSend[i];
-    try {
-      await client.sendMessage(chatId, text);
-      console.log("[WhatsApp] ✓ Queued message sent to", chatId);
-    } catch (err) {
-      console.error("[WhatsApp] ✗ Failed to send queued message:", err.message);
-      if (pendingQueue.length < MAX_QUEUE) pendingQueue.unshift(toSend[i]);
-      else droppedCount += 1;
+  } finally {
+    const remaining = retry.filter((entry) => !isPendingCancelled(entry));
+    const capacity = MAX_QUEUE - pendingQueue.length;
+    pendingQueue.unshift(...remaining.slice(0, capacity));
+    droppedCount += Math.max(0, remaining.length - capacity);
+    cancelledPendingIds.clear();
+    flushingPending = false;
+    schedulePendingFlushAfterCooldown();
+    if (clientReady && client !== flushingClient) {
+      await flushPendingQueue();
     }
   }
-  // Safe to forget these now: anything cancelled was either skipped above or had
-  // already been spliced out of the queue. Keeping the set would leak ids for
-  // the life of the process.
-  cancelledPendingIds.clear();
 };
 
 // Tear down the browser before dropping the client reference. Without this an
@@ -441,6 +460,9 @@ const watchForAck = (chatIds, body) => {
       if (Number.isFinite(immediate) && immediate >= ACK_SERVER) {
         return { ok: true, ack: immediate, via: "immediate" };
       }
+      if (immediate === ACK_ERROR && !(latest >= ACK_SERVER)) {
+        return { ok: false, reason: "ack_error", ack: immediate, via: "immediate" };
+      }
 
       const deadline = Date.now() + timeoutMs;
       for (;;) {
@@ -485,7 +507,10 @@ const attemptSend = async (chatId, text, confirmDelivery, ackIds) => {
   const ackWatch = confirmDelivery ? watchForAck(ackIds || [chatId], text) : null;
   let message;
   try {
-    message = await client.sendMessage(chatId, text);
+    // Sending a notification should leave unread chats alone. The library
+    // otherwise sends a read receipt before attempting the outgoing message.
+    message = await client.sendMessage(chatId, text, { sendSeen: false });
+    if (!message && !ackWatch) throw new Error("send_error");
   } catch (err) {
     if (ackWatch) ackWatch.cancel();
     console.error(`[WhatsApp] ✗ Failed to send to ${chatId}:`, err.message);
@@ -515,9 +540,7 @@ const attemptSend = async (chatId, text, confirmDelivery, ackIds) => {
 // retry the same message and deliver it twice.
 //
 // `confirmDelivery` (default false) makes the send wait for a real server ack
-// before reporting success, closing the "false SENT" gap above. Only callers
-// that persist the outcome (payment notifications) need it; the fire-and-forget
-// rate-change notifier leaves it off so its behavior is unchanged.
+// before reporting success, closing the "false SENT" gap above.
 //
 // `alternateChatIds` are other addressing forms for the SAME person, tried in
 // order only when the preferred one yields no delivery confirmation.
@@ -531,7 +554,7 @@ const sendWhatsAppMessage = async (
     return { ok: false, queued: false, reason: "no_chat_id" };
   }
   if (!clientReady || !client) {
-    if (queue && enqueuePending(chatId, text)) {
+    if (queue && enqueuePending(chatId, text, confirmDelivery, alternateChatIds)) {
       console.log(`[WhatsApp] Client not ready — message queued (queue size: ${pendingQueue.length})`);
       return { ok: false, queued: true, reason: "client_unavailable" };
     }
@@ -542,9 +565,11 @@ const sendWhatsAppMessage = async (
   // Breaker open: WhatsApp has been refusing our sends, so stop hitting it. The
   // durable queue holds these rows without spending an attempt on them.
   if (isCoolingDown()) {
+    const queued = queue && enqueuePending(chatId, text, confirmDelivery, alternateChatIds);
+    schedulePendingFlushAfterCooldown();
     return {
       ok: false,
-      queued: false,
+      queued,
       reason: "cooldown",
       cooldownUntil: new Date(cooldownUntil),
     };
@@ -590,7 +615,9 @@ const sendWhatsAppMessage = async (
     }
   }
 
-  if (queue && enqueuePending(chatId, text)) {
+  if (queue && last.reason !== "ack_error" &&
+      enqueuePending(chatId, text, confirmDelivery, alternateChatIds)) {
+    schedulePendingFlushAfterCooldown();
     console.log(`[WhatsApp] Message queued for retry on reconnect (queue size: ${pendingQueue.length})`);
     return { ok: false, queued: true, reason: last.reason || "send_error" };
   }
@@ -864,6 +891,10 @@ const saveWhatsAppContact = async ({ msisdn, firstName, lastName = "" }) => {
 // the reconnect timer too so it can't relaunch a client mid-shutdown.
 const shutdownWhatsApp = async () => {
   clientReady = false;
+  if (pendingFlushTimer) {
+    clearTimeout(pendingFlushTimer);
+    pendingFlushTimer = null;
+  }
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
@@ -887,3 +918,4 @@ module.exports = {
   cancelPendingMessage,
   clearPendingMessages,
 };
+
