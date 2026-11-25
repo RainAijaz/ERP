@@ -1,5 +1,6 @@
 require("./whatsapp-compatibility");
-const { Client, LocalAuth } = require("whatsapp-web.js");
+const { LocalAuth } = require("whatsapp-web.js");
+const { Client } = require("./whatsapp-compatibility");
 const qrcode = require("qrcode-terminal");
 const qrcodeImage = require("qrcode");
 const path = require("path");

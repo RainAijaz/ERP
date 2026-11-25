@@ -25,3 +25,42 @@ if (compatibleSource !== source) {
   // The function source comes exclusively from the installed library.
   injected.LoadUtils = Function(`return (${compatibleSource});`)();
 }
+
+const { Client } = require("whatsapp-web.js");
+
+// The public /login page exposes its official QR before the application's
+// Socket module exists. Wait through that page instead of crashing in AuthStore.
+class CompatibleClient extends Client {
+  async inject() {
+    if (this.loginInjection) return this.loginInjection;
+    this.loginInjection = this.injectAfterLogin();
+    try {
+      return await this.loginInjection;
+    } finally {
+      this.loginInjection = null;
+    }
+  }
+
+  async injectAfterLogin() {
+    let previousQr = null;
+    while (true) {
+      const login = await this.pupPage.evaluate(() => {
+        if (location.pathname !== "/login/") return { waiting: false };
+        const socket = window.require?.("WAWebSocketModel")?.Socket;
+        return {
+          waiting: !socket,
+          qr: document.querySelector("[data-ref]")?.getAttribute("data-ref"),
+        };
+      });
+      if (!login.waiting) break;
+      if (login.qr && login.qr !== previousQr) {
+        previousQr = login.qr;
+        this.emit("qr", login.qr);
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    return super.inject();
+  }
+}
+
+module.exports = { Client: CompatibleClient };
