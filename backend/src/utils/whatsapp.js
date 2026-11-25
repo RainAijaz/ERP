@@ -289,10 +289,8 @@ const scheduleReconnect = (baseDelayMs = 15000) => {
   }, delayMs);
 };
 
-// --no-zygote/--single-process keep Chrome's memory footprint down on the Linux
-// VPS, but on Windows they break Chrome's frame handling: the client dies during
-// startup with "Navigating frame was detached" and never reaches the QR step.
-// Keep them off Windows only, so the production (Linux) launch is unchanged.
+// Avoid Chromium single-process mode: it can stall target initialization and
+// Network.enable during startup. Keep the no-zygote flag limited to Linux.
 const buildPuppeteerArgs = () => {
   const args = [
     "--no-sandbox",
@@ -303,7 +301,7 @@ const buildPuppeteerArgs = () => {
     "--disable-extensions",
   ];
   if (process.platform !== "win32") {
-    args.push("--no-zygote", "--single-process");
+    args.push("--no-zygote");
   }
   return args;
 };
