@@ -144,6 +144,7 @@ const recordSendOutcome = (reason) => {
 // apart — so an unlinked session looked identical to a blocked account.
 const getWhatsAppStatus = () => ({
   ready: Boolean(clientReady && client),
+  qrAvailable: Boolean(lastQrAt && !clientReady && Date.now() - lastQrAt.getTime() < 60000),
   disabled: String(process.env.WHATSAPP_CLIENT_DISABLED || "").trim() === "1",
   coolingDown: isCoolingDown(),
   cooldownUntil: isCoolingDown() ? new Date(cooldownUntil) : null,
@@ -203,6 +204,7 @@ const writeQrSnapshot = async (qr) => {
       scale: 8,
       errorCorrectionLevel: "M",
     });
+    lastQrAt = new Date();
   } catch (err) {
     console.error("[WhatsApp] Failed to write QR snapshot:", err.message);
   }
@@ -316,6 +318,7 @@ const initWhatsApp = () => {
     return;
   }
 
+  lastQrAt = null;
   client = new Client({
     authStrategy: new LocalAuth({ dataPath: SESSION_PATH }),
     puppeteer: {
@@ -329,7 +332,7 @@ const initWhatsApp = () => {
   });
 
   client.on("qr", (qr) => {
-    lastQrAt = new Date();
+    lastQrAt = null;
     console.log("\n[WhatsApp] Scan this QR code in WhatsApp to connect:\n");
     writeQrSnapshot(qr).catch((err) => {
       console.error("[WhatsApp] Failed to write QR snapshot:", err.message);
@@ -338,6 +341,7 @@ const initWhatsApp = () => {
   });
 
   client.on("ready", () => {
+    lastQrAt = null;
     clientReady = true;
     lastReadyAt = new Date();
     lastDisconnectReason = null;
@@ -374,6 +378,7 @@ const initWhatsApp = () => {
 
   client.on("auth_failure", (msg) => {
     console.error("[WhatsApp] Authentication failed:", msg);
+    lastQrAt = null;
     clientReady = false;
     lastDisconnectReason = `auth_failure: ${msg}`;
     // Leave `client` set: scheduleReconnect takes ownership and destroys it, so
@@ -383,6 +388,7 @@ const initWhatsApp = () => {
 
   client.on("disconnected", (reason) => {
     console.warn("[WhatsApp] Disconnected:", reason);
+    lastQrAt = null;
     clientReady = false;
     lastDisconnectReason = String(reason || "disconnected");
     if (reason === "LOGOUT") {
@@ -399,6 +405,7 @@ const initWhatsApp = () => {
 
   client.initialize().catch((err) => {
     console.error("[WhatsApp] Initialization error:", err.message);
+    lastQrAt = null;
     clientReady = false;
     // Chrome may already be up even though initialize() rejected, so hand the
     // client to scheduleReconnect to be destroyed rather than dropping it here.
@@ -888,6 +895,7 @@ const saveWhatsAppContact = async ({ msisdn, firstName, lastName = "" }) => {
 // initialize() and never fires "ready" (all messages then queue forever). Clear
 // the reconnect timer too so it can't relaunch a client mid-shutdown.
 const shutdownWhatsApp = async () => {
+  lastQrAt = null;
   clientReady = false;
   if (pendingFlushTimer) {
     clearTimeout(pendingFlushTimer);

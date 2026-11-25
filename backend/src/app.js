@@ -28,6 +28,7 @@ const knex = require("./db/knex");
 const { navConfig, syncNavScopes } = require("./utils/nav-config");
 const {
   initWhatsApp,
+  getWhatsAppStatus,
   onWhatsAppReady,
   shutdownWhatsApp,
 } = require("./utils/whatsapp");
@@ -66,10 +67,18 @@ app.use(
 app.get("/whatsapp-qr.png", (req, res) => {
   const qrFile = path.join(__dirname, "..", "public", "whatsapp-qr.png");
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  if (!getWhatsAppStatus().qrAvailable) return res.status(404).end();
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.set("Pragma", "no-cache");
   res.sendFile(qrFile, (err) => {
     if (err && !res.headersSent) res.status(404).send("QR not generated yet");
   });
+});
+
+app.get("/whatsapp-qr-status", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const status = getWhatsAppStatus();
+  res.json({ ready: status.ready, qrAvailable: status.qrAvailable, lastQrAt: status.lastQrAt });
 });
 
 // Auto-refreshing QR scanner page — open this URL in a browser to link WhatsApp
@@ -89,22 +98,42 @@ app.get("/whatsapp-qr", (req, res) => {
 </head>
 <body>
   <h2>Scan to connect WhatsApp</h2>
-  <img id="qr" src="/whatsapp-qr.png?t=${Date.now()}" alt="QR Code">
-  <p>QR refreshes every 15 seconds. Scan immediately after it updates.</p>
+  <img id="qr" style="display:none" alt="QR Code">
+  
   <p id="status">Waiting for QR...</p>
   <script>
-    let count = 15;
     const img = document.getElementById('qr');
     const status = document.getElementById('status');
-    setInterval(() => {
-      count--;
-      status.textContent = 'Refreshing in ' + count + 's...';
-      if (count <= 0) {
-        count = 15;
-        img.src = '/whatsapp-qr.png?t=' + Date.now();
-        status.textContent = 'QR updated — scan now!';
+    let shownQrAt = null;
+    const hideQr = () => {
+      img.style.display = 'none';
+      img.removeAttribute('src');
+      shownQrAt = null;
+      status.textContent = 'Waiting for QR...';
+    };
+    img.onerror = hideQr;
+    const poll = async () => {
+      try {
+        const response = await fetch('/whatsapp-qr-status', { cache: 'no-store' });
+        if (!response.ok) throw new Error('QR status unavailable');
+        const state = await response.json();
+        if (!state.qrAvailable || !state.lastQrAt) {
+          hideQr();
+          return;
+        }
+        if (shownQrAt !== state.lastQrAt) {
+          shownQrAt = state.lastQrAt;
+          img.src = '/whatsapp-qr.png?t=' + encodeURIComponent(shownQrAt);
+          img.style.display = '';
+          status.textContent = 'QR updated — scan now!';
+        }
+      } catch (err) {
+        hideQr();
+      } finally {
+        setTimeout(poll, 2000);
       }
-    }, 1000);
+    };
+    poll();
   </script>
 </body>
 </html>`);
